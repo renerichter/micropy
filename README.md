@@ -1,3 +1,6 @@
-# Micropy
+This is a microscopy-toolbox build upon basic toolboxes like NanoImagingPack or Numpy.
 
-This is the project of necessary image-processing tools I needed for my PhD-work. 
+Getting started:
+* Install what needs to be installed.
+
+
