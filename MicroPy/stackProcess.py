@@ -86,19 +86,21 @@ def save2vid(im, save_file=None, vid_param={}, out=False):
     save_file = [
         'D:/Data/01_Fluidi/data/processed/Inkubator-Setup02-UC2_Inku_450nm/20190815/expt_017/','20190815-01']
     '''
-    im, isstack = save2vid_assure_stack_shape(im)
+    im, hasChannels, isstack = save2vid_assure_stack_shape(im)
     if type(out) == bool:
-        save_file, vid_param = sanitycheck_save2vid(save_file, vid_param)
-        vid = save2vid_initcontainer(save_file[0] + save_file[1], vid_param)
-        im = limit_bitdepth(im,vid_param['bitformat'],imin=None,imax=None,inorm=True)
+        save_path, vid_param = sanitycheck_save2vid(save_file, vid_param)
+        vid = save2vid_initcontainer(save_path, vid_param)
+        im = limit_bitdepth(im,vid_param['bitformat'],imin=None,imax=None,inorm=False,hascolor=hasChannels)
     else: 
         vid = out
     # save stack or image
     if isstack:
+        imh = np.transpose(im,[0,2,3,1]) if im.shape[-3] == 3 else im
         for m in range(im.shape[0]):
-            vid.write(im[m])
+            vid.write(imh[m])
     else:
-        vid.write(im)
+        imh = np.transpose(im,[1,2,0]) if im.shape[-3] == 3 else im
+        vid.write(imh)
     # close stack
     if type(out) == bool:
         if out == False:  # to save release
@@ -165,15 +167,17 @@ def save2vid_assure_stack_shape(im):
     :im:        numpy or nip-array (image)
     '''
     isstack=False
+    hasChannels=False
     # convert stack to correct color_space
     if im.ndim < 2:
         raise ValueError("Dimension of input-image is too small.")
     if im.ndim == 2:  # only 2D-image
         pass
     else:  # nD-image
-        isstack = True
+        hasChannels=True
         if im.shape[-3] > 3 and im.ndim>3:  # -3.dim is not channel, but stack-dimension
             im = np.reshape(im,newshape=[np.prod(im.shape[:-2],im.shape[-2],im.shape[-1])])
+            isstack = True
         else:  # -3.dim is channel dimension
             if im.shape[-3] == 1:
                 im = np.repeat(im, repeats=3, axis=-3)
@@ -185,7 +189,7 @@ def save2vid_assure_stack_shape(im):
             else: # no problem
                 pass  
     #return image and whether it is a stack
-    return im, isstack
+    return im, hasChannels, isstack
     # if channel < 3:
     #        frame = cv2.cvtColor(
     #            np.array(a_pil, 'uint8'), cv2.COLOR_GRAY2BGR)
@@ -269,28 +273,21 @@ def sanitycheck_save2vid(save_file, vid_param):
     :vscale:STRING:             None,'h','w'                    -> rescale final video size using vaspectratio and the height or width of the input image(stack)
     :vfps:INT:                  14                              -> frames per second
     '''
+    # Set standard-configuration
+    std_conf = {'vformat': 'X264', 'vcontainer': 'mp4', 'vaspectratio':[16, 9], 'vscale': None, 'vfps': 12,'vpixels':[1920, 1080],'bitformat': 'uint8'}
     # check param dict
     if not type(vid_param) == dict:
         vid_param = {}
-    if 'vformat' not in vid_param:
-        vid_param['vformat'] = 'xvid'
-    if 'vcontainer' not in vid_param:
-        vid_param['vcontainer'] = 'mp4'
-    if 'vaspectratio' not in vid_param:
-        vid_param['vaspectratio'] = [16, 9]
-    if 'vscale' not in vid_param:
-        vid_param['vscale'] = None
-    if 'vfps' not in vid_param:
-        vid_param['vfps'] = 12
-    if 'vpixels' not in vid_param:
-        vid_param['vpixels'] = [1920, 1080]
+    for m in std_conf:
+        if m not in vid_param:
+            vid_param[m] = std_conf[m]
     # check save_file path etc
     if save_file == None:
         save_file = [os.getcwd(), 'save2vid.' + vid_param['vcontainer']]
     else:
-        save_file[1] = save_file[1] + '.' + vid_param['vcontainer']
+        save_file = save_file + '.' + vid_param['vcontainer']
     # sanity check that path exists and acessible
-    save_file[0] = check_path(save_file[0])
+    save_path = check_path(save_file)
     # return
     return save_file, vid_param
 
@@ -300,8 +297,20 @@ def check_path(file_path):
     Checks whether file_path exists and if not, creates it.
     '''
     if type(file_path) == str:
+        if file_path[-1] not in ["/","\\"]:
+            import re
+            regs = re.compile(r'([\w:]+)*/((\w+)*/)*')
+            regss = regs.search(file_path)
+            if regss == None: 
+                regs = re.compile(r'([\w:]+)*\\((\w+)*\\)*')
+                regss = regs.search(file_path)
+            if regss == None: 
+                raise ValueError('Could not match directory path in file_path.')
+            else: 
+                file_path = regss.group()
         if not os.path.isdir(file_path):
             os.mkdir(file_path)
+            print('File path' + file_path + ' freshly created')
     else:
         raise ValueError("File_Path not of string-type.")
     return file_path

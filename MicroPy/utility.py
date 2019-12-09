@@ -175,7 +175,7 @@ def image_sharpness(im, im_filters=['Tenengrad']):
         res.append(vollathF4(im))
 
 
-def findshift(im1, im2, prec=100):
+def findshift(im1, im2, prec=100,printout=False):
     '''
     Just a wrapper for the Skimage function using sub-pixel shifts, but with nice info-printout.
     link: https://scikit-image.org/docs/dev/auto_examples/transform/plot_register_translation.html
@@ -199,7 +199,8 @@ def findshift(im1, im2, prec=100):
     shift, error, diffphase = register_translation(
         im1, im2, prec, space='real', return_error=True)
     tend = np.round(time() - tstart, 2)
-    print("Found shifts={} with upsampling={}, error={} and diffphase={} in {}s.".format(
+    if printout:
+        print("Found shifts={} with upsampling={}, error={} and diffphase={} in {}s.".format(
         shift, prec, np.round(error, 4), diffphase, tend))
     return shift, error, diffphase, tend
 
@@ -250,7 +251,7 @@ def image_binning(im, bin_size=2, mode='real_sum', normalize='old'):
         pass
     elif mode == 'fourier':
         # use function of nip-toolbox -> does not introduce aliasing even though pixel-reduction as cutting (extraction) is done in fourier-space = "just cutting away high frequencies"
-        nip.resample(imh,factors=[1.0/bin_size,1.0/bin_size]+[1,]*(imh.ndim-2)])
+        nip.resample(imh,factors=[1.0/bin_size,1.0/bin_size]+[1,]*(imh.ndim-2))
     else:
         raise ValueError('Mode not existing.')
 
@@ -267,6 +268,17 @@ def image_binning(im, bin_size=2, mode='real_sum', normalize='old'):
         res = np.transpose(res, id3)
     return res
 
+
+def norm_back(imstack, normstack, normtype):
+    '''
+    Normalizes back to starting  -> appends missing dimensions
+    '''
+    ndimdiff = imstack.ndim - normstack.ndim
+    for m in range(ndimdiff):
+        normstack = normstack[..., np.newaxis]
+    imstack_changed = np.round(imstack / np.mean(imstack, axis=(-1, -2))
+                               [..., np.newaxis, np.newaxis] * normstack, 0).astype(normtype)
+    return imstack_changed
 
 def filter_pass(im, filter_size=(10,), mode='circle', kind='low', filter_out=True):
     '''

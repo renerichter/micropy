@@ -5,6 +5,37 @@ import NanoImagingPack as nip
 import numpy as np
 import matplotlib.pyplot as plt
 
+# %% -------------------------------------------
+#       LOGGING
+# ----------------------------------------------
+
+
+def add_logging(logger_filepath='./logme.log', start_logger='RAWprocessor'):
+    '''
+    adds logging to an environment
+    '''
+    import logging
+    from sys import stdout
+    # set formatters
+    fromage = logging.Formatter(
+        datefmt='%Y%m%d %H:%M:%S', fmt='[ %(levelname)-8s ] [ %(name)-13s ] [ %(asctime)s ] %(message)s')
+    # set handlers
+    strh = logging.StreamHandler(stdout)
+    strh.setLevel(logging.DEBUG)
+    strh.setFormatter(fromage)
+    fh = logging.FileHandler(logger_filepath)
+    fh.setLevel(logging.DEBUG)
+    fh.setFormatter(fromage)
+    # get root and define level
+    root = logging.getLogger()
+    root.setLevel(logging.DEBUG)
+    root.addHandler(strh)
+    root.addHandler(fh)
+    # add first new handler
+    logger = logging.getLogger('RAWprocessor')
+    logger.setLevel(logging.DEBUG)
+    return root, logger
+
 
 # %%
 # ---------------------------------------------------------------------------------------------------------
@@ -62,7 +93,7 @@ def get_batch_numbers(filelist=['', ], batch_size=100):
     from math import floor
     #
     fl_len = len(filelist)
-    fl_iter = floor(fl_len/batch_size)
+    fl_iter = floor(fl_len/batch_size) + (1 if fl_len % batch_size > 0 else 0)
     fl_lastiter = fl_len % batch_size
     print("{} files will be split into {} iterations with {} objects in the last iteration using a batch_size of {}.".format(
         fl_len, fl_iter, fl_lastiter, batch_size))
@@ -210,7 +241,7 @@ def rename_files(file_dir, version=1):
 #
 def print_stack2subplot(imstack, plt_raster=[4, 4], plt_format=[8, 6], title=None, titlestack=None, colorbar=True, axislabel=False):
     '''
-    Brings a 3D-stack 
+    Plots an 3D-Image-stack as set of subplots
     Based on this: https://stackoverflow.com/a/46616645 
     '''
     if type(imstack) == list:
@@ -261,6 +292,7 @@ def plot_save(ppointer, save_name, save_format='png'):
     Just an easy wrapper.
     '''
     ppointer.savefig(save_name+'.'+save_format, dpi=300, bbox_inches='tight')
+
 
 # %% Directory and file-structure
 
