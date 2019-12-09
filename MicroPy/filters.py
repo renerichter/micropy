@@ -131,15 +131,15 @@ def diff_filters(im):
     pass
 
 
-def tenengrad(im):
+def diff_tenengrad(im):
     '''
     Calculates Tenengrad-Sharpness Metric.
     '''
     impix = 1.0 / np.sqrt(np.prod(im.shape))
-    return impix * np.sum(sobel_horizontal(im)**2 + sobel_vertical(im)**2, axis=(0, 1))
+    return impix * np.sum(diff_sobel_horizontal(im)**2 + diff_sobel_vertical(im)**2, axis=(0, 1))
 
 
-def sobel_horizontal(im):
+def diff_sobel_horizontal(im):
     '''
     Calculates the horizontal sobel-filter.
     Filter-shape: [[-1 0 1],[ -2 0 2],[-1 0 1]] -> separabel:  np.outer(np.transpose([1,2,1]),[-1,0,1])
@@ -150,7 +150,7 @@ def sobel_horizontal(im):
     return xy_res
 
 
-def sobel_vertical(im):
+def diff_sobel_vertical(im):
     '''
     Calculates the vertical sobel-filter.
     Filter-shape: [[-1,-2,-1],[0,0,0],[1,2,1]] -> separabel:  np.outer(np.transpose([-1,0,1]),[1,2,1])
@@ -236,22 +236,23 @@ def stf_histogram_entropy(im, bins=256, im_out=True):
     '''
     if im.ndim > 2:
         # loop over all additional axes
+        oldshape = im.shape[2:]
         imh = np.reshape(
             im, newshape=[im.shape[0], im.shape[1], np.prod(im.shape[2:])], order='C')
-        im_hist = list()
-        for cla in range(im.shape[-1]):
-            im_hist = np.histogram(imh[:, :, cla], bins=bins)[1] if cla == 0 else im_hist.append(
-                np.histogram(im[:, :, cla], bins=bins)[1])
+        im_hist = ['', ]
+        for cla in range(imh.shape[-1]):
+            im_hist.append(np.histogram(imh[:, :, cla], bins=bins)[1],)
+        im_hist.pop(0)
         im_hist = np.array(im_hist)
-        newshape = im_hist.shape[0] + im.shape[2:]
-        # TODO: FIX!
-        # np.reshape(np.array(im_hist), newshape=[, im_hist[-1], , order='C')
+        im_hist = np.reshape(im_hist, newshape=tuple(
+            [len(im_hist[0]), ] + list(oldshape)))
     elif im.ndim == 2:
-        im_hist = np.histogram(imh[:, :, cla], bins=bins)[1]
+        im_hist = np.histogram(im, bins=bins)[1]
     else:
         raise ValueError("Wrong input dimensions.")
+    # some Photoncases yield NAN -> given empty bins? what to do?
     im_res = im_hist * np.log(im_hist)
-    res = np.sum(im_res, axis=(-2, -1))
+    res = np.sum(im_res, axis=(0))
     if im_out:
         return res, im_res, im_hist
     else:

@@ -1,5 +1,6 @@
-from inout import get_filelist, get_batch_numbers, loadStack
-from basicTools import getIterationProperties, get_range
+from .inout import get_filelist, get_batch_numbers, loadStack
+from .basicTools import getIterationProperties, get_range
+from .utility import channel_getshift
 import numpy as np
 import NanoImagingPack as nip
 import cv2
@@ -7,7 +8,11 @@ import os
 import PIL 
 import psutil
 import json
-import time
+from time import time 
+import logging
+from datetime import datetime
+from time import time
+import matplotlib.pyplot as plt
 
 # %%
 # -------------------------------- VIDEO TOOLS -------------------------------
@@ -84,28 +89,23 @@ def save2vid(im, save_file=None, vid_param={}, out=False):
     im, isstack = save2vid_assure_stack_shape(im)
     if type(out) == bool:
         save_file, vid_param = sanitycheck_save2vid(save_file, vid_param)
-        out = save2vid_initcontainer(save_file[0] + save_file[1], vid_param)
+        vid = save2vid_initcontainer(save_file[0] + save_file[1], vid_param)
         im = limit_bitdepth(im,vid_param['bitformat'],imin=None,imax=None,inorm=True)
+    else: 
+        vid = out
     # save stack or image
     if isstack:
         for m in range(im.shape[0]):
-            out.write(im[0])
+            vid.write(im[m])
     else:
-        out.write(im)
+        vid.write(im)
     # close stack
-    if type(out) == bool:  # to save release
-        save2vid_closecontainer(out)
-        out = True
+    if type(out) == bool:
+        if out == False:  # to save release
+            save2vid_closecontainer(vid)
+            vid = out
     # return
-    return out
-
-def save2vid_closecontainer(out):
-    '''
-    Safely closes the container.
-    '''
-    time.sleep(0.05)
-    out.release()
-    time.sleep(0.5)
+    return vid
 
 def limit_bitdepth(im,iformat='uint8',imin=None,imax=None,inorm=True,hascolor=False):
     '''
@@ -154,10 +154,6 @@ def limit_bitdepth(im,iformat='uint8',imin=None,imax=None,inorm=True,hascolor=Fa
             im = im*np.iinfo(iformatd).max
         im = np.array(im,dtype=iformatd)        
     return im
-        
-
-    
-
 
 def save2vid_assure_stack_shape(im):
     '''
@@ -252,6 +248,13 @@ def save2vid_initcontainer(save_name, vid_param={}):
         *vid_param['vformat']), vid_param['vfps'], (vid_param['vpixels'][1], vid_param['vpixels'][0]))
     return out
 
+def save2vid_closecontainer(out):
+    '''
+    Safely closes the container.
+    '''
+    time.sleep(0.05)
+    out.release()
+    time.sleep(0.5)
 
 def sanitycheck_save2vid(save_file, vid_param):
     '''
@@ -536,3 +539,10 @@ def addTextNWrite(im1, im_sel, path_dict=None, out=False,image_timer=None,channe
     '''
     print("NOT IMPLEMENTED")
     return True
+
+# %% Plot to Graphs
+def convert2graph(res, save_fpath):
+    '''
+    Directly fitting to the shape 
+    '''
+    print("Here the functions will be converted to proper graphs")

@@ -3,6 +3,7 @@ import os
 import re
 import NanoImagingPack as nip
 import numpy as np
+import matplotlib.pyplot as plt
 
 
 # %%
@@ -32,6 +33,14 @@ def get_filelist(load_path='.', fn_proto='jpg'):
     from NanoImagingPack import get_sorted_file_list as gsfl
     fl = gsfl(load_path, fn_proto, sort='integer_key', key='0')
     return fl
+
+
+def filelist2path(file_list, file_path):
+    '''
+    Prepends the file_path to every element of a file_list. 
+    '''
+    res = [file_path + x for x in file_list]
+    return res
 
 
 def get_batch_numbers(filelist=['', ], batch_size=100):
@@ -195,4 +204,73 @@ def rename_files(file_dir, version=1):
     print('Renaming took: {0}s.'.format(time.time()-tstart))
 
 
-# %%
+# %% ------------------------------------------------------
+# ---                        Plotting                   ---
+# ---------------------------------------------------------
+#
+def print_stack2subplot(imstack, plt_raster=[4, 4], plt_format=[8, 6], title=None, titlestack=None, colorbar=True, axislabel=False):
+    '''
+    Brings a 3D-stack 
+    Based on this: https://stackoverflow.com/a/46616645 
+    '''
+    if type(imstack) == list:
+        imstack = nip.cat((imstack))
+    # needs NanoImagingPack imported as nip
+    elif type(imstack) == nip.image or type(imstack) == np.array:
+        pass
+    else:
+        raise TypeError("Unexpected Data-type.")
+    if not(imstack.ndim == 3):
+        raise ValueError("Image size not fitting!")
+    # check for title
+    from datetime import datetime
+    if title == None:
+        title = datetime.now().strftime("%d.%m.%Y %H:%M:%S")
+    # create figure (fig), and array of axes (ax)
+    fig, ax = plt.subplots(
+        nrows=plt_raster[0], ncols=plt_raster[1], figsize=plt_format)
+    # plot simple raster image on each sub-plot
+    for m, axm in enumerate(ax.flat):
+        ima = axm.imshow(imstack[m], alpha=1.0,
+                         interpolation='none')  # alpha=0.25)
+        # write row/col indices as axes' title for identification
+        if colorbar:
+            if ax.ndim == 1:
+                fig.colorbar(ima, ax=ax[m])
+            elif ax.ndim == 2:
+                fig.colorbar(ima, ax=ax[m // plt_raster[1], m % plt_raster[1]])
+            else:
+                raise ValueError('Too many axes!')
+        if not axislabel:
+            axm.set_xlabel('PIX [a.u.]')
+            axm.set_ylabel('PIX [a.u.]')
+        if not titlestack == None:
+            axm.set_title(titlestack[m])
+        else:
+            axm.set_title(
+                "Row:"+str(m // plt_raster[1])+", Col:"+str(m % plt_raster[1]))
+        if m >= imstack.shape[0]-1:
+            break
+    if title:
+        fig.suptitle(title)
+    return fig
+
+
+def plot_save(ppointer, save_name, save_format='png'):
+    '''
+    Just an easy wrapper.
+    '''
+    ppointer.savefig(save_name+'.'+save_format, dpi=300, bbox_inches='tight')
+
+# %% Directory and file-structure
+
+
+def dir_test_existance(mydir):
+    try:
+        if not os.path.exists(mydir):
+            os.makedirs(mydir)
+            # logger.debug(
+            #    'Folder: {0} created successfully'.format(mydir))
+    finally:
+        #logger.debug('Folder check done!')
+        pass

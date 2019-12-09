@@ -81,13 +81,17 @@ def noise_normalize(im, phot, norm='mean'):
     Normalizes the image so that proper noise can be applied.
     '''
     if norm == 'mean':
-        im = im/np.mean(im,axis=(-2,-1)) * phot
+        norm = np.mean(im,axis=(-2,-1))/ phot
     elif norm == 'max':
-        im = im/np.max(im,axis=(-2,-1)) * phot
+        norm = np.max(im,axis=(-2,-1))/ phot
     elif norm == 'min':
-        im = im/np.max(im,axis=(-2,-1)) * phot
+        norm = np.min(im,axis=(-2,-1))/ phot
     else:
         raise AssertionError("So what? Didn't expect such a indecisive move.")
+    # assure that dimensions are correct
+    if im.ndim>2:
+        norm = norm[...,np.newaxis,np.newaxis]
+    im = im/norm
     return im
 
 
@@ -245,8 +249,8 @@ def image_binning(im, bin_size=2, mode='real_sum', normalize='old'):
         # extract result
         pass
     elif mode == 'fourier':
-        # extract region of 1/bin_size
-        pass
+        # use function of nip-toolbox -> does not introduce aliasing even though pixel-reduction as cutting (extraction) is done in fourier-space = "just cutting away high frequencies"
+        nip.resample(imh,factors=[1.0/bin_size,1.0/bin_size]+[1,]*(imh.ndim-2)])
     else:
         raise ValueError('Mode not existing.')
 
@@ -293,38 +297,6 @@ def filter_pass(im, filter_size=(10,), mode='circle', kind='low', filter_out=Tru
     res_filtered = nip.ft(im, axes=(-2, -1)) * pass_filter
     res = nip.ift(res_filtered).real
     return res, res_filtered, pass_filter
-
-def print_stack2subplot(imstack,plt_raster = [4,4], plt_format = [8,6], title=None, titlestack=None):
-    '''
-    Brings a 3D-stack 
-    Based on this: https://stackoverflow.com/a/46616645 
-    '''
-    if type(imstack) == list: 
-        imstack = nip.cat((imstack))
-    elif type(imstack) == nip.image : # needs NanoImagingPack imported as nip
-        pass
-    else:  
-        raise TypeError("Unexpected Data-type.")
-    if not(imstack.ndim ==3):
-        raise ValueError("Image size not fitting!")
-    # check for title
-    from datetime import datetime
-    if title==None: 
-        title = datetime.now().strftime("%d.%m.%Y %H:%M:%S")
-    # create figure (fig), and array of axes (ax)
-    fig, ax = plt.subplots(nrows=plt_raster[0], ncols=plt_raster[1], figsize=plt_format)
-
-    # plot simple raster image on each sub-plot
-    for m, axm in enumerate(ax.flat):
-        axm.imshow(imstack[m],alpha=1.0,interpolation='none') #alpha=0.25)
-        # write row/col indices as axes' title for identification
-        if not titlestack == None:
-            axm.set_title(titlestack[m])
-        else: 
-            axm.set_title("Row:"+str(m // plt_raster[1])+", Col:"+str(m % plt_raster[1]))
-        if m>= imstack.shape[0]-1:
-            break
-    return fig
 
 def harmonic_sum(a,b):
     ''' 
@@ -442,10 +414,6 @@ def calculate_resolution(obj_na=0.25,obj_n=1,wave_em=525,technique='brightfield'
 # ----                  PROPAGATORS
 # --------------------------------------------------------
 
-
-# %% -----------------------------------------------------
-# ----                  DEFOCUS
-# --------------------------------------------------------
 
 # %% -----------------------------------------------------
 # ----                  DEFOCUS
