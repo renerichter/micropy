@@ -131,27 +131,39 @@ def image_getshift(im1, im2):
         shift.append(myshift)
     return shift
 
-
-def shift_indexlist(im):
+def transpose_arbitrary(imstack,idx_startpos=[-2,-1],idx_endpos=[0,1]):
     '''
-    Creates a two list that complete cover all permutations that are possible within the channel dimensionality -> n*(n-1)/2 possibilities
+    creates the forward- and backward transpose-list to change stride-order for easy access on elements at particular positions. 
 
-    just an idea -> not finished
-    bl=list(range(im.shape[0]))
-    id1 = []
-    id2 = []
-    while len(bl) > 0:
-        for c in range(bl)
-            id1.append()
-            id2.append()
-    id2=id1
-    id2=id2.append(id2.pop(0))
+    TODO: add security/safety checks
     '''
-    # now just fast for 3-channels
-    id1 = [0, 0, 1]
-    id2 = [1, 2, 2]
-    # id1=[0,0,0,1,1,2]
-    # id2=[1,2,3,2,3,3]
+    trlist = list(range(imstack.ndim))
+    for m in range(len(idx_startpos)):
+        idxh = trlist[idx_startpos[m]]
+        trlist[idx_startpos[m]] = trlist[idx_endpos[m]]
+        trlist[idx_endpos[m]] = idxh
+    return trlist
+
+def generate_combinations(nbr_entries,combined_entries=2):
+    '''
+    Creates a set of index-lists according to "combined_entries" that complete cover all permutations that are possible within the length of the input-list (1D). For combined_entries=2 this means the classical group-combinations: n*(n-1)/2 possibilities. 
+    TODO: include higher combined_entries list-combinations
+
+    Example: 
+    ========
+    a = []
+    '''
+    if combined_entries == 2: 
+        id1 = []
+        id2 = []
+        offset = 1
+        for m in range(0,nbr_entries-1): 
+            for n in range(offset,nbr_entries):
+                id1.append(m)
+                id2.append(n)
+            offset += 1
+    else:
+        raise ValueError("The expected combined_entries size is not implemented yet.")
     return id1, id2
 
 
@@ -279,6 +291,68 @@ def norm_back(imstack, normstack, normtype):
     imstack_changed = np.round(imstack / np.mean(imstack, axis=(-1, -2))
                                [..., np.newaxis, np.newaxis] * normstack, 0).astype(normtype)
     return imstack_changed
+
+def add_multi_newaxis(imstack, newax_pos=[-1, ]):
+    '''
+    Adds new-axis at the mentioned position given the final (assumed) shape.
+    So hence, if ndim = 3 and e.g. (3,256,256) and newax_pos = (1,2,-1) it will lead to:(3,1,1,256,256,1), where negative indexes are added first (postpending) and positive indexes are inserted last (prepend).
+
+    :param:
+    =======
+    :imstack:   n-dimensional data_stack
+    :newax_pos: positions of the newaxis
+
+    :example: 
+    ========
+    import NanoImagingPack as nip
+    a = np.repeat(nip.readim('orka')[np.newaxis],3,0)
+    b = add_multi_newaxis(a,[1,2,-1])
+    print("dim of a="+str(a.shape)+"\ndim of b="+str(b.shape)+".")
+    :TODO:
+    ======
+    no error-prevention included
+    '''
+    # problem: list().insert interprets -1 as first element before last element of list -> recalc dimensions
+    newax_pos.sort(reverse=False)
+    imshape = list(np.array(imstack).shape)  # im_shape_start
+    for m in range(len(newax_pos)):
+        if newax_pos[m] == -1:
+            newax_pos[m] = len(imshape)
+        elif newax_pos[m] < -1:
+            newax_pos[m] += 1
+        imshape.insert(newax_pos[m], 1)
+    return np.reshape(imstack, imshape)
+
+
+def create_value_on_dimpos(dims_total, axes=[-2, -1], scaling=[0.5, 0.5]):
+    '''
+    Creates dim-vectors for e.g. scaling.
+
+    :param:
+    =======
+    dims_total:     e.g. via np.ndim
+    :axes:          axes to change
+    :scaling:       values to change to 
+
+    :Example: 
+    =========
+    a = np.repeat(nip.readim('orka')[np.newaxis],3,0)
+    b = add_multi_newaxis(a,[1,2,-1])
+    print("dim of a="+str(a.shape)+"\ndim of b="+str(b.shape)+".") 
+    atrans = create_value_on_dimpos(b.ndim,axes=[1,-2,-1],scaling=[2,3,0.25])
+    print("scaling factors for array="+str(atrans)+".")
+    '''
+    res = [1, ] * dims_total
+    for m in range(len(axes)):
+        res[axes[m]] = scaling[m]
+    return res
+
+def get_nbrpixel(im, dim=[0, 1]):
+    '''
+    just calculates the number of the pixels for the given dimensions.
+    '''
+    hl = [m for c, m in enumerate(im.shape) if c in dim]
+    return np.prod(hl)
 
 def filter_pass(im, filter_size=(10,), mode='circle', kind='low', filter_out=True):
     '''
