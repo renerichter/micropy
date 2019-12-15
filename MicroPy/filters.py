@@ -133,7 +133,7 @@ def diff_tenengrad(im):
     Calculates Tenengrad-Sharpness Metric.
     '''
     impix = 1.0 / np.sqrt(np.prod(im.shape))
-    return impix * np.sum(diff_sobel_horizontal(im)**2 + diff_sobel_vertical(im)**2, axis=(0, 1))
+    return impix * np.sum(diff_sobel_horizontal(im)**2 + diff_sobel_vertical(im)**2, axis=(-2, -1))
 
 
 def diff_sobel_horizontal(im):
@@ -142,7 +142,7 @@ def diff_sobel_horizontal(im):
     Filter-shape: [[-1 0 1],[ -2 0 2],[-1 0 1]] -> separabel:  np.outer(np.transpose([1,2,1]),[-1,0,1])
     '''
     # use separability
-    trlist = transpose_arbitrary(im, idx_startpos=[-2, -1], idx_endpos=[0, 1])
+    trlist = transpose_arbitrary(im, idx_startpos=[-2, -1], idx_endpos=[1, 0])
     im = np.transpose(im, trlist)
     x_res = im[:, 2:] - im[:, :-2]  # only acts on x
     xy_res = x_res[:-2] + 2*x_res[1:-1] + x_res[2:]  # only uses the y-coords
@@ -155,7 +155,7 @@ def diff_sobel_vertical(im):
     Filter-shape: [[-1,-2,-1],[0,0,0],[1,2,1]] -> separabel:  np.outer(np.transpose([-1,0,1]),[1,2,1])
     '''
     # use separability
-    trlist = transpose_arbitrary(im, idx_startpos=[-2, -1], idx_endpos=[0, 1])
+    trlist = transpose_arbitrary(im, idx_startpos=[-2, -1], idx_endpos=[1, 0])
     im = np.transpose(im, trlist)
     x_res = im[:, :-2] + 2*im[:, 1:-1] + im[:, 2:]  # only x coords
     xy_res = x_res[2:] - x_res[:-2]  # further on y coords
@@ -206,7 +206,7 @@ def stf_basic(im, printout=False):
     if printout == True:
         print("Basic analysis yields:\nMAX=\t{}\nMIN=\t{}\nMEAN=\t{}\nMEDIAN=\t{}\nVAR=\t{}\nNVAR=\t{}".format(
             im_res[0], im_res[1], im_res[2], im_res[3], im_res[4], im_res[5]))
-    return im_res
+    return np.array(im_res)
 
 
 def stf_kurtosis(im, switch_axis=False):
@@ -245,12 +245,12 @@ def stf_histogram_entropy(im, bins=256, im_out=True):
     '''
     if im.ndim > 2:
         # loop over all additional axes
-        oldshape = im.shape[2:]
+        oldshape = im.shape[:-2]
         imh = np.reshape(
-            im, newshape=[im.shape[-2], im.shape[1], np.prod(im.shape[2:])], order='C')
+            im, newshape=[np.prod(im.shape[:-2]), im.shape[-2], im.shape[- 1]], order='C')
         im_hist = ['', ]
         for cla in range(imh.shape[-1]):
-            im_hist.append(np.histogram(imh[:, :, cla], bins=bins)[1],)
+            im_hist.append(np.histogram(imh[cla, :, :], bins=bins)[1],)
         im_hist.pop(0)
         im_hist = np.array(im_hist)
         im_hist = np.reshape(im_hist, newshape=tuple(

@@ -90,9 +90,10 @@ def save2vid(im, save_file=None, vid_param={}, out=False):
     if type(out) == bool:
         save_path, vid_param = sanitycheck_save2vid(save_file, vid_param)
         vid = save2vid_initcontainer(save_path, vid_param)
-        im = limit_bitdepth(im,vid_param['bitformat'],imin=None,imax=None,inorm=False,hascolor=hasChannels)
     else: 
         vid = out
+    if not im.dtype == np.dtype(vid_param['bitformat']):
+        im = limit_bitdepth(im,vid_param['bitformat'],imin=None,imax=None,inorm=False,hascolor=hasChannels)
     # save stack or image
     if isstack:
         imh = np.transpose(im,[0,2,3,1]) if im.shape[-3] == 3 else im
@@ -107,7 +108,7 @@ def save2vid(im, save_file=None, vid_param={}, out=False):
             save2vid_closecontainer(vid)
             vid = out
     # return
-    return vid
+    return vid, vid_param, hasChannels, isstack
 
 def limit_bitdepth(im,iformat='uint8',imin=None,imax=None,inorm=True,hascolor=False):
     '''
@@ -152,8 +153,18 @@ def limit_bitdepth(im,iformat='uint8',imin=None,imax=None,inorm=True,hascolor=Fa
             #if not imax.shape == ():
             #    imin = imin[...,np.newaxis,np.newaxis]
             im = im / imax
-        if np.issubdtype(iformatd, np.integer):
-            im = im*np.iinfo(iformatd).max
+        else: #just compress range to fit into int
+            im_vr = np.max(im) - np.min(im) # value range
+            if im_vr > np.iinfo(iformatd).max:
+                im_vr -= np.min(im_vr)
+                im_vr = im_vr /np.max(im_vr) * np.iinfo(iformatd).max
+            else: 
+                if np.max(im) > np.iinfo(iformatd).max: # assume that even though the range fits into uint8 the image somehow (due to processing) got shifted above max-value of value-range that the original format had -> hence: shifting back to max instead of resetting by min-offset
+                    im -= (np.max(im) - np.iinfo(iformatd).max)
+                elif np.min(im) < 0: # same as above, just for min
+                    im -= np.min(im)
+        #if np.issubdtype(iformatd, np.integer):
+        #    im = im*np.iinfo(iformatd).max
         im = np.array(im,dtype=iformatd)        
     return im
 
@@ -274,7 +285,7 @@ def sanitycheck_save2vid(save_file, vid_param):
     :vfps:INT:                  14                              -> frames per second
     '''
     # Set standard-configuration
-    std_conf = {'vformat': 'X264', 'vcontainer': 'mp4', 'vaspectratio':[16, 9], 'vscale': None, 'vfps': 12,'vpixels':[1920, 1080],'bitformat': 'uint8'}
+    std_conf = {'vformat': 'XVID', 'vcontainer': 'avi', 'vaspectratio':[16, 9], 'vscale': None, 'vfps': 12,'vpixels':[1920, 1080],'bitformat': 'uint8'} #X264+mp4 does not work on windows
     # check param dict
     if not type(vid_param) == dict:
         vid_param = {}

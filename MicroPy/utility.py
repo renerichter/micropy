@@ -116,19 +116,28 @@ def channel_getshift(im):
     '''
     shift = []
     myshift = 0
-    id1, id2 = shift_indexlist(im)
+    id1, id2 = generate_combinations(3,combined_entries=2)
     for m in range(len(id1)):
         myshift, _, _, _ = findshift(im[id1[m]], im[id2[m]], 100)
         shift.append(myshift)
-    return shift
+    return np.array(shift)
 
 
 def image_getshift(im1, im2):
     shift = []
     myshift = 0
+    im1d = im1.ndim
+    im1s = im1.shape
+    if im1d > 3:
+        im1 = np.reshape(im1,[np.prod(im1s[:-2]),im1s[-2],im1s[-1]])
+        im2 = np.reshape(im2,[np.prod(im1s[:-2]),im1s[-2],im1s[-1]])
     for m in range(im1.shape[0]):
         myshift, _, _, _ = findshift(im1[m], im2[m], 100)
         shift.append(myshift)
+    if im1d > 3: 
+        shift = np.reshape(np.array(shift),tuple(list(im1s[:-2]) + [2,]))
+    else:
+        shift = np.array(shift)
     return shift
 
 def transpose_arbitrary(imstack,idx_startpos=[-2,-1],idx_endpos=[0,1]):
