@@ -146,6 +146,12 @@ def transpose_arbitrary(imstack,idx_startpos=[-2,-1],idx_endpos=[0,1]):
 
     TODO: add security/safety checks
     '''
+    #some sanity
+    if type(idx_startpos) == int:
+        idx_startpos = [idx_startpos,]
+    if type(idx_endpos) == int:
+        idx_endpos = [idx_endpos,]
+    # create transpose list
     trlist = list(range(imstack.ndim))
     for m in range(len(idx_startpos)):
         idxh = trlist[idx_startpos[m]]

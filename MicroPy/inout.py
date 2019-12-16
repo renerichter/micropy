@@ -37,13 +37,25 @@ def add_logging(logger_filepath='./logme.log', start_logger='RAWprocessor'):
     return root, logger
 
 
+def logger_switch_output(str_message, logger=False):
+    '''
+    switches between printing and logging messages
+
+    :param:
+    ======
+    :logger: has to be an object pointing to existing logger and correct level, e.g. Logger.warn
+    '''
+    if logger:
+        logger(str_message)
+    else:
+        print(str_message)
 # %%
 # ---------------------------------------------------------------------------------------------------------
 #                                           LOAD
 
 
 def get_filelist(load_path='.', fn_proto='jpg'):
-    ''' 
+    '''
     Gets a list of file according to a prototype.
 
     :param:
@@ -68,7 +80,7 @@ def get_filelist(load_path='.', fn_proto='jpg'):
 
 def filelist2path(file_list, file_path):
     '''
-    Prepends the file_path to every element of a file_list. 
+    Prepends the file_path to every element of a file_list.
     '''
     res = [file_path + x for x in file_list]
     return res
@@ -80,8 +92,8 @@ def get_batch_numbers(filelist=['', ], batch_size=100):
 
     :param:DEFAULT:
     =======
-    :filelist:['',]: (LIST) list of files 
-    :batch_size:100: (INT) number of images per batch  
+    :filelist:['',]: (LIST) list of files
+    :batch_size:100: (INT) number of images per batch
 
     :out:
     =====
@@ -100,9 +112,32 @@ def get_batch_numbers(filelist=['', ], batch_size=100):
     return fl_len, fl_iter, fl_lastiter
 
 
+def loadStackfast(file_list, logger=False):
+    '''
+    Easy alternative to load stack fast and make useable afterwards.
+    '''
+    from cv2 import imread
+    im = []
+    rl = []
+    for m in range(len(file_list)):
+        try:
+            imh = imread(file_list[m])
+            if type(imh) == np.ndarray:
+                im.append(imh)
+                rl.append(m)
+            else:
+                logger_switch_output("Readin of {} is of type {} and thus was discarded.".format(
+                    file_list[m], type(imh)), logger=logger)
+        except Exception as ex:
+            logger_switch_output(
+                "Exception ---->{}<---- occured.".format(ex), logger=logger)
+    im = np.transpose(np.array(im), [0, 3, 1, 2])
+    return np.array(im), rl
+
+
 def loadStack(file_list, ids=None, ide=None, channel=1):
     '''
-    loads an image stack from a file-list (containing the absolute path to a file) given a start and end-number. 
+    loads an image stack from a file-list (containing the absolute path to a file) given a start and end-number.
     Caution: Errors in file_list or exp_path not catched yet
 
     Param:
@@ -208,31 +243,36 @@ def loadPrepent(file_list, idx=0, channel=1, prepent_path=False, exp_path=None):
 
 def rename_files(file_dir, version=1):
     '''
-    Renames numbered stack and inserts 0s so that readin it in works better. 
+    Renames numbered stack and inserts 0s so that readin it in works better.
     Leaves out image #9. Why?
     '''
     tstart = time.time()
+    brename = False
     # glob(load_experiment + '*.' + file_extension
     file_list = os.listdir(file_dir)
-    file_list.sort(key=len)  # sorts the string-list ascending
+    file_list.sort(key=len)  # sorts the string-list ascending by length
     index_max_nbr = len(file_list)
     file_max_length = len(file_list[-1])  # should now yield the max length
     # if numbers smaller e15
     # index_length = math.floor(math.log10(index_max_nbr))+1
     # numbers are enclosed by _ -> use regex
-    for myc in range(0, index_max_nbr-1):
-        file_len = len(file_list[myc])
-        if(file_len < file_max_length):
-            if version == 0:  # for older measurements structure was 'yyyy-mm-dd_techique_nbr_TECH_NIQUE.jpg'
-                pos_help = re.search('_[0-9]+_', file_list[myc])
-            elif version == 1:  # for new structure, e.g '2019-07-12_Custom_7114.jpg'
-                pos_help = re.search('_[0-9]+.', file_list[myc])
-            else:  # for new structure, e.g '20190815-TYPE-Technique--00001.jpg'
-                pos_help = re.search('--[0-9]+.', file_list[myc])
-            string_help = str(0)*(file_max_length-file_len)
-            os.rename(file_dir + file_list[myc], file_dir + file_list[myc]
-                      [0:pos_help.start()+2] + string_help + file_list[myc][pos_help.start()+2:])
-    print('Renaming took: {0}s.'.format(time.time()-tstart))
+    if not len(file_list[0]) == file_max_length:
+        for myc in range(0, index_max_nbr-1):
+            file_len = len(file_list[myc])
+            if(file_len < file_max_length):
+                if version == 0:  # for older measurements structure was 'yyyy-mm-dd_techique_nbr_TECH_NIQUE.jpg'
+                    pos_help = re.search('_[0-9]+_', file_list[myc])
+                elif version == 1:  # for new structure, e.g '2019-07-12_Custom_7114.jpg'
+                    pos_help = re.search('_[0-9]+.', file_list[myc])
+                else:  # for new structure, e.g '20190815-TYPE-Technique--00001.jpg'
+                    pos_help = re.search('--[0-9]+.', file_list[myc])
+                string_help = str(0)*(file_max_length-file_len)
+                os.rename(file_dir + file_list[myc], file_dir + file_list[myc]
+                          [0:pos_help.start()+2] + string_help + file_list[myc][pos_help.start()+2:])
+        brename = True
+    tdelta = time.time()-tstart
+    print('Renaming took: {0}s.'.format(tdelta))
+    return tdelta, brename
 
 
 # %% ------------------------------------------------------
@@ -242,7 +282,7 @@ def rename_files(file_dir, version=1):
 def print_stack2subplot(imstack, plt_raster=[4, 4], plt_format=[8, 6], title=None, titlestack=None, colorbar=True, axislabel=False):
     '''
     Plots an 3D-Image-stack as set of subplots
-    Based on this: https://stackoverflow.com/a/46616645 
+    Based on this: https://stackoverflow.com/a/46616645
     '''
     if type(imstack) == list:
         imstack = nip.cat((imstack))
@@ -304,5 +344,5 @@ def dir_test_existance(mydir):
             # logger.debug(
             #    'Folder: {0} created successfully'.format(mydir))
     finally:
-        #logger.debug('Folder check done!')
+        # logger.debug('Folder check done!')
         pass
