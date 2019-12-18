@@ -12,10 +12,12 @@ import matplotlib.pyplot as plt
 
 def add_logging(logger_filepath='./logme.log', start_logger='RAWprocessor'):
     '''
-    adds logging to an environment
+    adds logging to an environment. Deletes all existing loggers and creates a stream and a file logger based on setting the root logger and later adding a file logger 'logger'. 
     '''
     import logging
     from sys import stdout
+    # get root
+    root = logging.getLogger()
     # set formatters
     fromage = logging.Formatter(
         datefmt='%Y%m%d %H:%M:%S', fmt='[ %(levelname)-8s ] [ %(name)-13s ] [ %(asctime)s ] %(message)s')
@@ -26,12 +28,20 @@ def add_logging(logger_filepath='./logme.log', start_logger='RAWprocessor'):
     fh = logging.FileHandler(logger_filepath)
     fh.setLevel(logging.DEBUG)
     fh.setFormatter(fromage)
-    # get root and define level
-    root = logging.getLogger()
+    if 'logger' in locals():
+        if len(logger.handlerse):
+            for loghdl in logger.handlers:
+                logger.removeHandler(loghdl)
+    if len(root.handlers):
+        while len(root.handlers):  # make sure that root does not contain any more handlers
+            for loghdl in root.handlers:  # it seems it only can delete 1 type of handlers and then leaves the others if multiple are existing
+                #print("deleting handler={}".format(loghdl))
+                root.removeHandler(loghdl)
+    # set root levels
     root.setLevel(logging.DEBUG)
     root.addHandler(strh)
     root.addHandler(fh)
-    # add first new handler
+    # add first new handler -> root levels are automatically applied
     logger = logging.getLogger('RAWprocessor')
     logger.setLevel(logging.DEBUG)
     return root, logger
@@ -106,7 +116,8 @@ def get_batch_numbers(filelist=['', ], batch_size=100):
     #
     fl_len = len(filelist)
     fl_iter = floor(fl_len/batch_size) + (1 if fl_len % batch_size > 0 else 0)
-    fl_lastiter = fl_len % batch_size
+    fl_lastiter = batch_size if (
+        fl_len % batch_size == 0 and fl_iter > 0) else fl_len % batch_size
     print("{} files will be split into {} iterations with {} objects in the last iteration using a batch_size of {}.".format(
         fl_len, fl_iter, fl_lastiter, batch_size))
     return fl_len, fl_iter, fl_lastiter
@@ -131,7 +142,7 @@ def loadStackfast(file_list, logger=False):
         except Exception as ex:
             logger_switch_output(
                 "Exception ---->{}<---- occured.".format(ex), logger=logger)
-    im = np.transpose(np.array(im), [0, 3, 1, 2])
+    im = np.transpose(np.array(im), [0, -1, 1, 2])
     return np.array(im), rl
 
 

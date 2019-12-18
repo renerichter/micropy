@@ -154,10 +154,12 @@ def limit_bitdepth(im,iformat='uint8',imin=None,imax=None,inorm=True,hascolor=Fa
             #    imin = imin[...,np.newaxis,np.newaxis]
             im = im / imax
         else: #just compress range to fit into int
-            im_vr = np.max(im) - np.min(im) # value range
+            im_min = np.min(im)
+            im_max = np.max(im)
+            im_vr = im_max - im_min # value range
             if im_vr > np.iinfo(iformatd).max:
-                im_vr -= np.min(im_vr)
-                im_vr = im_vr /np.max(im_vr) * np.iinfo(iformatd).max
+                im -= im_min
+                im = im /np.max(im) * np.iinfo(iformatd).max
             else: 
                 if np.max(im) > np.iinfo(iformatd).max: # assume that even though the range fits into uint8 the image somehow (due to processing) got shifted above max-value of value-range that the original format had -> hence: shifting back to max instead of resetting by min-offset
                     im -= (np.max(im) - np.iinfo(iformatd).max)
