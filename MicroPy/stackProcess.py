@@ -287,6 +287,11 @@ def sanitycheck_save2vid(save_file, vid_param):
     :vfps:INT:                  14                              -> frames per second
     '''
     # Set standard-configuration
+    from sys import platform as sysplatform
+
+    #if sysplatform == 'linux': #somehow it is not working on FA8_TITANX_UBU system... -.-'
+    #    std_conf = {'vformat': 'H264', 'vcontainer': 'mp4', 'vaspectratio':[16, 9], 'vscale': None, 'vfps': 12,'vpixels':[1920, 1080],'bitformat': 'uint8'} #X264+mp4 does not work on windows
+    #else:
     std_conf = {'vformat': 'XVID', 'vcontainer': 'avi', 'vaspectratio':[16, 9], 'vscale': None, 'vfps': 12,'vpixels':[1920, 1080],'bitformat': 'uint8'} #X264+mp4 does not work on windows
     # check param dict
     if not type(vid_param) == dict:

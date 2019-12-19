@@ -85,6 +85,7 @@ def get_filelist(load_path='.', fn_proto='jpg'):
     # for now -> short solution
     from NanoImagingPack import get_sorted_file_list as gsfl
     fl = gsfl(load_path, fn_proto, sort='integer_key', key='0')
+    fl.sort()
     return fl
 
 
