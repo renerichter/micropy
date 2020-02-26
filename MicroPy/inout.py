@@ -124,16 +124,23 @@ def get_batch_numbers(filelist=['', ], batch_size=100):
     return fl_len, fl_iter, fl_lastiter
 
 
-def loadStackfast(file_list, logger=False):
+def loadStackfast(file_list, logger=False, colorful=1):
     '''
     Easy alternative to load stack fast and make useable afterwards.
     '''
     from cv2 import imread
+    from tifffile import imread as timread
     im = []
     rl = []
     for m in range(len(file_list)):
         try:
-            imh = imread(file_list[m])
+            if colorful:
+                imh = imread(file_list[m])
+            else:
+                imh = imread(file_list[m], 0)
+                if not type(imh) == np.ndarray:
+                    # if imh == None:
+                    imh = timread(file_list[m])
             if type(imh) == np.ndarray:
                 im.append(imh)
                 rl.append(m)
@@ -143,7 +150,9 @@ def loadStackfast(file_list, logger=False):
         except Exception as ex:
             logger_switch_output(
                 "Exception ---->{}<---- occured.".format(ex), logger=logger)
-    im = np.transpose(np.array(im), [0, -1, 1, 2])
+    im = np.array(im)
+    if im.ndim > 3:
+        im = np.transpose(im, [0, -1, 1, 2])
     return np.array(im), rl
 
 
@@ -297,13 +306,13 @@ def print_stack2subplot(imstack, plt_raster=[4, 4], plt_format=[8, 6], title=Non
     Based on this: https://stackoverflow.com/a/46616645
     '''
     if type(imstack) == list:
-        imstack = nip.cat((imstack))
+        imstack_len = len(imstack)
     # needs NanoImagingPack imported as nip
     elif type(imstack) == nip.image or type(imstack) == np.array:
-        pass
+        imstack_len = imstack.shape
     else:
         raise TypeError("Unexpected Data-type.")
-    if not(imstack.ndim == 3):
+    if not(imstack_len > 0):
         raise ValueError("Image size not fitting!")
     # check for title
     from datetime import datetime
@@ -332,7 +341,7 @@ def print_stack2subplot(imstack, plt_raster=[4, 4], plt_format=[8, 6], title=Non
         else:
             axm.set_title(
                 "Row:"+str(m // plt_raster[1])+", Col:"+str(m % plt_raster[1]))
-        if m >= imstack.shape[0]-1:
+        if m >= imstack_len-1:
             break
     if title:
         fig.suptitle(title)

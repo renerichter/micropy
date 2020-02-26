@@ -15,10 +15,11 @@ __author__ = "René Lachmann"
 __copyright__ = "Copyright 2019"
 __credits__ = ["Jan Becker, Sebastian Unger, David McFadden"]
 __license__ = "MIT"
-__version__ = "0.1a"
+__version__ = "0.2a"
 __maintainer__ = "René Lachmann"
 __status__ = "Creation"
 __date__ = "25.11.2019"
+__last_update__ = "12.02.2020"
 
 # %%
 # -------------------------------------------------------------------------

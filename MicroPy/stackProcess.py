@@ -4,18 +4,20 @@ from .utility import channel_getshift
 import numpy as np
 import NanoImagingPack as nip
 import cv2
-import os 
-import PIL 
+import os
+import PIL
 import psutil
 import json
-from time import time 
+from time import time
 import logging
 from datetime import datetime
-from time import time
+from time import time, sleep
 import matplotlib.pyplot as plt
 
 # %%
 # -------------------------------- VIDEO TOOLS -------------------------------
+
+
 def convert_stk2vid(save_file, file_list=None, batch_size=None, mode=0, vid_param={}):
     '''
     This function converts a stack of images into a movie. On standard configuration stores frames into split-videos.
@@ -43,25 +45,28 @@ def convert_stk2vid(save_file, file_list=None, batch_size=None, mode=0, vid_para
     else:
         # get parameters
         [fl_len, fl_iter, fl_lastiter] = get_batch_numbers(
-        filelist=file_list, batch_size=batch_size)
-        #check sanity of data
+            filelist=file_list, batch_size=batch_size)
+        # check sanity of data
         save_file, vid_param = sanitycheck_save2vid(save_file, vid_param)
         # start out-container
         out = save2vid_initcontainer(save_file[0] + save_file[1], vid_param)
-        #iterate over batches
+        # iterate over batches
         for cla in range(fl_iter):
             # get right iteration values
             ids = cla * batch_size
             ide = ids+batch_size-1
             if cla == fl_iter:
                 batch_size = fl_lastiter
-            #load batch 
-            data_stack, data_stack_rf = loadStack(file_list=file_list, ids=ids, ide=ide, channel=3)
-            #limit to bit_depth and reshape for writing out
+            # load batch
+            data_stack, data_stack_rf = loadStack(
+                file_list=file_list, ids=ids, ide=ide, channel=3)
+            # limit to bit_depth and reshape for writing out
             dss = data_stack.shape
-            im = np.reshape(data_stack,newshape=(dss[:-3]+(dss[-2],)+(dss[-1],)+(dss[-3],)))
-            data_stack= limit_bitdepth(im,vid_param['bitformat'],imin=None,imax=None,inorm=True,hascolor=True)
-            save2vid(save_file,vid_param,out)
+            im = np.reshape(data_stack, newshape=(
+                dss[:-3]+(dss[-2],)+(dss[-1],)+(dss[-3],)))
+            data_stack = limit_bitdepth(
+                im, vid_param['bitformat'], imin=None, imax=None, inorm=True, hascolor=True)
+            save2vid(save_file, vid_param, out)
     out.release()
     print("Thanks for calling: Convert_stk2vid. ")
     return True
@@ -90,17 +95,21 @@ def save2vid(im, save_file=None, vid_param={}, out=False):
     if type(out) == bool:
         save_path, vid_param = sanitycheck_save2vid(save_file, vid_param)
         vid = save2vid_initcontainer(save_path, vid_param)
-    else: 
+    else:
         vid = out
     if not im.dtype == np.dtype(vid_param['bitformat']):
-        im = limit_bitdepth(im,vid_param['bitformat'],imin=None,imax=None,inorm=False,hascolor=hasChannels)
+        im = limit_bitdepth(
+            im, vid_param['bitformat'], imin=None, imax=None, inorm=False, hascolor=hasChannels)
     # save stack or image
     if isstack:
-        imh = np.transpose(im,[0,2,3,1]) if im.shape[-3] == 3 else im
+        imh = np.transpose(im, [0, 2, 3, 1]) if im.shape[-3] == 3 else im
         for m in range(im.shape[0]):
             vid.write(imh[m])
     else:
-        imh = np.transpose(im,[1,2,0]) if im.shape[-3] == 3 else im
+        if hasChannels:
+            imh = np.transpose(im, [1, 2, 0])
+        else:
+            imh = np.repeat(im[:, :, np.newaxis], axis=-1, repeats=3)
         vid.write(imh)
     # close stack
     if type(out) == bool:
@@ -110,7 +119,8 @@ def save2vid(im, save_file=None, vid_param={}, out=False):
     # return
     return vid, vid_param, hasChannels, isstack
 
-def limit_bitdepth(im,iformat='uint8',imin=None,imax=None,inorm=True,hascolor=False):
+
+def limit_bitdepth(im, iformat='uint8', imin=None, imax=None, inorm=True, hascolor=False):
     '''
     Rescales the image into uint8. immin and immax can be explicitely given (e.g. in term of stackprocessing).
     Asssumes stack-shape [ndim,y,x] or [ndim,Y,X,COLOR] and takes imin and imax of whole stack if not given otherwise.
@@ -124,51 +134,63 @@ def limit_bitdepth(im,iformat='uint8',imin=None,imax=None,inorm=True,hascolor=Fa
     a1 = limit_bitdepth(a,'uint32')
     <intern: im = nip.readim('orka');iformat='uint8';imin=None;imax=None;inorm=True;  >
     '''
+    np.array
     iformatd = np.dtype(iformat)
     imdh = im.shape
-    if im.ndim <2:
-        raise ValueError("Image dimension too small. Only for 2D and higher implemented.")
+    if im.ndim < 2:
+        raise ValueError(
+            "Image dimension too small. Only for 2D and higher implemented.")
     else:
-        if inorm== True:
+        if inorm == True:
             # normalize to 0 only if minimum value of aimed datatype is zero (=avoid clipping)
             if np.iinfo(iformatd).min == 0:
-                if imin == None: 
+                if imin == None:
                     if hascolor:
-                        if im.ndim>3:
-                            imin = np.min(im,axis=[-3,-2])[...,np.newaxis,np.newaxis,:]
-                        else: 
-                            imin = np.min(im,axis=[-3,-2])[np.newaxis,np.newaxis,:]
-                    else: 
+                        if im.ndim > 3:
+                            imin = np.min(
+                                im, axis=[-3, -2])[..., np.newaxis, np.newaxis, :]
+                        else:
+                            imin = np.min(
+                                im, axis=[-3, -2])[np.newaxis, np.newaxis, :]
+                    else:
                         imin = np.min(im)
-                #if not imin.shape == ():
+                # if not imin.shape == ():
                 #    imin = imin[...,np.newaxis,np.newaxis]
                 im = im - imin
-            if imax == None: 
-                if hascolor: 
-                    if im.ndim>3:
-                        imax = abs(np.max(abs(im),axis=[-3,-2]))[...,np.newaxis,np.newaxis,:]
-                    else: 
-                        imax = abs(np.max(abs(im),axis=[-3,-2]))[...,np.newaxis,np.newaxis,:]
-                imax = abs(np.max(abs(im))) #maximum could be a negative value (inner abs) AND do not want to have change of sign (outer abs)
-            #if not imax.shape == ():
+            if imax == None:
+                if hascolor:
+                    if im.ndim > 3:
+                        imax = abs(
+                            np.max(abs(im), axis=[-3, -2]))[..., np.newaxis, np.newaxis, :]
+                    else:
+                        imax = abs(
+                            np.max(abs(im), axis=[-3, -2]))[..., np.newaxis, np.newaxis, :]
+                # maximum could be a negative value (inner abs) AND do not want to have change of sign (outer abs)
+                imax = abs(np.max(abs(im)))
+            # if not imax.shape == ():
             #    imin = imin[...,np.newaxis,np.newaxis]
             im = im / imax
-        else: #just compress range to fit into int
+        else:  # just compress range to fit into int
             im_min = np.min(im)
             im_max = np.max(im)
-            im_vr = im_max - im_min # value range
-            if im_vr > np.iinfo(iformatd).max:
+            im_vr = im_max - im_min  # value range
+            try:
+                dtm = np.iinfo(iformatd).max
+            except:
+                dtm = np.finfo(iformatd).max
+            if im_vr > dtm:
                 im -= im_min
-                im = im /np.max(im) * np.iinfo(iformatd).max
-            else: 
-                if np.max(im) > np.iinfo(iformatd).max: # assume that even though the range fits into uint8 the image somehow (due to processing) got shifted above max-value of value-range that the original format had -> hence: shifting back to max instead of resetting by min-offset
-                    im -= (np.max(im) - np.iinfo(iformatd).max)
-                elif np.min(im) < 0: # same as above, just for min
+                im = im / np.max(im) * dtm
+            else:
+                if np.max(im) > dtm:  # assume that even though the range fits into uint8 the image somehow (due to processing) got shifted above max-value of value-range that the original format had -> hence: shifting back to max instead of resetting by min-offset
+                    im -= (np.max(im) - dtm)
+                elif np.min(im) < 0:  # same as above, just for min
                     im -= np.min(im)
-        #if np.issubdtype(iformatd, np.integer):
+        # if np.issubdtype(iformatd, np.integer):
         #    im = im*np.iinfo(iformatd).max
-        im = np.array(im,dtype=iformatd)        
+        im = np.array(im, dtype=iformatd)
     return im
+
 
 def save2vid_assure_stack_shape(im):
     '''
@@ -179,17 +201,18 @@ def save2vid_assure_stack_shape(im):
     =======
     :im:        numpy or nip-array (image)
     '''
-    isstack=False
-    hasChannels=False
+    isstack = False
+    hasChannels = False
     # convert stack to correct color_space
     if im.ndim < 2:
         raise ValueError("Dimension of input-image is too small.")
     if im.ndim == 2:  # only 2D-image
         pass
     else:  # nD-image
-        hasChannels=True
-        if im.shape[-3] > 3 and im.ndim>3:  # -3.dim is not channel, but stack-dimension
-            im = np.reshape(im,newshape=[np.prod(im.shape[:-2],im.shape[-2],im.shape[-1])])
+        hasChannels = True
+        if im.shape[-3] > 3 and im.ndim > 3:  # -3.dim is not channel, but stack-dimension
+            im = np.reshape(im, newshape=[np.prod(
+                im.shape[:-2], im.shape[-2], im.shape[-1])])
             isstack = True
         else:  # -3.dim is channel dimension
             if im.shape[-3] == 1:
@@ -199,9 +222,9 @@ def save2vid_assure_stack_shape(im):
                 ims[-3] = 1
                 im_zeros = np.zeros(ims)
                 im = np.concatenate([im, im_zeros], axis=-3)
-            else: # no problem
-                pass  
-    #return image and whether it is a stack
+            else:  # no problem
+                pass
+    # return image and whether it is a stack
     return im, hasChannels, isstack
     # if channel < 3:
     #        frame = cv2.cvtColor(
@@ -265,13 +288,15 @@ def save2vid_initcontainer(save_name, vid_param={}):
         *vid_param['vformat']), vid_param['vfps'], (vid_param['vpixels'][1], vid_param['vpixels'][0]))
     return out
 
+
 def save2vid_closecontainer(out):
     '''
     Safely closes the container.
     '''
-    time.sleep(0.05)
+    sleep(0.05)
     out.release()
-    time.sleep(0.5)
+    sleep(0.5)
+
 
 def sanitycheck_save2vid(save_file, vid_param):
     '''
@@ -289,10 +314,11 @@ def sanitycheck_save2vid(save_file, vid_param):
     # Set standard-configuration
     from sys import platform as sysplatform
 
-    #if sysplatform == 'linux': #somehow it is not working on FA8_TITANX_UBU system... -.-'
+    # if sysplatform == 'linux': #somehow it is not working on FA8_TITANX_UBU system... -.-'
     #    std_conf = {'vformat': 'H264', 'vcontainer': 'mp4', 'vaspectratio':[16, 9], 'vscale': None, 'vfps': 12,'vpixels':[1920, 1080],'bitformat': 'uint8'} #X264+mp4 does not work on windows
-    #else:
-    std_conf = {'vformat': 'XVID', 'vcontainer': 'avi', 'vaspectratio':[16, 9], 'vscale': None, 'vfps': 12,'vpixels':[1920, 1080],'bitformat': 'uint8'} #X264+mp4 does not work on windows
+    # else:
+    std_conf = {'vformat': 'XVID', 'vcontainer': 'avi', 'vaspectratio': [16, 9], 'vscale': None, 'vfps': 12, 'vpixels': [
+        1920, 1080], 'bitformat': 'uint8'}  # X264+mp4 does not work on windows
     # check param dict
     if not type(vid_param) == dict:
         vid_param = {}
@@ -315,16 +341,17 @@ def check_path(file_path):
     Checks whether file_path exists and if not, creates it.
     '''
     if type(file_path) == str:
-        if file_path[-1] not in ["/","\\"]:
+        if file_path[-1] not in ["/", "\\"]:
             import re
             regs = re.compile(r'([\w:]+)*/((\w+)*/)*')
             regss = regs.search(file_path)
-            if regss == None: 
+            if regss == None:
                 regs = re.compile(r'([\w:]+)*\\((\w+)*\\)*')
                 regss = regs.search(file_path)
-            if regss == None: 
-                raise ValueError('Could not match directory path in file_path.')
-            else: 
+            if regss == None:
+                raise ValueError(
+                    'Could not match directory path in file_path.')
+            else:
                 file_path = regss.group()
         if not os.path.isdir(file_path):
             os.mkdir(file_path)
@@ -412,7 +439,7 @@ def makeVid(path_dict, bg=[], im_mean=[], batch_size=100, file_limit=0, vid_chan
     vidc = {'R': 0, 'G': 1, 'B': 2, 'RGB': 3}[vid_channel]
     save_name = save_experiment + \
         path_dict['experiment'][:-1] + path_dict['name_addon'] + text_channel
-    save_video_name = save_name + {'XVID': '.avi','H264': '.mp4'}[vid_format]
+    save_video_name = save_name + {'XVID': '.avi', 'H264': '.mp4'}[vid_format]
     #
     # ----------------- get file-list and batch size --------------------------
     file_list, file_total, batch_iterations, batch_last_iter = getIterationProperties(
@@ -483,7 +510,8 @@ def makeVid(path_dict, bg=[], im_mean=[], batch_size=100, file_limit=0, vid_chan
             c_limit = myoffset+batch_size - 1
         #
         # ------------------ read in data --------------------------------------
-        im1, read_list = loadStack(file_list=file_list,channel=vidc, ids=myoffset, ide=c_limit)
+        im1, read_list = loadStack(
+            file_list=file_list, channel=vidc, ids=myoffset, ide=c_limit)
         # format to correct size
         if vid_binning:
             print("Put binning in here! Fourier-based.")
@@ -519,9 +547,9 @@ def makeVid(path_dict, bg=[], im_mean=[], batch_size=100, file_limit=0, vid_chan
             c_limit-myoffset, 'images']
         computation_follower1[str(myb)]['time'] = [time_needed, 's']
         # save to file
-    time.sleep(0.5)  # let system settle for closing file
+    sleep(0.5)  # let system settle for closing file
     out.release()
-    time.sleep(0.5)  # let system settle for closing file
+    sleep(0.5)  # let system settle for closing file
     computation_follower1['total_time'] = [myt1.times[myb+1], 's']
     with open(save_name + '_cb.txt', 'w') as file:
         file.write(json.dumps(computation_follower1))
@@ -531,36 +559,39 @@ def makeVid(path_dict, bg=[], im_mean=[], batch_size=100, file_limit=0, vid_chan
 # --------------------------------------------------------------------------------------------------
 #                                   CLEAN STACK
 
-def processStack(im1,myb,im1min,im1max):
+def processStack(im1, myb, im1min, im1max):
     if len(im1.shape) < 4:
         # variance select
-        im1v = np.var(np.reshape(im1,[im1.shape[0],np.prod(im1.shape[1:3])]),axis=1)
-        im1vm = np.mean(im1v,axis=0)
-        im1_sl = np.equal(im1v > 2* im1vm,im1v < 0.5*im1vm)
-        if myb ==0: 
-            im1min = np.min(im1[im1_sl,:,:])
-            im1max = np.max(im1[im1_sl,:,:])
-    else: 
-        im1v = np.var(np.reshape(im1,[im1.shape[0],np.prod(im1.shape[1:3]),im1.shape[3]]),axis=1)
-        im1vm = np.mean(im1v,axis=0)
-        im1_sl = np.equal(im1v > 2* im1vm,im1v < 0.5*im1vm)
-        im1_sla = np.logical_and(im1_sl[:,0],im1_sl[:,1],im1_sl[:,2])
+        im1v = np.var(np.reshape(
+            im1, [im1.shape[0], np.prod(im1.shape[1:3])]), axis=1)
+        im1vm = np.mean(im1v, axis=0)
+        im1_sl = np.equal(im1v > 2 * im1vm, im1v < 0.5*im1vm)
+        if myb == 0:
+            im1min = np.min(im1[im1_sl, :, :])
+            im1max = np.max(im1[im1_sl, :, :])
+    else:
+        im1v = np.var(np.reshape(
+            im1, [im1.shape[0], np.prod(im1.shape[1:3]), im1.shape[3]]), axis=1)
+        im1vm = np.mean(im1v, axis=0)
+        im1_sl = np.equal(im1v > 2 * im1vm, im1v < 0.5*im1vm)
+        im1_sla = np.logical_and(im1_sl[:, 0], im1_sl[:, 1], im1_sl[:, 2])
         # im1mean = np.mean(im1[im1_sla,:,:,:],axis=0) #np.reshape(im1,[np.prod(im1.shape[0:3]),im1.shape[3]])
         # im1s = np.reshape(im1[im1_sla,:,:,:],[np.prod(im1[im1_sla,:,:,:].shape[0:3]),im1[im1_sla,:,:,:].shape[3]])
         if myb == 0:
-            im1min = np.min(im1[im1_sl,:,:,:])
-            im1max = np.max(im1[im1_sl,:,:,:])            
+            im1min = np.min(im1[im1_sl, :, :, :])
+            im1max = np.max(im1[im1_sl, :, :, :])
     im1 = im1 - im1min
-    im1 = im1 / im1max    
-    im1u = np.uint8( np.round(im1 * 255) )
-    im1u[im1u<0] = 0
-    im1u[im1u>255]=255
-    # raise gamma    
+    im1 = im1 / im1max
+    im1u = np.uint8(np.round(im1 * 255))
+    im1u[im1u < 0] = 0
+    im1u[im1u > 255] = 255
+    # raise gamma
     gamma = 0.9
     im1a = np.uint8(np.round(((im1u**gamma)/np.max(im1u**gamma))*255))
-    return [im1a,im1min,im1max,im1_sl]
-    
-def addTextNWrite(im1, im_sel, path_dict=None, out=False,image_timer=None,channel=3, vid_prop=None, font_size=12, text_channel='G'):
+    return [im1a, im1min, im1max, im1_sl]
+
+
+def addTextNWrite(im1, im_sel, path_dict=None, out=False, image_timer=None, channel=3, vid_prop=None, font_size=12, text_channel='G'):
     '''
     Not implemented ....where did I loose thi?
     '''
@@ -568,6 +599,8 @@ def addTextNWrite(im1, im_sel, path_dict=None, out=False,image_timer=None,channe
     return True
 
 # %% Plot to Graphs
+
+
 def convert2graph(res, save_fpath):
     '''
     Directly fitting to the shape 
