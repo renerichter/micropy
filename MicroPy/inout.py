@@ -83,8 +83,16 @@ def get_filelist(load_path='.', fn_proto='jpg'):
     # if os.path.isdir(fname)
 
     # for now -> short solution
-    from NanoImagingPack import get_sorted_file_list as gsfl
-    fl = gsfl(load_path, fn_proto, sort='integer_key', key='0')
+    try:
+        from NanoImagingPack import get_sorted_file_list as gsfl
+        fl = gsfl(load_path, fn_proto, sort='integer_key', key='0')
+    except Exception as e:
+        print('Exception in Get_Filelist: {}'.format(e))
+        from os import listdir
+        from os.path import isfile, join, getmtime
+        fl = [(f, getmtime(join(load_path, f)))
+              for f in listdir(load_path) if isfile(join(load_path, f))]
+        fl = list(filter(lambda x: x[0].find(fn_proto) >= 0, fl))
     fl.sort()
     return fl
 
