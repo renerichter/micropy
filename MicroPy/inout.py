@@ -12,7 +12,7 @@ import matplotlib.pyplot as plt
 
 def add_logging(logger_filepath='./logme.log', start_logger='RAWprocessor'):
     '''
-    adds logging to an environment. Deletes all existing loggers and creates a stream and a file logger based on setting the root logger and later adding a file logger 'logger'. 
+    adds logging to an environment. Deletes all existing loggers and creates a stream and a file logger based on setting the root logger and later adding a file logger 'logger'.
     '''
     import logging
     from sys import stdout
@@ -35,7 +35,7 @@ def add_logging(logger_filepath='./logme.log', start_logger='RAWprocessor'):
     if len(root.handlers):
         while len(root.handlers):  # make sure that root does not contain any more handlers
             for loghdl in root.handlers:  # it seems it only can delete 1 type of handlers and then leaves the others if multiple are existing
-                #print("deleting handler={}".format(loghdl))
+                # print("deleting handler={}".format(loghdl))
                 root.removeHandler(loghdl)
     # set root levels
     root.setLevel(logging.DEBUG)
@@ -93,6 +93,8 @@ def get_filelist(load_path='.', fn_proto='jpg'):
         fl = [(f, getmtime(join(load_path, f)))
               for f in listdir(load_path) if isfile(join(load_path, f))]
         fl = list(filter(lambda x: x[0].find(fn_proto) >= 0, fl))
+    if type(fl[0]) == tuple:
+        fl = [m[0] for m in fl]  # make sure that only filenames are left over
     fl.sort()
     return fl
 
@@ -141,6 +143,8 @@ def loadStackfast(file_list, logger=False, colorful=1):
     im = []
     rl = []
     for m in range(len(file_list)):
+
+        # try to read in
         try:
             if colorful:
                 imh = imread(file_list[m])
@@ -149,15 +153,22 @@ def loadStackfast(file_list, logger=False, colorful=1):
                 if not type(imh) == np.ndarray:
                     # if imh == None:
                     imh = timread(file_list[m])
-            if type(imh) == np.ndarray:
-                im.append(imh)
-                rl.append(m)
-            else:
-                logger_switch_output("Readin of {} is of type {} and thus was discarded.".format(
-                    file_list[m], type(imh)), logger=logger)
         except Exception as ex:
             logger_switch_output(
-                "Exception ---->{}<---- occured.".format(ex), logger=logger)
+                "Exception ---->{}<---- occured. Trying again with tiffile.".format(ex), logger=logger)
+            try:
+                imh = timread(file_list[m])
+            except Exception as ex2:
+                logger_switch_output(
+                    "2nd try failed with Exception:  ---->{}<---- occured. Trying again with tiffile.".format(ex2), logger=logger)
+
+        # check formatting
+        if type(imh) == np.ndarray:
+            im.append(imh)
+            rl.append(m)
+        else:
+            logger_switch_output("Readin of {} is of type {} and thus was discarded.".format(
+                file_list[m], type(imh)), logger=logger)
     im = np.array(im)
     if im.ndim > 3:
         im = np.transpose(im, [0, -1, 1, 2])
