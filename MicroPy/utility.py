@@ -346,8 +346,7 @@ def norm_back(imstack, normstack, normtype):
 
 def add_multi_newaxis(imstack, newax_pos=[-1, ]):
     '''
-    Adds new-axis at the mentioned position given the final (assumed) shape.
-    So hence, if ndim = 3 and e.g. (3,256,256) and newax_pos = (1,2,-1) it will lead to:(3,1,1,256,256,1), where negative indexes are added first (postpending) and positive indexes are inserted last (prepend).
+    Adds new-axis at the mentioned position with respect to the final shape per step. So hence, if ndim = 3 and e.g. (3,256,256) and newax_pos = (1,2,-1) it will lead to:(3,1,1,256,256,1), where negative indexes are added first (postpending) and positive indexes are inserted last (prepend).
 
     :param:
     =======
@@ -469,7 +468,7 @@ def calculate_na_fincorr(obj_M_new=5, obj_M=10, obj_NA=0.25, obj_N=1, obj_di=160
     obj_ds = obj_di / obj_M
     # now use thin-lense approximation for objective to get a guess -> assume objective as "thin-lens"
     obj_f = harmonic_sum(obj_ds, obj_di)  # focal-plane distance
-    obj_alpha = np.arcsin(obj_NA/obj_N)
+    obj_alpha = np.arcsin(obj_NA/obj_N)  # half opening-angle
     obj_D2 = obj_ds * np.tan(obj_alpha)  # half Diameter of "lens"
     # calc new NA and distances
     # f *M1 / (M1+1) = g1 -> given f is constant
@@ -503,9 +502,11 @@ def calculate_magnification(pixel_range=1000, counted_periods=10, pixel_size=1.4
 
     '''
     period_length_pixel = pixel_range/counted_periods
+    pixel_size_in_sample = period_length_real / period_length_pixel
     magnification = period_length_pixel * pixel_size / period_length_real
     if printout == True:
-        print("New Magnification is: M={}".format(np.round(magnification, 5)))
+        print("New Magnification is: M={}.\nPixelsize in Sample-Coordinates is {}um.".format(
+            np.round(magnification, 5), pixel_size_in_sample))
     return magnification
 
 
@@ -537,12 +538,21 @@ def calculate_resolution(obj_na=0.25, obj_n=1, wave_em=525, technique='brightfie
             na = cond_na + obj_na
         else:
             na = obj_na
+    alpha = np.arcsin(obj_na/obj_n)
     # calculate Abbe-support-limit
     if technique == 'brightfield':
         res[0] = wave_em/na
         res[1] = res[0]
-        alpha = np.arcsin(obj_na/obj_n)
-        res[2] = wave_em/(obj_n*(1-np.cos(alpha)))  # check this again!
+        res[2] = wave_em/(obj_n*(1-np.cos(alpha)))
+    elif technique == 'confocal':
+        # assume to be in incoherent case right now
+        if fluorescene:
+            leff = harmonic_sum(wave_ex, wave_em)
+        else:
+            leff = wave_em
+        res[0] = leff / na
+        res[1] = res[0]
+        res[2] = leff/(obj_n*(1-np.cos(alpha)))
     else:
         raise ValueError("Selected technique not implemented yet.")
     # multiply factors for criteria
