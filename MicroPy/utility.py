@@ -331,6 +331,10 @@ def image_binning(im, bin_size=2, mode='real_sum', normalize='old'):
         res = np.transpose(res, id3)
     return res
 
+def bin_norm(im, bins):
+    im = np.array(nip.resample(im, create_value_on_dimpos(
+        im.ndim, axes=[-2, -1], scaling=[1.0/bins[0], 1.0/bins[1]]))) / (bins[0] * bins[1])
+    return im
 
 def norm_back(imstack, normstack, normtype):
     '''
@@ -437,6 +441,29 @@ def filter_pass(im, filter_size=(10,), mode='circle', kind='low', filter_out=Tru
     res = nip.ift(res_filtered).real
     return res, res_filtered, pass_filter
 
+
+def get_immax(im):
+    '''
+    Gets max value of an image.
+    '''
+    try:
+        dmax = np.iinfo(im.dtype).max
+    except:
+        dmax = np.finfo(im.dtype).max
+    return dmax
+
+
+def subtract_from_max(im):
+    '''
+    Inverse intensity values of an image by subtracting the image values from the image-max.
+    '''
+    im = get_immax(im) - im
+    return im
+    
+# %% ------------------------------------------------------
+# ---         Simple Resolution-Estimations             ---
+# ---------------------------------------------------------
+#
 
 def harmonic_sum(a, b):
     ''' 

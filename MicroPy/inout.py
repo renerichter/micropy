@@ -42,7 +42,7 @@ def add_logging(logger_filepath='./logme.log', start_logger='RAWprocessor'):
     root.addHandler(strh)
     root.addHandler(fh)
     # add first new handler -> root levels are automatically applied
-    logger = logging.getLogger('RAWprocessor')
+    logger = logging.getLogger(start_logger)
     logger.setLevel(logging.DEBUG)
     return root, logger
 
@@ -412,8 +412,10 @@ def plot_save(ppointer, save_name, save_format='png'):
     ppointer.savefig(save_name+'.'+save_format, dpi=300, bbox_inches='tight')
 
 
-# %% Directory and file-structure
-
+# %% ------------------------------------------------------
+# ---            Directory&Filestructure                ---
+# ---------------------------------------------------------
+#
 
 def dir_test_existance(mydir):
     try:
@@ -424,3 +426,63 @@ def dir_test_existance(mydir):
     finally:
         # logger.debug('Folder check done!')
         pass
+
+
+def delete_files_in_path(load_path):
+    '''
+    Deletes all files from a path, but leaves directories. 
+    '''
+    for root_path, dirs, files in os.walk(load_path):
+        for file in files:
+            os.remove(os.path.join(root_path, file))
+
+
+def fill_zeros(nbr, max_nbr):
+    '''
+    Fills pads zeros according to max_nbr in front of a number and returns it as string.
+    '''
+    return str(nbr).zfill(int(np.log10(max_nbr))+1)
+
+
+def paths_from_dict(path_dict):
+    '''
+    generates full paths from dict:
+
+    Example:
+    ========
+    if system == 'linux':
+        base_drive = '/media/rene/Rene_work_backup/'
+    else:
+        base_drive = 'D:/'
+    path_dict = {'e001': {'base_drive': base_drive, 'base_raw': 'Data/01_Fluidi/data/' + 'raw/', 'base_processed': 'Data/01_Fluidi/data/' +
+                      'processed/', 'base_device': 'Inkubator-Setup03-UC2_Inku_405nm/', 'base_date': '20191114/', 'base_experiment': 'expt_001/', 'base_device_short': 'Inku03'}}
+    load_path, save_path = paths_from_dict(path_dict)
+    '''
+    load_path = []
+    save_path = []
+    for m in path_dict:
+        m = path_dict[m]
+        load_path.append(m['base_drive'] + m['base_raw'] +
+                         m['base_device'] + m['base_date'] + m['base_experiment'])
+        save_path.append(m['base_drive'] + m['base_processed'] +
+                         m['base_device'] + m['base_date'] + m['base_experiment'])
+    return load_path, save_path
+
+# %% ------------------------------------------------------
+# ---                        Time                      ---
+# ---------------------------------------------------------
+#
+
+
+def format_time(tsec):
+    '''
+    Simple time formatter.
+
+    :param:
+    ======
+    tsec:INT:   seconds
+    '''
+    th, trest = divmod(tsec, 3600)
+    tm, ts = divmod(trest, 60)
+    tform = '{:02}h{:02}m{:02}s.'.format(int(th), int(tm), int(ts))
+    return tform
