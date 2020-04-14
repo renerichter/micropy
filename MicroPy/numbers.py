@@ -58,3 +58,43 @@ def convert_BYTE2INT32(datain, input_type='uint32'):
     else:
         raise ValueError('Input type unknown!')
     return res
+
+
+# %% --------------------------------------------------------------
+#           PERMUTATIONS and COMBINATIONS
+# ----------------------------------------------------------------
+
+
+def generate_combinations(nbr_entries, combined_entries=2):
+    '''
+    Creates a set of index-lists according to "combined_entries" that complete cover all permutations that are possible within the length of the input-list (1D). For combined_entries=2 this means the classical group-combinations: n*(n-1)/2 possibilities. 
+    TODO: include higher combined_entries list-combinations
+
+    Example: 
+    ========
+    a = []
+    '''
+    if combined_entries == 2:
+        id1 = []
+        id2 = []
+        offset = 1
+        for m in range(0, nbr_entries-1):
+            for n in range(offset, nbr_entries):
+                id1.append(m)
+                id2.append(n)
+            offset += 1
+    else:
+        raise ValueError(
+            "The expected combined_entries size is not implemented yet.")
+    return id1, id2
+
+
+# %% --------------------------------------------------------------
+#               DIFFERENT SUMMING
+# ----------------------------------------------------------------
+
+def harmonic_sum(a, b):
+    ''' 
+    calculates the harmonic sum of two inputs. 
+    '''
+    return a * b / (a + b)

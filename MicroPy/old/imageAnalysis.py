@@ -2,99 +2,20 @@ import numpy as np
 import NanoImagingPack as nip
 import psutil
 import sys
-from .stackProcess import loadStack, getIterationProperties
-from .filters import *
+from ..stackProcess import loadStack, getIterationProperties
+from ..filters import *
 
 # %%
 # -------------------------------------------------------------------------------------------------
 #                                        IMAGE SHIFTING
 
 
-def getShiftNMove(im_base, im_shift, xy_limit=0.05, shift_list=[]):
-    '''
-    gets shift between a base and a stack. Moves base if difference to stack is bigger than xy_limit.
 
-    param:
-        im_base:    base image that will be used for comparison
-        im_shift:   image that will be shifted
-        xy_limit:  min_shift threshhold -> if shift is below this limit, nothing will be done to frame
-        shift_list: adds to a shift_list or creates empty
-    out:
-        im_moved:
-        shift_list: list of shifts -> 0 if lower xy_limit
-
-    '''
-    # TODO: Has to reimplemented since functions changed.
-    shift_image = im_base
-    #shift_calc = np.array(get_shift(im_base, im_shift, method='centroid', center=im_shift.mid()[1:], edge_length=[100]*(im_shift.ndim-1)))
-    # if any(shift_calc > xy_limit):
-    #    shift_image = nip.shiftby(im_shift, shift_calc)
-    return shift_image
-
-
-# def get_shift(im1, im2, method='maximum',center = [0,0], edge_length = [100,100],store_correl=False):
-#    from NanoImagingPack import correl, extract, centroid;
-#    from NanoImagingPack.util import max_coord;
-#    from NanoImagingPack.mask import create_circle_mask;
-#    if (np.mod(edge_length[0],2) == 1): edge_length[0] = edge_length[0] + 1;
-#    if (np.mod(edge_length[1],2) == 1): edge_length[1] = edge_length[1] + 1;
-    # max_rad = 2
-#    correls = []
-#    correl_max = []
-#    width = 40
-#
-#    if method == 'maximum':
-#        cc = correl(extract(im1, ROIsize = tuple(edge_length),centerpos = tuple(center)),extract(im2, ROIsize = tuple(edge_length),centerpos = tuple(center)));
-#        if store_correl:
-#            correls.append(cc);
-#        correl_max.append((max_coord(cc)[0],max_coord(cc)[1]));
-    # return((max_coord(cc[0])[0]-edge_length[0]//2,max_coord(cc[0])[1]-edge_length[1]//2))
-
-    # shift of image 2 with respect to image 1 at the selected coordinate and around edge_length
-#        return((max_coord(cc)[0]-edge_length[0]//2,max_coord(cc)[1]-edge_length[1]//2))   # new code 30.11.17
-#    elif method == 'centroid':
-#        max_rad = 2
-#        mr_old = max_rad;
-#        def __get_cc__(edge_length, center):
-#           if (np.mod(edge_length[0],2) == 1): edge_length[0] = edge_length[0] + 1;
-#            if (np.mod(edge_length[1],2) == 1): edge_length[1] = edge_length[1] + 1;
-#            cc = correl(extract(im1, ROIsize = tuple(edge_length),centerpos = tuple(center)),extract(im2, ROIsize = tuple(edge_length),centerpos = tuple(center)));
-    # mc = max_coord(cc[0]);
-#            mc = max_coord(cc);
-#            try:
-#                max_rad in locals()
-#            except:
-#                max_rad = 2
-#            max_rad = min([max_rad, abs(edge_length[0]-mc[0]), mc[0], mc[1], abs(edge_length[1]-mc[1]) ]);
-#            return(mc, cc, edge_length)
-    #
-#        mc, cc, edge_length = __get_cc__(edge_length, center);
-#        if max_rad == 0:
-#            print('Maximum of cross correlation at boarder -> Increasing cc_edge_length by 10');
-#            max_rad = mr_old;
-#            edge_length[0] += 10;
-#            edge_length[1] += 10;
- #           mc, cc, max_rad, edge_length = __get_cc__(edge_length, max_rad, center);
-#        if store_correl:
-#            correls.append(cc);
-#        centr_coord = centroid((cc-np.min(cc))*create_circle_mask(mysize =edge_length,maskpos = mc ,radius=max_rad, zero = 'image')); # in create_circle_mask (module: mask.py) -> change xx(...mode=...) to xx(...placement=...) !!
-#        return((edge_length[0]//2-centr_coord[0],edge_length[1]//2-centr_coord[1]))
-
-#    elif method == 'fit_gauss':
-#        from NanoImagingPack.fitting import fit_gauss2D;
-#        cc = correl(extract(im1, ROIsize = tuple(edge_length),centerpos = tuple(center)),extract(im2, ROIsize = tuple(edge_length),centerpos = tuple(center)));
-#        if store_correl:
-#            correls.append(cc);
-#        clip = extract(cc, ROIsize = (width,width),centerpos=max_coord(cc));   # clip more or less symetrical around maximum of correlation
-#        f= fit_gauss2D(clip, False);               # changed l.10 in fitting.py -> from scipy import optimize as opt; l.42 -> p, success = opt.leastsq(deviation, guess)
-#        pos = (f[0][1]+max_coord(cc)[0]-width//2, f[0][2]+max_coord(cc)[1]-width//2); # position of new maximum in non-clip correlation
-#        correl_max.append(pos);
-#        return((pos[0]-edge_length[0]//2,pos[1]-edge_length[1]//2))
 
 # %%
-# -------------------------------------------------------------------------------------------------
-#                                        MEAN/SUM/... Operations
-
+# ----------------------------------------------------
+#          MEAN/SUM/... Operations
+# ----------------------------------------------------
 
 def getMean(load_path, save_path, bg, ignore_bad=1, offset=0, file_limit=0, batch_size=100, channel=1, frame_interleave=0):
     '''
@@ -211,9 +132,9 @@ def seqMean(im1, im1mf, rlf, myt1, ignore_bad, myadd, read_list, myb, batch_iter
     return im1mf, rlf
 
 # %%
-# -------------------------------------------------------------------------------------------------
-#                                        DATA-CLEANING
-
+# --------------------------------------
+#                DATA-CLEANING
+# --------------------------------------
 
 def killVarDiff(im_stack, im_mean=[], lim_low=0.1, lim_high=2):
     '''

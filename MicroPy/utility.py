@@ -1,6 +1,8 @@
 # %% imports
 import numpy as np
 import NanoImagingPack as nip
+# mipy imports
+from .simulation import gen_shift_loop
 
 # %%
 # -------------------------------------------------------------------------
@@ -13,7 +15,18 @@ def noise_stack(im, mode='Poisson', param=[1, 10, 100, 1000]):
     '''
     Generates a stack from given image along the (new) 0th dimension. 
 
-    Example: 
+    :PARAMS:
+    ========
+    :im:    (IMAGE) Ndim input image
+    :mode:  (STRING) noise to be added -> 'Poisson', 'Gaussian', 'PoissonANDGauss'
+    :param: (list)  necessary parameters per noise type. Note, that Gaussian needs list of [mu,sigma] pairs while poisson only needs simple [mu1,m2,..] list.
+
+    :OUT:
+    =====
+    :res:   (IMAGE) N+1 dim noisy image
+
+    :EXAMPLE: 
+    =========
     im = nip.readim();
     mode='Poisson';param=[1,10,100,1000];
     noise_stack(im,mode=mode,param=param)
@@ -99,20 +112,12 @@ def noise_normalize(im, phot, norm='mean'):
     im = im/norm
     return im
 
+# %%
 
-# %% TO SORT!
-
-def process_image(im1, im2, operations=[]):
-    '''
-    Operations on channels between two images
-    '''
-    res = []
-    if operations == []:
-        print('No operation had to be done, so did nothing')
-    for m in range(im1.shape[0]):
-        for y in range(operations.shape[0]):
-            res[y, m] = operations[y](im1[m], im2[m])
-    return res
+# %%
+# ------------------------------------------------------------------
+#                       IMAGE-SHIFT OPERATIONS
+# ------------------------------------------------------------------
 
 
 def channel_getshift(im):
@@ -174,70 +179,6 @@ def image_getshift(im, im_ref, prec=100):
     return shift
 
 
-def transpose_arbitrary(imstack, idx_startpos=[-2, -1], idx_endpos=[0, 1]):
-    '''
-    creates the forward- and backward transpose-list to change stride-order for easy access on elements at particular positions. 
-
-    TODO: add security/safety checks
-    '''
-    # some sanity
-    if type(idx_startpos) == int:
-        idx_startpos = [idx_startpos, ]
-    if type(idx_endpos) == int:
-        idx_endpos = [idx_endpos, ]
-    # create transpose list
-    trlist = list(range(imstack.ndim))
-    for m in range(len(idx_startpos)):
-        idxh = trlist[idx_startpos[m]]
-        trlist[idx_startpos[m]] = trlist[idx_endpos[m]]
-        trlist[idx_endpos[m]] = idxh
-    return trlist
-
-
-def generate_combinations(nbr_entries, combined_entries=2):
-    '''
-    Creates a set of index-lists according to "combined_entries" that complete cover all permutations that are possible within the length of the input-list (1D). For combined_entries=2 this means the classical group-combinations: n*(n-1)/2 possibilities. 
-    TODO: include higher combined_entries list-combinations
-
-    Example: 
-    ========
-    a = []
-    '''
-    if combined_entries == 2:
-        id1 = []
-        id2 = []
-        offset = 1
-        for m in range(0, nbr_entries-1):
-            for n in range(offset, nbr_entries):
-                id1.append(m)
-                id2.append(n)
-            offset += 1
-    else:
-        raise ValueError(
-            "The expected combined_entries size is not implemented yet.")
-    return id1, id2
-
-
-def image_sharpness(im, im_filters=['Tenengrad']):
-    '''
-    Calculating the image sharpness with different filters. Only for 2D inputs! For all neighboring pixel-using techniques the outer-most pixel-borders of the image are not used.
-
-    :param:
-    =======
-    :filters:LIST: List of possible filters. Options are:
-
-    :out:
-    =====
-    res:LIST: List of all sharpness values calculated.
-    '''
-    #
-    from numpy import mean
-    if 'Tenengrad' in im_filters:
-        res.append(tenengrad(im))
-    elif 'VollathF4' in im_filters:
-        res.append(vollathF4(im))
-
-
 def findshift(im1, im2, prec=100, printout=False):
     '''
     Just a wrapper for the Skimage function using sub-pixel shifts, but with nice info-printout.
@@ -266,6 +207,64 @@ def findshift(im1, im2, prec=100, printout=False):
         print("Found shifts={} with upsampling={}, error={} and diffphase={} in {}s.".format(
             shift, prec, np.round(error, 4), diffphase, tend))
     return shift, error, diffphase, tend
+
+
+def shiftby_list(psf, shifts=[], shift_offset=[1, 1], nbr_det=[3, 3]):
+    '''
+    Shifts an image by a list of shift-vectors. 
+    If shifts not given, calculates an equally spaced rect-2D-array for nbr_det (array) of   with shift_offset spacing in pixels between them.
+    TODO: Implement for 2D-PSF. Then force: "The shifts have to have the same shape as the image. "
+
+    :PARAM:
+    =======
+    :psf:           3D-(Detection)PSF
+    :shifts:        shifts to be applied
+    :shift_offset:  (OPTIONAL) distance between 2D-array
+    :nbr_det:       (OPTIONAL) number of detector elements to be generated
+
+    :OUTPUT:
+    ======= 
+    :psf_res:       list of N shifted 3D-(Detection)PSF
+
+    Example:
+    ========
+    mipy.shiftby_list(nip.readim(),shifts=[[1,1],[2,2],[5,5]])
+    '''
+    if shifts == []:
+        shifts = gen_shift_loop(shift_offset, nbr_det)
+    phase_mapx = nip.xx(psf.shape[-2:], freq='ftfreq')
+    phase_mapy = nip.yy(psf.shape[-2:], freq='ftfreq')
+    # phase_ramp_list = mipy.add_multi_newaxis(imstack, newax_pos=[-1,-1,-1]
+    phase_ramp_list = np.exp(-1j*2*np.pi*(shifts[:, 0][:, np.newaxis, np.newaxis, np.newaxis]*phase_mapx[np.newaxis,
+                                                                                                         np.newaxis, :, :] + shifts[:, 1][:, np.newaxis, np.newaxis, np.newaxis]*phase_mapy[np.newaxis, np.newaxis, :, :]))
+    psf_res = np.real(
+        nip.ift3d(nip.ft(psf)[np.newaxis, :, :, :]*phase_ramp_list))
+    return psf_res
+
+# %%
+# ------------------------------------------------------------------
+#                       SHAPE-MANIPULATION
+# ------------------------------------------------------------------
+
+
+def transpose_arbitrary(imstack, idx_startpos=[-2, -1], idx_endpos=[0, 1]):
+    '''
+    creates the forward- and backward transpose-list to change stride-order for easy access on elements at particular positions. 
+
+    TODO: add security/safety checks
+    '''
+    # some sanity
+    if type(idx_startpos) == int:
+        idx_startpos = [idx_startpos, ]
+    if type(idx_endpos) == int:
+        idx_endpos = [idx_endpos, ]
+    # create transpose list
+    trlist = list(range(imstack.ndim))
+    for m in range(len(idx_startpos)):
+        idxh = trlist[idx_startpos[m]]
+        trlist[idx_startpos[m]] = trlist[idx_endpos[m]]
+        trlist[idx_endpos[m]] = idxh
+    return trlist
 
 
 def image_binning(im, bin_size=2, mode='real_sum', normalize='old'):
@@ -331,14 +330,17 @@ def image_binning(im, bin_size=2, mode='real_sum', normalize='old'):
         res = np.transpose(res, id3)
     return res
 
+
 def bin_norm(im, bins):
     im = np.array(nip.resample(im, create_value_on_dimpos(
         im.ndim, axes=[-2, -1], scaling=[1.0/bins[0], 1.0/bins[1]]))) / (bins[0] * bins[1])
     return im
 
+
 def norm_back(imstack, normstack, normtype):
     '''
-    Normalizes back to starting  -> appends missing dimensions
+    implemented for ndim>3.
+    TODO: implement for all dimensions.
     '''
     ndimdiff = imstack.ndim - normstack.ndim
     for m in range(ndimdiff):
@@ -352,6 +354,10 @@ def add_multi_newaxis(imstack, newax_pos=[-1, ]):
     '''
     Adds new-axis at the mentioned position with respect to the final shape per step. So hence, if ndim = 3 and e.g. (3,256,256) and newax_pos = (1,2,-1) it will lead to:(3,1,1,256,256,1), where negative indexes are added first (postpending) and positive indexes are inserted last (prepend).
 
+    TODO: 
+        1) no error-prevention included
+        2) axes not always appended as thought
+
     :param:
     =======
     :imstack:   n-dimensional data_stack
@@ -363,9 +369,7 @@ def add_multi_newaxis(imstack, newax_pos=[-1, ]):
     a = np.repeat(nip.readim('orka')[np.newaxis],3,0)
     b = add_multi_newaxis(a,[1,2,-1])
     print("dim of a="+str(a.shape)+"\ndim of b="+str(b.shape)+".")
-    :TODO:
-    ======
-    no error-prevention included
+
     '''
     # problem: list().insert interprets -1 as first element before last element of list -> recalc dimensions
     newax_pos.sort(reverse=False)
@@ -411,37 +415,6 @@ def get_nbrpixel(im, dim=[0, 1]):
     return np.prod(hl)
 
 
-def filter_pass(im, filter_size=(10,), mode='circle', kind='low', filter_out=True):
-    '''
-    Does a fourier-based low-pass filtering of the desired shape. Filter-values: 0=no throughput, 1=max-throughput. 
-    For now only works on 2D-images. 
-    :param:
-    =======
-    :im:IMAGE:          Input image to wrok on. 
-    :filter_size:LIST:  LIST of INT-sizes of the filter -> for circle it's e.g. just 1 value
-    :mode:STRING:       Defines which lowpass_filtering shall be used -> 'Circle' (hard edges)
-    '''
-    # create filter-shape
-    if mode == 'circle':
-        # make sure that result is not bool but int-value for further calculation
-        pass_filter = (nip.rr(im) < filter_size[0]) * 1
-    else:  # just leave object unchanged
-        pass_filter = 1
-    # decide which part to use
-    if kind == 'high':
-        pass_filter = 1 - pass_filter
-        pass
-    elif kind == 'band':
-        print("Not implemented yet.")
-        pass
-    else:  # kind == 'low' -> as filters are designed to be low-pass to start with, no change to filters
-        pass
-    # apply
-    res_filtered = nip.ft(im, axes=(-2, -1)) * pass_filter
-    res = nip.ift(res_filtered).real
-    return res, res_filtered, pass_filter
-
-
 def get_immax(im):
     '''
     Gets max value of an image.
@@ -459,140 +432,7 @@ def subtract_from_max(im):
     '''
     im = get_immax(im) - im
     return im
-    
-# %% ------------------------------------------------------
-# ---         Simple Resolution-Estimations             ---
-# ---------------------------------------------------------
-#
 
-def harmonic_sum(a, b):
-    ''' 
-    calculates the harmonic sum of two inputs. 
-    '''
-    return a * b / (a + b)
-
-
-def calculate_na_fincorr(obj_M_new=5, obj_M=10, obj_NA=0.25, obj_N=1, obj_di=160, roundout=0, printout=False):
-    '''
-    Calculates the NA of a finite-corrected objective given the standard and the new (calibration) measurements. 
-
-    :param:
-    =======
-    :obj_M:FLOAT: magnification of objective
-    :obj_NA:FLOAT: 0.25 
-    :obj_N:FLOAT: refractive index -> air
-    :obj_di:FLOAT: distance to image 
-
-    :output:
-    ========
-    NA:FLOAT:   new, calculated NA
-
-    Innline Testing: 
-    obj_M_new = 3.3;obj_M=10;obj_NA=0.25;obj_N=1;obj_di=160;printout=True;roundout=3
-    '''
-
-    # here: finite corrected, hence:
-    obj_ds = obj_di / obj_M
-    # now use thin-lense approximation for objective to get a guess -> assume objective as "thin-lens"
-    obj_f = harmonic_sum(obj_ds, obj_di)  # focal-plane distance
-    obj_alpha = np.arcsin(obj_NA/obj_N)  # half opening-angle
-    obj_D2 = obj_ds * np.tan(obj_alpha)  # half Diameter of "lens"
-    # calc new NA and distances
-    # f *M1 / (M1+1) = g1 -> given f is constant
-    obj_ds_new = obj_f * (obj_M_new + 1) / obj_M_new
-    obj_di_new = obj_M_new * obj_ds_new
-    obj_alpha_new = np.arctan(obj_D2 / obj_ds_new)
-    obj_na_new = obj_N * np.sin(obj_alpha_new)
-    res_list = [obj_na_new, obj_alpha_new, obj_ds_new, obj_di_new]
-    if roundout > 0:
-        res_list = [round(res_list[m], roundout) for m in range(len(res_list))]
-    if printout == True:
-        print("NA_new=\t\t{}\nOBJ_alpha_new=\t{}\nOBJ_DS_new=\t{}\nOBJ_DI_new=\t{}".format(
-            res_list[0], res_list[1], res_list[2], res_list[3]))
-    return res_list
-
-
-def calculate_magnification(pixel_range=1000, counted_periods=10, pixel_size=1.4, period_length_real=100, printout=False):
-    '''
-    Calculates the magnification using a grid-sample. 
-
-    :param:
-    =======
-    :pixel_range:       Length of the used set
-    :counted_periods:   Number of periods in measured length
-    :period_length_real: Real period length
-    :pixel_size:        size of pixel -> ideally in same dimension as real period length
-
-    :out:
-    ====
-    :magnification:   
-
-    '''
-    period_length_pixel = pixel_range/counted_periods
-    pixel_size_in_sample = period_length_real / period_length_pixel
-    magnification = period_length_pixel * pixel_size / period_length_real
-    if printout == True:
-        print("New Magnification is: M={}.\nPixelsize in Sample-Coordinates is {}um.".format(
-            np.round(magnification, 5), pixel_size_in_sample))
-    return magnification
-
-
-def calculate_maxbinning(res_lateral=100, obj_M=10, pixel_size=6.5, printout=True):
-    '''
-    Calculates the maximum bin-size possible to ensure (at least) correct Sampling, ignoring sub-pixel sampling.
-    '''
-    dmax_sampling_detector = res_lateral/2 * \
-        obj_M  # to be correctly nyquist sampled on the detector
-    max_binning = np.floor(dmax_sampling_detector / pixel_size)
-    if printout == True:
-        print("Maximum sampling steps on detector are dmax={}.\nHence Maximum binning is b={}.".format(
-            np.round(dmax_sampling_detector, 2), max_binning))
-    return max_binning, dmax_sampling_detector
-
-
-def calculate_resolution(obj_na=0.25, obj_n=1, wave_em=525, technique='brightfield', criterium='Abbe', cond_na=0, fluorescence=False, wave_ex=488, printout=False):
-    '''
-    Calculates the resolution for the selected technique with the given criteria in lateral xy and axial z.  
-
-    For inline testing: obj_na=0.25;obj_n=1;wave_em=525;technique='brightfield';criterium='Abbe'; cond_na=0; fluorescence=False; wave_ex=488; printout=False
-    '''
-    res = np.zeros(3)
-    # get right na
-    if fluorescence:
-        na = 2*obj_na
-    else:
-        if cond_na:
-            na = cond_na + obj_na
-        else:
-            na = obj_na
-    alpha = np.arcsin(obj_na/obj_n)
-    # calculate Abbe-support-limit
-    if technique == 'brightfield':
-        res[0] = wave_em/na
-        res[1] = res[0]
-        res[2] = wave_em/(obj_n*(1-np.cos(alpha)))
-    elif technique == 'confocal':
-        # assume to be in incoherent case right now
-        if fluorescene:
-            leff = harmonic_sum(wave_ex, wave_em)
-        else:
-            leff = wave_em
-        res[0] = leff / na
-        res[1] = res[0]
-        res[2] = leff/(obj_n*(1-np.cos(alpha)))
-    else:
-        raise ValueError("Selected technique not implemented yet.")
-    # multiply factors for criteria
-    if criterium == 'Abbe':
-        res = res
-    else:
-        raise ValueError("Selected criterium not implemented yet.")
-    # print out
-    if printout == True:
-        print("The calculated resolution is: x={}, y={}, z={}".format(
-            res[0], res[1], res[2]))
-    # finally, return result
-    return res
 
 # %% -----------------------------------------------------
 # ----                  PROPAGATORS
@@ -664,40 +504,3 @@ def defocus_stack(im, mode='symmGauss', param=[0, [1, 10]], start='center'):
     else:
         raise ValueError("This mode is not implemented yet.")
     return res
-
-
-def gaussian1D(size=10, mu=0, sigma=20, axis=-1, norm='sum'):
-    '''
-    Calculates a 1D-gaussian.
-
-    For testing: size=100;mu=0;sigma=20;
-    '''
-    xcoords = nip.ramp1D(mysize=size, placement='center', ramp_dim=axis)
-    gaussian1D = 1.0 / np.sqrt(2*np.pi*sigma) * \
-        np.exp(- (xcoords - mu)**2 / (2 * sigma**2))
-    if norm == 'sum':
-        gaussian1D /= np.sum(gaussian1D)
-    return gaussian1D
-
-
-def gaussian2D(size=[], mu=[], sigma=[]):
-    '''
-    Calculates a 2D gaussian. 
-    Note that mu and sigma can be different for the two directions and hence have to be input explicilty.
-
-    Example: 
-    size=[100,100];mu=[0,5];sigma=[2,30];
-    '''
-    # just to make sure
-    if not (type(size) in [tuple, list]):
-        size = [size, size]
-    if not (type(mu) in [tuple, list]):
-        mu = [mu, mu]
-    if not (type(sigma) in [tuple, list]):
-        sigma = [sigma, sigma]
-    gaussian2D = gaussian1D(size=size[0], mu=mu[0], sigma=sigma[0], axis=-1) * \
-        gaussian1D(size=size[1], mu=mu[1], sigma=sigma[1], axis=-2)
-    return gaussian2D
-
-
-# size=im.shape[-2:];mu=0;sigma=20

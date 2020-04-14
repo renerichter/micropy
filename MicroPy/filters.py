@@ -28,8 +28,9 @@ __last_update__ = "12.02.2020"
 #
 import numpy as np
 import NanoImagingPack as nip
-from scipy.fftpack import dct
+
 from .utility import transpose_arbitrary
+from .transformations import dct2
 
 # %%
 # -------------------------------------------------------------------------
@@ -277,52 +278,67 @@ def stf_lp_sparsity(im, p=2):
 
 
 # %%
-# -------------------------------------------------------------------------
-# Helper Functions
-# -------------------------------------------------------------------------
+# --------------------------------------------------------
+#               FREQUENCY FILTERS
+# --------------------------------------------------------
 #
-def dct2(im, forward=True, axes=[-2, -1]):
-    '''
-    Calculate a 2D discrete cosine transform of symmetric normalization.
-    Motivated from here: https://www.reddit.com/r/DSP/comments/1c9mgs/2d_discrete_cosine_transform_calculation/
-    '''
-    direction = 2 if forward else 3
-    return dct(dct(im, type=direction, axis=axes[0], norm='ortho'), type=direction, axis=axes[1], norm='ortho')
 
-
-def lp_norm(im, p=2):
+def filter_pass(im, filter_size=(10,), mode='circle', kind='low', filter_out=True):
     '''
-    Calculates the LP-norm.
+    Does a fourier-based low-pass filtering of the desired shape. Filter-values: 0=no throughput, 1=max-throughput. 
+    For now only works on 2D-images. 
+    :param:
+    =======
+    :im:IMAGE:          Input image to wrok on. 
+    :filter_size:LIST:  LIST of INT-sizes of the filter -> for circle it's e.g. just 1 value
+    :mode:STRING:       Defines which lowpass_filtering shall be used -> 'Circle' (hard edges)
     '''
-    return (np.sum(np.abs(im)**p))**(1.0/p)
-
-
-def euler_forward_1d(im, dim=0, dx=1):
-    '''
-    Calculates the forward euler with a stepsize of 1 on default.
-    TODO: implement for further dimensions
-    '''
-    # get dimension and transpose list
-    dim_list, dim_list2, dim = deriv_prepdim(im, dim)
-    # rotate image
-    im = np.transpose(im, dim_list2)
-    # do derivation
-    im_deriv = (im[1:] - im[:-1]) / dx
-    # bring back to normal dimension-order
-    return im_deriv.transpose(dim_list)
-
-
-def deriv_prepdim(im, dim=0):
-    '''
-    get's the list to shift dimensions and bring intended dimension to frond, e.g. for derivations
-    '''
-    dim_list = list(range(im.ndim))
-    # either deep-copy or new array -> both dim_list point to same obj
-    dim_list2 = list(range(im.ndim))
-    dim = im.ndim-1 if dim >= im.ndim else dim
-    dim_list2 = [dim_list2.pop(dim), ] + dim_list2
-    # print('dim_list={},dim_list2={},dim={}'.format(dim_list, dim_list2, dim))
-    return dim_list, dim_list2, dim
-
+    # create filter-shape
+    if mode == 'circle':
+        # make sure that result is not bool but int-value for further calculation
+        pass_filter = (nip.rr(im) < filter_size[0]) * 1
+    else:  # just leave object unchanged
+        pass_filter = 1
+    # decide which part to use
+    if kind == 'high':
+        pass_filter = 1 - pass_filter
+        pass
+    elif kind == 'band':
+        print("Not implemented yet.")
+        pass
+    else:  # kind == 'low' -> as filters are designed to be low-pass to start with, no change to filters
+        pass
+    # apply
+    res_filtered = nip.ft(im, axes=(-2, -1)) * pass_filter
+    res = nip.ift(res_filtered).real
+    return res, res_filtered, pass_filter
 
 # %%
+# --------------------------------------------------------
+#               MEASURES USING THE FILTERS
+# --------------------------------------------------------
+#
+
+
+def image_sharpness(im, im_filters=['Tenengrad']):
+    '''
+    Calculating the image sharpness with different filters. Only for 2D inputs! For all neighboring pixel-using techniques the outer-most pixel-borders of the image are not used.
+
+    TODO: unfinished!
+
+    :param:
+    =======
+    :filters:LIST: List of possible filters. Options are:
+
+    :out:
+    =====
+    res:LIST: List of all sharpness values calculated.
+    '''
+    #
+    from numpy import mean
+    if 'Tenengrad' in im_filters:
+        res.append(tenengrad(im))
+    elif 'VollathF4' in im_filters:
+        res.append(vollathF4(im))
+
+    return res

@@ -1,9 +1,12 @@
 import time
 import os
 import re
+import socket
+from datetime import datetime
 import NanoImagingPack as nip
 import numpy as np
 import matplotlib.pyplot as plt
+# mipy imports
 
 # %% -------------------------------------------
 #       LOGGING
@@ -47,6 +50,22 @@ def add_logging(logger_filepath='./logme.log', start_logger='RAWprocessor'):
     return root, logger
 
 
+def add_logger(save_path, loggername):
+    tbegin = time.time()
+    tnow = datetime.strftime(datetime.now(), "%Y%m%d_%H%M%S")
+    logger_filepath = save_path + 'log-' + tnow + '.log'
+    dir_test_existance(save_path)
+    # set-Logger
+    if not 'logger' in locals():
+        logger_root, logger = add_logging(
+            logger_filepath, start_logger=loggername)
+        logger.debug('Processing running on DEVICE = {}'.format(
+            socket.gethostname()))
+        logger.debug(
+            'Logger created and started. Saving to: {}'.format(logger_filepath))
+    return logger
+
+
 def logger_switch_output(str_message, logger=False):
     '''
     switches between printing and logging messages
@@ -60,8 +79,8 @@ def logger_switch_output(str_message, logger=False):
     else:
         print(str_message)
 # %%
-# ---------------------------------------------------------------------------------------------------------
-#                                           LOAD
+# -----------------------------------------------
+#                      LOAD
 
 
 def get_filelist(load_path='.', fn_proto='jpg'):
@@ -314,9 +333,36 @@ class SPEloader(object):
     def close(self):
         self._fid.close()
 
-# %%
-# ---------------------------------------------------------------------------------------------------------
-#                                           FILE CHANGES
+
+def load_SPE(fname):
+    '''
+    Load function for SPE-class.
+    '''
+    fid = mipy.SPEloader(fname)
+    img = fid.load_img()
+    fid.close()
+    return nip.image(img)
+
+
+def load_osakaScan2D(im_path, imd=[128, 128], overscan=[1, 1.25], detd=[16, 16], reader=2):
+    '''
+    Takes Scan-overhead into account. As SPE-is not working right now, assumes TIF-stacks.
+    '''
+    from tifffile import imread as tifimread
+    if reader == 1:
+        im = np.squeeze(nip.readim(im_path))
+    else:
+        im = nip.image(tifimread(im_path))
+    imshape = [imd[0]*overscan[0], int(imd[1]*overscan[1]), detd[0], detd[1]]
+    im = np.transpose(np.reshape(im, imshape), [2, 3, 0, 1])
+    im = im[:, :, :, :imd[1]]
+    return im
+
+
+# %% ------------------------------------------------------
+# ---            Directory&Filestructure                ---
+# ---------------------------------------------------------
+#
 
 
 def rename_files(file_dir, version=1):
@@ -353,10 +399,64 @@ def rename_files(file_dir, version=1):
     return tdelta, brename
 
 
+def dir_test_existance(mydir):
+    try:
+        if not os.path.exists(mydir):
+            os.makedirs(mydir)
+            # logger.debug(
+            #    'Folder: {0} created successfully'.format(mydir))
+    finally:
+        # logger.debug('Folder check done!')
+        pass
+
+
+def delete_files_in_path(load_path):
+    '''
+    Deletes all files from a path, but leaves directories. 
+    '''
+    for root_path, dirs, files in os.walk(load_path):
+        for file in files:
+            os.remove(os.path.join(root_path, file))
+
+
+def fill_zeros(nbr, max_nbr):
+    '''
+    Fills pads zeros according to max_nbr in front of a number and returns it as string.
+    '''
+    return str(nbr).zfill(int(np.log10(max_nbr))+1)
+
+
+def paths_from_dict(path_dict):
+    '''
+    generates full paths from dict:
+
+    Example:
+    ========
+    if system == 'linux':
+        base_drive = '/media/rene/Rene_work_backup/'
+    else:
+        base_drive = 'D:/'
+    path_dict = {'e001': {'base_drive': base_drive, 'base_raw': 'Data/01_Fluidi/data/' + 'raw/', 'base_processed': 'Data/01_Fluidi/data/' +
+                      'processed/', 'base_device': 'Inkubator-Setup03-UC2_Inku_405nm/', 'base_date': '20191114/', 'base_experiment': 'expt_001/', 'base_device_short': 'Inku03'}}
+    load_path, save_path = paths_from_dict(path_dict)
+    '''
+    load_path = []
+    save_path = []
+    for m in path_dict:
+        m = path_dict[m]
+        load_path.append(m['base_drive'] + m['base_raw'] +
+                         m['base_device'] + m['base_date'] + m['base_experiment'])
+        save_path.append(m['base_drive'] + m['base_processed'] +
+                         m['base_device'] + m['base_date'] + m['base_experiment'])
+    return load_path, save_path
+
+
 # %% ------------------------------------------------------
 # ---                        Plotting                   ---
 # ---------------------------------------------------------
 #
+
+
 def print_stack2subplot(imstack, plt_raster=[4, 4], plt_format=[8, 6], title=None, titlestack=None, colorbar=True, axislabel=False):
     '''
     Plots an 3D-Image-stack as set of subplots
@@ -413,60 +513,42 @@ def plot_save(ppointer, save_name, save_format='png'):
 
 
 # %% ------------------------------------------------------
-# ---            Directory&Filestructure                ---
+# ---            RESHAPE FOR COOL DISPLAY               ---
 # ---------------------------------------------------------
 #
-
-def dir_test_existance(mydir):
-    try:
-        if not os.path.exists(mydir):
-            os.makedirs(mydir)
-            # logger.debug(
-            #    'Folder: {0} created successfully'.format(mydir))
-    finally:
-        # logger.debug('Folder check done!')
-        pass
-
-
-def delete_files_in_path(load_path):
+def get_tiling(im, form='quadratic'):
     '''
-    Deletes all files from a path, but leaves directories. 
+        Gets the 2D-tiling-shape to concate an input image.
     '''
-    for root_path, dirs, files in os.walk(load_path):
-        for file in files:
-            os.remove(os.path.join(root_path, file))
+    cols = int(np.ceil(np.sqrt(im.shape[0])))
+    rows = int(np.ceil(im.shape[0]/cols))
+    return [rows, cols]
 
 
-def fill_zeros(nbr, max_nbr):
+def stack2tiles(im, tileshape):
     '''
-    Fills pads zeros according to max_nbr in front of a number and returns it as string.
-    '''
-    return str(nbr).zfill(int(np.log10(max_nbr))+1)
+    Converts a 3D-stack into a 2D set of tiles. -> good for displaying. Tries to fill according to tile-shape as long as there is images left. 
 
-
-def paths_from_dict(path_dict):
+    :PARAM:
+    =======
+    im:         3D-image with order [Z,Y,X]
+    shape:      list with shape like e.g. [2,3] meaning 2rows and 3 columed output
+    OUT:
     '''
-    generates full paths from dict:
+    ims = im.shape[-2:]
+    iml = nip.image(
+        np.zeros([ims[0]*tileshape[0], ims[1]*tileshape[-1]], dtype=im.dtype))
+    imhh = nip.image(np.zeros(im.shape[-2:]))
+    # concatenate list
+    for m in range(tileshape[0]):
+        for n in range(tileshape[1]):
+            if m*tileshape[1]+n < len(im):
+                imh = im[m*tileshape[1]+n]
+            else:
+                imh = imhh
+            iml[m*ims[0]:(m+1)*ims[0], n*ims[1]:(n+1)*ims[1]] = imh
+    return iml
 
-    Example:
-    ========
-    if system == 'linux':
-        base_drive = '/media/rene/Rene_work_backup/'
-    else:
-        base_drive = 'D:/'
-    path_dict = {'e001': {'base_drive': base_drive, 'base_raw': 'Data/01_Fluidi/data/' + 'raw/', 'base_processed': 'Data/01_Fluidi/data/' +
-                      'processed/', 'base_device': 'Inkubator-Setup03-UC2_Inku_405nm/', 'base_date': '20191114/', 'base_experiment': 'expt_001/', 'base_device_short': 'Inku03'}}
-    load_path, save_path = paths_from_dict(path_dict)
-    '''
-    load_path = []
-    save_path = []
-    for m in path_dict:
-        m = path_dict[m]
-        load_path.append(m['base_drive'] + m['base_raw'] +
-                         m['base_device'] + m['base_date'] + m['base_experiment'])
-        save_path.append(m['base_drive'] + m['base_processed'] +
-                         m['base_device'] + m['base_date'] + m['base_experiment'])
-    return load_path, save_path
 
 # %% ------------------------------------------------------
 # ---                        Time                      ---
