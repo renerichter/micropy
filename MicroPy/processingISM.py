@@ -320,10 +320,6 @@ def ismR_shiftmask2D(im, pinsize, mask_shape, pincen, pinshape):
         shiftmaskc = np.array(mask_shape//2, np.int)
     elif pinshape == 'rect':
         pinsize = pinsize*2 if not(len(pinsize) == 2) else pinsize
-        #shiftmask = np.zeros(mask_shape)
-        #maskc = np.array(mask_shape//2,dtype=np.int)
-        #pinsr = np.array(mask_shape//2,dtype=np.int)
-        #shiftmask[maskc[0]-pinsr[0]:maskc[0]+pinsr[0]+1,maskc[1]-pinsr[1]:maskc[1]+pinsr[1]+1]  = 1
         shiftmask = ((nip.yy(mask_shape, placement='positive') <
                       pinsize[0]) * (nip.xx(mask_shape, placement='positive') < pinsize[1]))*1
         shiftmaskc = np.array(np.array(pinsize)//2, np.int)
@@ -341,6 +337,110 @@ def ismR_shiftmask2D(im, pinsize, mask_shape, pincen, pinshape):
     shiftmask[shiftmask < 0.5] = 0
 
     return shiftmask
+
+
+def ismR_genShiftmap(im, mask_shape, pincen, shift_method='nearest'):
+    '''
+    Generates Shiftmap for ISM SheppardSUM-reconstruction. 
+
+    :PARAM:
+    =======
+    :im:            input nD-image (first two dimensions are detector plane)
+    :mask_shape:    should be within the first two image dimensions
+    :pincen:        center of mask-pinhole
+
+    :OUT:
+    =====
+    :shift_map:          shift-map for all pinhole-pixels
+    '''
+
+    shift_map = [[0, 0]*mask_shape[1] for m in range(mask_shape[0])]
+    if shift_method == 'nearest':
+        xshift = mipy.findshift(
+            im[pincen[0], pincen[1]], im[pincen[0], pincen[1]+1], 100)
+        yshift = mipy.findshift(
+            im[pincen[0], pincen[1]], im[pincen[0]+1, pincen[1]], 100)
+        for k in mask_shape[0]:
+            for l in mask_shape[1]:
+                shift_map[k][l] = (pincen[0]-k)*xshift + (pincen[1]-l)*yshift
+    if shift_method == 'mask':
+        for k in mask_shape[0]:
+            for l in mask_shape[1]:
+                if mask[k, l] > 0:
+                    shift_map[k][l] = mipy.findshift(
+                        im[k, l], im[pincen[0], pincen[1]], 100)
+    elif shift_method == 'complete':
+        for k in mask_shape[0]:
+            for l in mask_shape[1]:
+                shift_map[k, l] = mipy.findshift(
+                    im[k, l], im[pincen[0], pincen[1]], 100)
+    else:
+        raise ValueError("Shift-method not implemented")
+
+    return shift_map
+
+
+def ismR_sheppardShift(im, shift_map, method='iter'):
+    '''
+    Does shifting for ISM-SheppardSum. 
+
+    :PARAMS:
+    ========
+    :im:            image to be shifted (first two dimensions should match first two dim of shift_map)
+    :shift_map:          shift map
+    :method:        Available methods for shifting -> 'iter','parallel'
+
+    :OUT:
+    =====
+    :im:            shifted_image
+    :
+
+    '''
+    if method == 'iter':
+        for k in im.shape[0]:
+            for l in im.shape[1]:
+                im[k, l] = nip.shift2Dby(im[k, l], shift_map[k, l])
+    elif method == 'parallel':
+        raise Warning("Method 'parallel' is not implemented yet.")
+    else:
+        raise ValueError("Chosen method not existent.")
+
+    return im
+
+
+def ismR_sheppardSUMming(im, mask, sum_method='all'):
+    '''
+    Ways for summing the shifted parts together. Idea behind: 
+    1) Pair different regions before shifting (ismR_pairRegions), then find regional-shifts (ismR_getShiftmap) and finally sheppardSum them. 
+    2) sheppardSUM only until/from a limit to do different reconstruction on other part (eg Deconvolve within deconvMASK and apply sheppardSUM on outside)
+
+    TODO: --------------------------------------------
+        1) TEST!
+        2) make sure for compatible dimensionality
+        3) implement 'ring'
+        4) fix to work with deconvolution
+    --------------------------------------------------
+
+    :PARAM:
+    =======
+    :im:            input image
+    :shift_map:          shift-map
+    :sum_method:    Method for applied summing -> 'all', 'ring'
+
+    :OUT:
+    =====
+    :ismR:       sheppardsummed ISM_image
+
+    '''
+
+    if sum_method == 'all':
+        ismR = np.sum(im * mask, axis=(0, 1))
+    elif sum_method == 'ring':
+        pass
+    else:
+        raise ValueError("Sum_method not implemented.")
+
+    return ismR
 
 
 def ismR_widefield(im, detaxes):
@@ -415,3 +515,55 @@ def ismR_confocal(im, axes=(0, 1), pinsize=None, pinshape='circle', pincen=None,
             imconfs = [imconf, imconfs]
 
     return imconfs
+
+def ismR_sheppardSUM(im, shift_map=[], shift_method='nearest', pincen=[], pinsiz=[]):
+    '''
+    Calculates sheppardSUM on image (for rectangular detector arrangement), meaning: 
+    1) find center of pinhole for all scans using max-image-peak (on center should have brightest signal) if not particularly given 
+    2) define mask/pinhole
+    2) find shifts between all different detectors within mask, result in sample coordinates, shift back
+    4) further processing?
+
+    TODO: 
+    1) implement for LIST (airySCAN)
+    1) catch User-input-error!
+
+    :PARAM:
+    =======
+    :im:            Input image; assume nD for now, but structure should be like(pinholeDim=pd) [pdY,pdX,...(n-4)-extraDim...,Y,X]
+    :shift_map:          list for shifts to be applied on channels -> needs to have same structure as pd
+    :shift_method:   Method to be used to find the shifts between the single detector and the center pixel -> 1) 'nearest': compare center pinhole together with 1 pix-below and 1 pix-to-the-right pinhole 2) 'mask': all pinholes that reside within mask (created by pinsiz)  3) 'complete': calculate shifts for all detectors 
+    :pincen:        2D-center-pinhole position (e.g. [5,6])
+    :pinsiz:        Diameter of the pinhole-mask to be used for calculations
+
+    OUT:
+    ====
+    :ismR:          reassinged ISM-image (within mask)
+    :shift_map:     shift_map
+    :mask:          applied shift_mask
+    :pincen:        center-point of mask/pinhole
+    '''
+    # get pinhole center
+    if pincen == []:
+        pincen, mask_shift, mask_shape = mipy.ismR_pinholecenter(im, 'max')
+
+    # get pinhole mask
+    if pinsiz == []:
+        mask = nip.image(np.ones(im.shape[:2]))
+    else:
+        mask = nip.extract((nip.rr((mask_shape)) <= np.floor(
+            pinsiz/2.0))*1, mask_shape, mask_shift)[:, :, np.newaxis, np.newaxis]
+
+    # find shift-list -> Note: 'nearest' is standard
+    if shift_map == []:
+        shift_map = ismR_genShiftmap(
+            im=im, mask_shape=mask_shape, pincen=pincen, shift_method='nearest')
+
+    # apply shifts -> assumes that 1st two dimensions are of detector-shape ----> for now via loop, later parallel
+    im = ismR_sheppardShift(im, shift_map, method='iter')
+
+    # different summing methods
+    ismR = ismR_sheppardSUMming(im=im, mask=mask, sum_method='all')
+
+    # return created results
+    return ismR, shift_map, mask, pincen
