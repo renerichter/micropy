@@ -353,9 +353,9 @@ def norm_back(imstack, normstack, normtype):
     return imstack_changed
 
 
-def normto(im, dims=(), method='max'):
+def normto(im, dims=(), method='max', direct=True):
     '''
-    Norms input image to chosen method. Default: max. 
+    Norms input image to chosen method. Default: max and using u_func (=in-place normalization). 
 
     :PARAM:
     =======
@@ -370,15 +370,29 @@ def normto(im, dims=(), method='max'):
     ========
     nip.v5(normto(nip.readim(),'min'))
     '''
-    if method == 'max':
-        im /= im.max(dims, keepdims=True)
-    elif method == 'min':
-        im /= im.min(dims, keepdims=True)
-    elif method == 'mean':
-        im /= im.mean(dims, keepdims=True)
+    # keep sane
+    if dims == ():
+        dims = tuple(np.arange(im.ndim))
+    if direct:
+        if method == 'max':
+            im /= im.max(dims, keepdims=True)
+        elif method == 'min':
+            im /= im.min(dims, keepdims=True)
+        elif method == 'mean':
+            im /= im.mean(dims, keepdims=True)
+        else:
+            raise ValueError(
+                "Normalization method not existent or not chosen properly.")
     else:
-        raise ValueError(
-            "Normalization method not existent or not chosen properly.")
+        if method == 'max':
+            im = im / im.max(dims, keepdims=True)
+        elif method == 'min':
+            im = im / im.min(dims, keepdims=True)
+        elif method == 'mean':
+            im = im / im.mean(dims, keepdims=True)
+        else:
+            raise ValueError(
+                "Normalization method not existent or not chosen properly.")
     return im
 
 

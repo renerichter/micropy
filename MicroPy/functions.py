@@ -1,6 +1,8 @@
 '''
 Relevant functions are implemented here. 
 '''
+import NanoImagingPack as nip
+import numpy as np
 
 
 def gaussian1D(size=10, mu=0, sigma=20, axis=-1, norm='sum'):

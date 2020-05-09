@@ -216,6 +216,6 @@ def gen_shift_loop(soff, pix):
 #                       FWD-Model
 # ------------------------------------------------------------------
 
-def forward_model(im, psf):
-    image = np.real(nip.ift3d(nip.ft3d(im[np.newaxis, :, :, :])*nip.ft3d(psf)))
+def forward_model(im, psf, **kwargs):
+    image = nip.ift3d(nip.ft3d(im[np.newaxis])*nip.ft3d(psf))
     return image
