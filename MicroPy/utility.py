@@ -37,7 +37,7 @@ def noise_stack(im, mode='Poisson', param=[1, 10, 100, 1000]):
     '''
     # prepare modes
     if mode == 'Poisson':
-        def noisy(param): return noise_poisson(im, param, norm='mean')
+        def noisy(param): return noise_poisson(im, param, norm='max')
         length = len(param)
     elif mode == 'Gaussian':
         def noisy(param): return noise_gaussian(
@@ -47,7 +47,7 @@ def noise_stack(im, mode='Poisson', param=[1, 10, 100, 1000]):
         length = len(sigma)
     elif mode == 'PoissonANDGauss':
         def noisy(param): return noise_gaussian(noise_poisson(
-            im, param[2], norm='mean'), mu=param[0], sigma=param[1])
+            im, param[2], norm='max'), mu=param[0], sigma=param[1])
         mu, sigma = gauss_testparam(param[:2])
         phot = param[2]
         param = list(zip(mu, sigma, phot))
@@ -105,11 +105,11 @@ def noise_normalize(im, phot, norm='mean'):
     elif norm == 'min':
         norm = np.min(im, axis=(-2, -1)) / phot
     else:
-        raise AssertionError("So what? Didn't expect such a indecisive move.")
+        raise AssertionError("So what? Didn't expect such an indecisive move.")
     # assure that dimensions are correct
     if im.ndim > 2:
         norm = norm[..., np.newaxis, np.newaxis]
-    im = im/norm
+    im /= norm
     return im
 
 # %%
@@ -235,10 +235,13 @@ def shiftby_list(psf, shifts=[], shift_offset=[1, 1], nbr_det=[3, 3]):
     phase_mapx = nip.xx(psf.shape[-2:], freq='ftfreq')
     phase_mapy = nip.yy(psf.shape[-2:], freq='ftfreq')
     # phase_ramp_list = mipy.add_multi_newaxis(imstack, newax_pos=[-1,-1,-1]
-    phase_ramp_list = np.exp(-1j*2*np.pi*(shifts[:, 0][:, np.newaxis, np.newaxis, np.newaxis]*phase_mapx[np.newaxis,
-                                                                                                         np.newaxis, :, :] + shifts[:, 1][:, np.newaxis, np.newaxis, np.newaxis]*phase_mapy[np.newaxis, np.newaxis, :, :]))
-    psf_res = np.real(
-        nip.ift3d(nip.ft(psf)[np.newaxis, :, :, :]*phase_ramp_list))
+    phase_ramp_list = np.exp(-1j*2*np.pi*(shifts[:, -2][:, np.newaxis, np.newaxis, np.newaxis]*phase_mapy[np.newaxis,
+                                                                                                          np.newaxis, :, :] + shifts[:, -1][:, np.newaxis, np.newaxis, np.newaxis]*phase_mapx[np.newaxis, np.newaxis, :, :]))
+    psf_res = nip.ift3d(nip.ft(psf)[np.newaxis, :, :, :]*phase_ramp_list)
+
+    # correct pixelsizes
+    psf_res.pixelsize[1:] = psf.pixelsize if not psf_res.pixelsize[1:
+                                                                   ] == psf.pixelsize else psf_res.pixelsize[1:]
     return psf_res
 
 # %%
@@ -348,6 +351,35 @@ def norm_back(imstack, normstack, normtype):
     imstack_changed = np.round(imstack / np.mean(imstack, axis=(-1, -2))
                                [..., np.newaxis, np.newaxis] * normstack, 0).astype(normtype)
     return imstack_changed
+
+
+def normto(im, dims=(), method='max'):
+    '''
+    Norms input image to chosen method. Default: max. 
+
+    :PARAM:
+    =======
+    :im:        input image
+    :method:    method for normalization -> 'max','min','mean'
+
+    OUTPUT:
+    =======
+    :im:        normalized image
+
+    EXAMPLE:
+    ========
+    nip.v5(normto(nip.readim(),'min'))
+    '''
+    if method == 'max':
+        im /= im.max(dims, keepdims=True)
+    elif method == 'min':
+        im /= im.min(dims, keepdims=True)
+    elif method == 'mean':
+        im /= im.mean(dims, keepdims=True)
+    else:
+        raise ValueError(
+            "Normalization method not existent or not chosen properly.")
+    return im
 
 
 def add_multi_newaxis(imstack, newax_pos=[-1, ]):

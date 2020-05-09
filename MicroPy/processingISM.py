@@ -8,6 +8,7 @@ from scipy.ndimage.morphology import binary_fill_holes
 
 # mipy imports
 from .transformations import irft3dz
+from .utility import findshift
 
 # %%
 # ---------------------------------------------------------------
@@ -353,34 +354,35 @@ def ismR_genShiftmap(im, mask_shape, pincen, shift_method='nearest'):
     =====
     :shift_map:          shift-map for all pinhole-pixels
     '''
-
-    shift_map = [[0, 0]*mask_shape[1] for m in range(mask_shape[0])]
+    shift_map = [[0, ]*mask_shape[1] for m in range(mask_shape[0])]
     if shift_method == 'nearest':
-        xshift = mipy.findshift(
-            im[pincen[0], pincen[1]], im[pincen[0], pincen[1]+1], 100)
-        yshift = mipy.findshift(
-            im[pincen[0], pincen[1]], im[pincen[0]+1, pincen[1]], 100)
-        for k in mask_shape[0]:
-            for l in mask_shape[1]:
-                shift_map[k][l] = (pincen[0]-k)*xshift + (pincen[1]-l)*yshift
-    if shift_method == 'mask':
-        for k in mask_shape[0]:
-            for l in mask_shape[1]:
+        xshift, _, _, _ = findshift(
+            im[pincen[0], pincen[1]+1], im[pincen[0], pincen[1]], 100)
+        yshift, _, _, _ = findshift(
+            im[pincen[0]+1, pincen[1]], im[pincen[0], pincen[1]], 100)
+        for k in range(mask_shape[0]):
+            for l in range(mask_shape[1]):
+                shift_map[k][l] = (k-pincen[0])*yshift + (l-pincen[1])*xshift
+    elif shift_method == 'mask':
+        for k in range(mask_shape[0]):
+            for l in range(mask_shape[1]):
                 if mask[k, l] > 0:
-                    shift_map[k][l] = mipy.findshift(
+                    shift_map[k][l], _, _, _ = findshift(
                         im[k, l], im[pincen[0], pincen[1]], 100)
     elif shift_method == 'complete':
-        for k in mask_shape[0]:
-            for l in mask_shape[1]:
-                shift_map[k, l] = mipy.findshift(
+        for k in range(mask_shape[0]):
+            for l in range(mask_shape[1]):
+                shift_map[k, l], _, _, _ = findshift(
                     im[k, l], im[pincen[0], pincen[1]], 100)
     else:
         raise ValueError("Shift-method not implemented")
 
-    return shift_map
+    figS, axS = ismR_drawshift(shift_map)
+
+    return shift_map, figS, axS
 
 
-def ismR_sheppardShift(im, shift_map, method='iter'):
+def ismR_sheppardShift(im, shift_map, method='iter', use_copy=False):
     '''
     Does shifting for ISM-SheppardSum. 
 
@@ -396,16 +398,22 @@ def ismR_sheppardShift(im, shift_map, method='iter'):
     :
 
     '''
+    # work on copy to keep original?
+    if use_copy:
+        imh = nip.image(np.copy(im))
+    else:
+        imh = im
+
     if method == 'iter':
-        for k in im.shape[0]:
-            for l in im.shape[1]:
-                im[k, l] = nip.shift2Dby(im[k, l], shift_map[k, l])
+        for k in range(imh.shape[0]):
+            for l in range(imh.shape[1]):
+                imh[k, l] = nip.shift2Dby(im[k, l], shift_map[k][l])
     elif method == 'parallel':
         raise Warning("Method 'parallel' is not implemented yet.")
     else:
         raise ValueError("Chosen method not existent.")
 
-    return im
+    return imh
 
 
 def ismR_sheppardSUMming(im, mask, sum_method='all'):
@@ -416,7 +424,7 @@ def ismR_sheppardSUMming(im, mask, sum_method='all'):
 
     TODO: --------------------------------------------
         1) TEST!
-        2) make sure for compatible dimensionality
+        2) fix dimensionality! (avoid np.newaxis)
         3) implement 'ring'
         4) fix to work with deconvolution
     --------------------------------------------------
@@ -434,7 +442,7 @@ def ismR_sheppardSUMming(im, mask, sum_method='all'):
     '''
 
     if sum_method == 'all':
-        ismR = np.sum(im * mask, axis=(0, 1))
+        ismR = np.sum(im * mask[..., np.newaxis, np.newaxis], axis=(0, 1))
     elif sum_method == 'ring':
         pass
     else:
@@ -516,6 +524,7 @@ def ismR_confocal(im, axes=(0, 1), pinsize=None, pinshape='circle', pincen=None,
 
     return imconfs
 
+
 def ismR_sheppardSUM(im, shift_map=[], shift_method='nearest', pincen=[], pinsiz=[]):
     '''
     Calculates sheppardSUM on image (for rectangular detector arrangement), meaning: 
@@ -545,7 +554,7 @@ def ismR_sheppardSUM(im, shift_map=[], shift_method='nearest', pincen=[], pinsiz
     '''
     # get pinhole center
     if pincen == []:
-        pincen, mask_shift, mask_shape = mipy.ismR_pinholecenter(im, 'max')
+        pincen, mask_shift, mask_shape = ismR_pinholecenter(im, 'sum')
 
     # get pinhole mask
     if pinsiz == []:
@@ -556,14 +565,31 @@ def ismR_sheppardSUM(im, shift_map=[], shift_method='nearest', pincen=[], pinsiz
 
     # find shift-list -> Note: 'nearest' is standard
     if shift_map == []:
-        shift_map = ismR_genShiftmap(
+        shift_map, figS, axS = ismR_genShiftmap(
             im=im, mask_shape=mask_shape, pincen=pincen, shift_method='nearest')
 
     # apply shifts -> assumes that 1st two dimensions are of detector-shape ----> for now via loop, later parallel
-    im = ismR_sheppardShift(im, shift_map, method='iter')
-
+    ims = ismR_sheppardShift(im, shift_map, method='iter', use_copy=True)
+    # import matplotlib.pyplot as plt
     # different summing methods
-    ismR = ismR_sheppardSUMming(im=im, mask=mask, sum_method='all')
+    ismR = ismR_sheppardSUMming(im=ims, mask=mask, sum_method='all')
 
     # return created results
     return ismR, shift_map, mask, pincen
+
+
+def ismR_drawshift(shift_map):
+    '''
+    Vector-drawing of applied shifts.
+    '''
+    import matplotlib.pyplot as plt
+    fig, ax = plt.subplots()
+    V = np.array(shift_map)[:, :, 0]
+    U = np.array(shift_map)[:, :, 1]
+    #U, V = np.meshgrid(X, Y)
+    q = ax.quiver(U, V, cmap='inferno')  # X, Y,
+    ax.quiverkey(q, X=0.3, Y=1.1, U=1,
+                 label='Quiver key, length = 1', labelpos='E')
+    plt.draw()
+    plt.plot()
+    return fig, ax

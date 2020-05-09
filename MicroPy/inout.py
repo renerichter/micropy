@@ -525,7 +525,7 @@ def get_tiling(im, form='quadratic'):
     return [rows, cols]
 
 
-def stack2tiles(im, tileshape):
+def stack2tiles(im, tileshape=None):
     '''
     Converts a 3D-stack into a 2D set of tiles. -> good for displaying. Tries to fill according to tile-shape as long as there is images left. 
 
@@ -535,6 +535,8 @@ def stack2tiles(im, tileshape):
     shape:      list with shape like e.g. [2,3] meaning 2rows and 3 columed output
     OUT:
     '''
+    if tileshape == None:
+        tileshape = get_tiling(im, form='quadratic')
     ims = im.shape[-2:]
     iml = nip.image(
         np.zeros([ims[0]*tileshape[0], ims[1]*tileshape[-1]], dtype=im.dtype))

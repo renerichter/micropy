@@ -357,7 +357,7 @@ def check_path(file_path):
             else:
                 file_path = regss.group()
         if not os.path.isdir(file_path):
-            os.mkdir(file_path)
+            os.makedirs(file_path)
             print('File path' + file_path + ' freshly created')
     else:
         raise ValueError("File_Path not of string-type.")
