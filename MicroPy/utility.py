@@ -453,6 +453,57 @@ def create_value_on_dimpos(dims_total, axes=[-2, -1], scaling=[0.5, 0.5]):
     return res
 
 
+def midVallist(iml, dims, method=1, keepdims=False):
+    '''
+    Gets middle-value or list of Middle-values according to volume (dimensions) provided by dims. 
+    Note: 
+        -> keepdims implemented, but numpy seems to ignore it... :(
+
+    TODO: 
+        1) catch User-errors
+        2) implement slice-method
+
+    :PARAM:
+    =======
+    :iml:           (NDARRAY) nD-image
+    :dims:          (LIST) of dimensions
+
+    :OUT:
+    =====
+    :midl:          (LIST) of midVals
+
+    :EXAMPLE:
+    ========   
+    midl = mipy.midVallist(nip.readim(),dims=(1,))
+
+    '''
+    # get parameters
+    orish = list(iml.shape)
+    imds = len(orish)
+
+    # get rid of double entries and reverse order
+    dimss = np.unique(np.mod(dims, imds)).tolist()
+    dimss.sort(reverse=True)
+
+    # center always lies at floor-div. by 2
+    imlsc = np.array(iml.shape)//2
+
+    # get centers
+    if method == 1:
+        midl = iml
+        for dim in dimss:
+            midl = midl.take(indices=imlsc[dim], axis=dim)
+            orish[dim] = 1
+    else:
+        # nip.slice()
+        pass
+
+    if keepdims == True:
+        midl.reshape(orish)
+
+    return midl
+
+
 def get_nbrpixel(im, dim=[0, 1]):
     '''
     just calculates the number of the pixels for the given dimensions.
