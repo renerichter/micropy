@@ -3,6 +3,8 @@ import numpy as np
 import NanoImagingPack as nip
 # mipy imports
 from .simulation import gen_shift_loop
+from .functions import gaussian1D
+from .numbers import generate_combinations
 
 # %%
 # -------------------------------------------------------------------------
@@ -306,9 +308,9 @@ def image_binning(im, bin_size=2, mode='real_sum', normalize='old'):
         pass
     elif mode == 'conv':
         # NOT FINISHED
-        ims = np.array(im.shape)
-        imh = nip.extract(im,)
-        nip.convolve()
+        #ims = np.array(im.shape)
+        #imh = nip.extract(im,)
+        # nip.convolve()
         # EXTRACT for pauding (to avoid wrap-around)
         # create kernel with ones
         # extract result
