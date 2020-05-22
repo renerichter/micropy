@@ -72,15 +72,20 @@ def otf_fill(otf, fill_method='rot'):
     return otfh
 
 
-def otf_get_mask(otf, mode='rft', eps=1e-5):
+def otf_get_mask(otf, mode='rft', eps=1e-5, bool_mask=False, closing=None):
     '''
     Calculate necessary mask for unmixing. 
     In principal better to construct mash with geometrical shapes, but for now just guessed it -> maybe only in noise-free case possible.
 
     :PARAM:
     =======
-    :otf:       known 3D-otf of shape [pinhole_dim,Z,Y,X]
-    :eps:       limit (multiplied by center_pinhole) for calculating OTF-support shape
+    :otf:       (IMAGE) known 3D-otf of shape [pinhole_dim,Z,Y,X]
+    :mode:      (STRING) mode used to calculate the given OTF (to properly calculate mask) -> 'old', 'rft', 'fft' (DEFAULT)
+    :eps:       (FLOAT) limit (multiplied by center_pinhole) for calculating OTF-support shape
+    :bool_mask: (BOOL) decide whether to return mask as image or a boolean-map
+    :closing:   (INT/LIST) whether binary closing operation should be applied onto map
+                if INT -> 0,1,2 select 1-size, 2-size (RECT-shaped) and 3-size (PLUS-shaped) kernel
+                if LIST -> custom-shape to be used
 
 
     :OUT:
@@ -108,6 +113,20 @@ def otf_get_mask(otf, mode='rft', eps=1e-5):
         zoff = 0
         proj_mask = nip.catE(
             (int(my_mask.shape[0]/2.0)-my_mask[:int(my_mask.shape[0]/2.0)].sum(axis=0), my_mask.sum(axis=0)))
+
+    if bool_mask:
+        my_mask = np.array(my_mask, dtype=bool)
+
+    if not closing == None:
+        from scipy.ndimage import binary_closing
+        if type(closing) == int:
+            b3s = np.zeros((3, 3))
+            b3s[1, 1:3] = 1
+            b3s[1:3, 1] = 1
+            closing = [np.ones((1, 1)), np.ones((2, 2)), b3s][closing]
+        my_mask_filled = np.array(binary_closing(
+            my_mask, structure=closing).astype(np.int), dtype=bool)
+        my_mask = nip.catE((my_mask, my_mask_filled))
 
     # return
     return my_mask, proj_mask, zoff, center_pinhole

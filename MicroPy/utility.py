@@ -15,7 +15,7 @@ from .numbers import generate_combinations
 
 def noise_stack(im, mode='Poisson', param=[1, 10, 100, 1000]):
     '''
-    Generates a stack from given image along the (new) 0th dimension. 
+    Generates a stack from given image along the (new) 0th dimension.
 
     :PARAMS:
     ========
@@ -27,7 +27,7 @@ def noise_stack(im, mode='Poisson', param=[1, 10, 100, 1000]):
     =====
     :res:   (IMAGE) N+1 dim noisy image
 
-    :EXAMPLE: 
+    :EXAMPLE:
     =========
     im = nip.readim();
     mode='Poisson';param=[1,10,100,1000];
@@ -211,21 +211,22 @@ def findshift(im1, im2, prec=100, printout=False):
     return shift, error, diffphase, tend
 
 
-def shiftby_list(psf, shifts=[], shift_offset=[1, 1], nbr_det=[3, 3]):
+def shiftby_list(psf, shifts=[], shift_offset=[1, 1], nbr_det=[3, 3], retreal=True):
     '''
-    Shifts an image by a list of shift-vectors. 
+    Shifts an image by a list of shift-vectors.
     If shifts not given, calculates an equally spaced rect-2D-array for nbr_det (array) of   with shift_offset spacing in pixels between them.
-    TODO: Implement for 2D-PSF. Then force: "The shifts have to have the same shape as the image. "
+
 
     :PARAM:
     =======
     :psf:           3D-(Detection)PSF
-    :shifts:        shifts to be applied
-    :shift_offset:  (OPTIONAL) distance between 2D-array
-    :nbr_det:       (OPTIONAL) number of detector elements to be generated
+    :shifts:        (LIST) shifts to be applied
+    :shift_offset:  (LIST) distance between 2D-array
+    :nbr_det:       (LIST) shape of detector elements, eg [3,3] is a 3x3 array of detectors
+    :retreal:       (BOOL) whether result should be real or complex
 
     :OUTPUT:
-    ======= 
+    =======
     :psf_res:       list of N shifted 3D-(Detection)PSF
 
     Example:
@@ -234,12 +235,23 @@ def shiftby_list(psf, shifts=[], shift_offset=[1, 1], nbr_det=[3, 3]):
     '''
     if shifts == []:
         shifts = gen_shift_loop(shift_offset, nbr_det)
-    phase_mapx = nip.xx(psf.shape[-2:], freq='ftfreq')
-    phase_mapy = nip.yy(psf.shape[-2:], freq='ftfreq')
-    # phase_ramp_list = mipy.add_multi_newaxis(imstack, newax_pos=[-1,-1,-1]
-    phase_ramp_list = np.exp(-1j*2*np.pi*(shifts[:, -2][:, np.newaxis, np.newaxis, np.newaxis]*phase_mapy[np.newaxis,
-                                                                                                          np.newaxis, :, :] + shifts[:, -1][:, np.newaxis, np.newaxis, np.newaxis]*phase_mapx[np.newaxis, np.newaxis, :, :]))
-    psf_res = nip.ift3d(nip.ft(psf)[np.newaxis, :, :, :]*phase_ramp_list)
+    #phase_mapx = nip.xx(psf.shape[-2:], freq='ftfreq')
+    #phase_mapy = nip.yy(psf.shape[-2:], freq='ftfreq')
+
+    ax = tuple(np.arange(psf.ndim))
+    axb = tuple(np.arange(psf.ndim)+1)
+    phase_ramp_list = np.ones((len(shifts),)+psf.shape, dtype=np.complex_)
+    for m in ax:
+        phase_ramp_list *= add_multi_newaxis(np.exp(-1j*2*np.pi * add_multi_newaxis(shifts[:, m], [-1, ]*(m+1))*nip.ramp1D(
+            psf.shape[m], ramp_dim=m, placement='center', freq='ftfreq', pixelsize=psf.pixelsize)[np.newaxis]), [-1]*(psf.ndim-m-1))
+
+    #phase_ramp_list_old = np.exp(-1j*2*np.pi*(shifts[:, -2][:, np.newaxis, np.newaxis, np.newaxis]*phase_mapy[np.newaxis,np.newaxis, :, :] + shifts[:, -1][:, np.newaxis, np.newaxis, np.newaxis]*phase_mapx[np.newaxis, np.newaxis, :, :]))
+
+    psf_res = nip.ift(nip.ft(psf, axes=ax)[
+                      np.newaxis]*phase_ramp_list, axes=axb)
+
+    if retreal:
+        psf_res = psf_res.real
 
     # correct pixelsizes
     psf_res.pixelsize[1:] = psf.pixelsize if not psf_res.pixelsize[1:
@@ -254,7 +266,7 @@ def shiftby_list(psf, shifts=[], shift_offset=[1, 1], nbr_det=[3, 3]):
 
 def transpose_arbitrary(imstack, idx_startpos=[-2, -1], idx_endpos=[0, 1]):
     '''
-    creates the forward- and backward transpose-list to change stride-order for easy access on elements at particular positions. 
+    creates the forward- and backward transpose-list to change stride-order for easy access on elements at particular positions.
 
     TODO: add security/safety checks
     '''
@@ -287,29 +299,29 @@ def image_binning(im, bin_size=2, mode='real_sum', normalize='old'):
     # for now:
     if im.ndim > 2:
         id1 = list(np.arange(im.ndim))
-        id2 = id1[-2:] + id1[:-2]
-        id3 = id1[2:] + id1[:2]
+        id2 = id1[-2:] + id1[: -2]
+        id3 = id1[2:] + id1[: 2]
         imh = np.transpose(im, id2)
     else:
         imh = im
-    res = nip.image(np.zeros(imh[::bin_size, ::bin_size].shape))
+    res = nip.image(np.zeros(imh[:: bin_size, :: bin_size].shape))
     # only do 2d binning
     if mode == 'real_sum':
         offset = list(np.arange(bin_size))
         for m in range(bin_size):
             for n in range(bin_size):
-                res += imh[offset[m]:imh.shape[0]-bin_size+1+offset[m]:bin_size,
-                           offset[n]:imh.shape[1]-bin_size+1+offset[n]:bin_size]
+                res += imh[offset[m]: imh.shape[0]-bin_size+1+offset[m]: bin_size,
+                           offset[n]: imh.shape[1]-bin_size+1+offset[n]: bin_size]
             # not finished
     elif mode == 'real_pix':  # only selects the pixel-value at the binning-position
-        res = imh[::bin_size, ::bin_size]
+        res = imh[:: bin_size, :: bin_size]
     # takes median of regions -> reshape to split, e.g. 800x800 ->(bin2)-> 400x400x2x2 -> median along dim-2&3
     elif mode == 'real_median':
         pass
     elif mode == 'conv':
         # NOT FINISHED
-        #ims = np.array(im.shape)
-        #imh = nip.extract(im,)
+        # ims = np.array(im.shape)
+        # imh = nip.extract(im,)
         # nip.convolve()
         # EXTRACT for pauding (to avoid wrap-around)
         # create kernel with ones
@@ -357,7 +369,7 @@ def norm_back(imstack, normstack, normtype):
 
 def normto(im, dims=(), method='max', direct=True):
     '''
-    Norms input image to chosen method. Default: max and using u_func (=in-place normalization). 
+    Norms input image to chosen method. Default: max and using u_func (=in-place normalization).
 
     :PARAM:
     =======
@@ -402,7 +414,7 @@ def add_multi_newaxis(imstack, newax_pos=[-1, ]):
     '''
     Adds new-axis at the mentioned position with respect to the final shape per step. So hence, if ndim = 3 and e.g. (3,256,256) and newax_pos = (1,2,-1) it will lead to:(3,1,1,256,256,1), where negative indexes are added first (postpending) and positive indexes are inserted last (prepend).
 
-    TODO: 
+    TODO:
         1) no error-prevention included
         2) axes not always appended as thought
 
@@ -411,7 +423,7 @@ def add_multi_newaxis(imstack, newax_pos=[-1, ]):
     :imstack:   n-dimensional data_stack
     :newax_pos: positions of the newaxis
 
-    :example: 
+    :example:
     ========
     import NanoImagingPack as nip
     a = np.repeat(nip.readim('orka')[np.newaxis],3,0)
@@ -439,13 +451,13 @@ def create_value_on_dimpos(dims_total, axes=[-2, -1], scaling=[0.5, 0.5]):
     =======
     dims_total:     e.g. via np.ndim
     :axes:          axes to change
-    :scaling:       values to change to 
+    :scaling:       values to change to
 
-    :Example: 
+    :Example:
     =========
     a = np.repeat(nip.readim('orka')[np.newaxis],3,0)
     b = add_multi_newaxis(a,[1,2,-1])
-    print("dim of a="+str(a.shape)+"\ndim of b="+str(b.shape)+".") 
+    print("dim of a="+str(a.shape)+"\ndim of b="+str(b.shape)+".")
     atrans = create_value_on_dimpos(b.ndim,axes=[1,-2,-1],scaling=[2,3,0.25])
     print("scaling factors for array="+str(atrans)+".")
     '''
@@ -457,11 +469,11 @@ def create_value_on_dimpos(dims_total, axes=[-2, -1], scaling=[0.5, 0.5]):
 
 def midVallist(iml, dims, method=1, keepdims=False):
     '''
-    Gets middle-value or list of Middle-values according to volume (dimensions) provided by dims. 
-    Note: 
+    Gets middle-value or list of Middle-values according to volume (dimensions) provided by dims.
+    Note:
         -> keepdims implemented, but numpy seems to ignore it... :(
 
-    TODO: 
+    TODO:
         1) catch User-errors
         2) implement slice-method
 
@@ -475,7 +487,7 @@ def midVallist(iml, dims, method=1, keepdims=False):
     :midl:          (LIST) of midVals
 
     :EXAMPLE:
-    ========   
+    ========
     midl = mipy.midVallist(nip.readim(),dims=(1,))
 
     '''
@@ -501,7 +513,7 @@ def midVallist(iml, dims, method=1, keepdims=False):
         pass
 
     if keepdims == True:
-        midl.reshape(orish)
+        midl = np.reshape(midl, orish)
 
     return midl
 
@@ -543,9 +555,9 @@ def subtract_from_max(im):
 # --------------------------------------------------------
 def defocus(im, mode='Gauss', param=[[0, 0], [10, 20]], axes=-1):
     '''
-    Calculates the defocus of an image for a given 
+    Calculates the defocus of an image for a given
 
-    Example: 
+    Example:
     mode='Gauss';param=[[0,10],[0,20]];axes=[-2,-1]
     defocus(im,mode=mode,param=param,axes=axes)
     '''
@@ -582,10 +594,10 @@ def gauss_testparam(param, length=None):
 
 def defocus_stack(im, mode='symmGauss', param=[0, [1, 10]], start='center'):
     '''
-    Calculates a defocus-stack. Assumes a sigma longer than 1. Does not catch errors with mu. 
+    Calculates a defocus-stack. Assumes a sigma longer than 1. Does not catch errors with mu.
     For now, only start from 'center' and 'symmGauss' as mode are implemented.
 
-    Example: 
+    Example:
     mode='symmGauss';param=[0,[1,10]];start='center';
     param=[0,list(np.arange(1,20,1))];
     '''
@@ -599,7 +611,7 @@ def defocus_stack(im, mode='symmGauss', param=[0, [1, 10]], start='center'):
         # eval defocus to create stack
         for m in range(len(sigma)):
             res = nip.cat((res, defocus(im, mode='Gauss', param=[
-                          mu[m], sigma[m]], axes=[-2, -1])[np.newaxis]), axis=0)
+                mu[m], sigma[m]], axes=[-2, -1])[np.newaxis]), axis=0)
     else:
         raise ValueError("This mode is not implemented yet.")
     return res

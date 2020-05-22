@@ -3,11 +3,84 @@ Transformations that were helpful will be collected here. No matter whether Houg
 '''
 import NanoImagingPack as nip
 from scipy.fftpack import dct
+import numpy as np
 
 # %%
 # ------------------------------------------------------------------
 #               FOURIER (-like) TRAFOS
 # ------------------------------------------------------------------
+
+
+def rft_getshape(im, raxis=None, faxes=None):
+    '''
+    Returns RFT-and FFT dimensions from input.
+
+    TODO: exclude double dimensions and catch user errors.
+
+    :PARAMS:
+    ========
+    :im:        (IMAGE) input image
+    :raxis:     (INT) dimension of RFT
+    :faxes:     (TUPLE) dimensions for FFT
+
+    OUTPUT:
+    =======
+    :rax:       (TUPLE) real-axis
+    :fax:       (TUPLE) FFT-axes
+    '''
+    # sanity-check for fourier-axes
+    if faxes == None:
+        fax = np.arange(im.ndim)
+    else:
+        fax = np.mod(faxes, im.ndim)
+
+    # sanity-check for RFT-axis
+    if raxis == None:
+        rax = fax[-1]
+        fax = fax[:-1]
+    else:
+        if raxis < 0:
+            raxis = np.mod(raxis, im.ndim)
+        rax = raxis
+        fax = np.delete(fax, raxis)
+    return (rax,), tuple(fax)
+
+
+def rftnd(im, raxis=None, faxes=None):
+    '''
+    Performs a nD-RFT forward on given or all axes axes. Especially, RFT can only be applied once (half-room selection). Hence, apply RFT first and then resulting FT. If no further axis is given, RFT will be applied along last dimension. 
+
+    :PARAMS:
+    ========
+    :im:        (IMAGE) image in
+    :raxis:     (INT) Axis along which the RFT should be performed
+    :faxes:     (TUPLE) Axes along which the FFT should be performed -> if empty: selects all left-over dimensions
+
+    :OUT:
+    =====
+    Fourier-transformed image.
+    '''
+    rax, ax = rft_getshape(im, raxis=raxis, faxes=faxes)
+    return nip.ft(nip.rft(im, axes=rax), axes=ax)
+
+
+def irftnd(im, s, raxis=None, faxes=None):
+    '''
+    Performs a nD-RFT backward (=irft) on the given (or all) axes. Especially, RFT can only be applied once (half-room selection). Hence, apply FT first and the RFT to reverse the application process of rftnd. 
+
+    :PARAMS:
+    ========
+    :im:        (IMAGE) image in
+    :s:         (TUPLE) shape of output image (needed to shift highest frequency to according position in case of even/uneven image sizes)
+    :raxis:     (INT) Axis along which the RFT should be performed
+    :faxes:     (TUPLE) Axes along which the FFT should be performed -> if empty: selects all left-over dimensions
+
+    :OUT:
+    =====
+    Inverse Fourier-Transformed image.
+    '''
+    rax, ax = rft_getshape(im, raxis=raxis, faxes=faxes)
+    return nip.irft(nip.ift(im, axes=ax), shift_after=True, axes=rax, s=s)
 
 
 def rft3dz(im):
@@ -38,7 +111,7 @@ def irft3dz(im, s):
     =====
     Inverse Fourier-Transformed image.
     '''
-    return nip.irft(nip.ift(im, axes=(-2, -1)), axes=-3, s=s)
+    return nip.irft(nip.ift(im, axes=(-2, -1)), shift_after=True, axes=-3, s=s)
 
 
 def dct2(im, forward=True, axes=[-2, -1]):

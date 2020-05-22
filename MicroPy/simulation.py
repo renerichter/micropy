@@ -1,8 +1,9 @@
 '''
-All data generating functions will be found in here. 
+All data generating functions will be found in here.
 '''
 import numpy as np
 import NanoImagingPack as nip
+from .transformations import irft3dz, rft3dz
 
 # %%
 # ------------------------------------------------------------------
@@ -12,7 +13,7 @@ import NanoImagingPack as nip
 
 def PSF_SIM_PARA(para):
     '''
-    Set standard-parameters for a PSF-simulation using the nip.PSF_PARAMS() set. 
+    Set standard-parameters for a PSF-simulation using the nip.PSF_PARAMS() set.
 
     PARAMS:
     ======
@@ -72,7 +73,7 @@ def generate_testobj(test_object=3):
             np.zeros((15, ROIs[0][1]-ROIs[0][0], ROIs[0][3]-ROIs[0][2])))
         imc = int(np.floor(im.shape[0]/2.0))
         im[imc-3] = nip.extract(b[2], ROIsize=im.shape[1:])
-        #im[imc-5] = nip.shift2Dby(im[imc-5],[np.floor(im.shape[1]/4.0),0])
+        # im[imc-5] = nip.shift2Dby(im[imc-5],[np.floor(im.shape[1]/4.0),0])
         im[imc-2] = nip.extract(b[-2], ROIsize=im.shape[1:])
         im[imc-2] = nip.shift2Dby(im[imc-2], [np.floor(im.shape[1]/6.0), 0])
         im[imc-1, :b[-1].shape[0], :b[-1].shape[1]] = b[-1]
@@ -88,7 +89,7 @@ def generate_testobj(test_object=3):
         immax[immax == 0] = 1
         im = im / immax[:, np.newaxis, np.newaxis]*np.iinfo('uint8').max
         im[im < 0] = 0
-        #im[imc+5] = nip.shift2Dby(im[imc+5],[np.floor(im.shape[1]/6.0),0])
+        # im[imc+5] = nip.shift2Dby(im[imc+5],[np.floor(im.shape[1]/6.0),0])
     elif test_object == 3:
         # Test-target
         a = nip.readim()
@@ -174,8 +175,8 @@ def gen_shift_npfunc(soff, pix):
     ==================
     %timeit c1 = gen_shift_npfunc([1,1],[5,5])
     %timeit c2 = gen_shift_loop([1,1],[5,5])
-    #29.7 µs ± 883 ns per loop (mean ± std. dev. of 7 runs, 10000 loops each)
-    #18.7 µs ± 1.09 µs per loop (mean ± std. dev. of 7 runs, 10000 loops each)
+    # 29.7 µs ± 883 ns per loop (mean ± std. dev. of 7 runs, 10000 loops each)
+    # 18.7 µs ± 1.09 µs per loop (mean ± std. dev. of 7 runs, 10000 loops each)
     '''
     a = np.repeat(
         np.arange(-int(pix[0]/2.0), int(pix[0]/2.0)+1)[np.newaxis, :], pix[1], 0).flatten()
@@ -189,7 +190,7 @@ def gen_shift_loop(soff, pix):
     '''
     Calculates coordinates for an equally spaced rect-2D-array. Use with e.g. shiftby_list to generate a shifted set of images.
 
-    TODO: 
+    TODO:
         1) generalize for different dimensions (e.g. give unit-cell and generate pattern)
         2) generalize for nD-input
 
@@ -216,6 +217,28 @@ def gen_shift_loop(soff, pix):
 #                       FWD-Model
 # ------------------------------------------------------------------
 
-def forward_model(im, psf, **kwargs):
-    image = nip.ift3d(nip.ft3d(im[np.newaxis])*nip.ft3d(psf))
-    return image
+def forward_model(obj, psf, fmodel='fft', **kwargs):
+    '''
+    A simple forward model calculation using either fft or rft.
+
+    :PARAMS:
+    =======
+    :obj:       (IMAGE) real image input
+    :psf:       (IMAGE) real psf input
+    :fmodel:    (STRING) 'fft' or 'rft'
+
+    :OUTPUT:
+    ========
+    :res:       (IMAGE) simulated image
+    '''
+
+    if fmodel == 'fft':
+        # normalization for 3dim ortho-convolution normalization on last 3 axes
+        res = nip.ift3d(nip.ft3d(
+            obj[np.newaxis])*nip.ft3d(psf)) * np.sqrt(np.prod(list(psf.shape[-3:]))) * np.sqrt(np.prod(psf.shape[-3:]))
+    else:
+        # normalization for 2dim ortho-convolution on last 2 (=fft) axes; RFT is automatically ok due to only normalizing in back-path
+        res = irft3dz(rft3dz(obj[np.newaxis])*rft3dz(psf),
+                      s=obj.shape) * np.sqrt(np.prod(psf.shape[-2:]))
+
+    return res
