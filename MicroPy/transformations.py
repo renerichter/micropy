@@ -42,7 +42,8 @@ def rft_getshape(im, raxis=None, faxes=None):
         if raxis < 0:
             raxis = np.mod(raxis, im.ndim)
         rax = raxis
-        fax = np.delete(fax, raxis)
+        if faxes == None:
+            fax = np.delete(fax, raxis)
     return (rax,), tuple(fax)
 
 

@@ -505,6 +505,29 @@ def print_stack2subplot(imstack, plt_raster=[4, 4], plt_format=[8, 6], title=Non
     return fig
 
 
+def stack2plot(x, ystack, refs=None, title=None, xlabel=None, ylabel=None, colors=None):
+    '''
+    Prints a 1d-"ystack" into 1 plot and assigns legends + titles.
+    '''
+    fig1 = plt.figure()
+    for m in range(len(ystack)):
+        label = str(m) if refs is None else refs[m]
+        colorse = tuple(np.random.rand(3)) if colors is None else colors[m]
+        xlabel = 'Pixel' if xlabel is None else xlabel
+        ylabel = 'Pixel' if ylabel is None else ylabel
+        title = datetime.now().strftime("%Y%M%D") if title is None else title
+        line, = plt.plot(x, ystack[m], label=label, color=colorse)
+        line.set_antialiased(False)
+        plt.xlabel(xlabel)
+        plt.ylabel(ylabel)
+        plt.title(title)
+        plt.legend(loc="best")
+
+    plt.show()
+
+    return fig1
+
+
 def plot_save(ppointer, save_name, save_format='png'):
     '''
     Just an easy wrapper.

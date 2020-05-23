@@ -224,6 +224,7 @@ def shiftby_list(psf, shifts=[], shift_offset=[1, 1], nbr_det=[3, 3], retreal=Tr
     :shift_offset:  (LIST) distance between 2D-array
     :nbr_det:       (LIST) shape of detector elements, eg [3,3] is a 3x3 array of detectors
     :retreal:       (BOOL) whether result should be real or complex
+    :ax:            (TUPLE) two-axes two be used for shift
 
     :OUTPUT:
     =======
@@ -241,8 +242,8 @@ def shiftby_list(psf, shifts=[], shift_offset=[1, 1], nbr_det=[3, 3], retreal=Tr
     ax = tuple(np.arange(psf.ndim))
     axb = tuple(np.arange(psf.ndim)+1)
     phase_ramp_list = np.ones((len(shifts),)+psf.shape, dtype=np.complex_)
-    for m in ax:
-        phase_ramp_list *= add_multi_newaxis(np.exp(-1j*2*np.pi * add_multi_newaxis(shifts[:, m], [-1, ]*(m+1))*nip.ramp1D(
+    for m in ax[-2:]:
+        phase_ramp_list *= add_multi_newaxis(np.exp(-1j*2*np.pi * add_multi_newaxis(shifts[:, m-len(psf.shape[:-2])], [-1, ]*(m+1))*nip.ramp1D(
             psf.shape[m], ramp_dim=m, placement='center', freq='ftfreq', pixelsize=psf.pixelsize)[np.newaxis]), [-1]*(psf.ndim-m-1))
 
     #phase_ramp_list_old = np.exp(-1j*2*np.pi*(shifts[:, -2][:, np.newaxis, np.newaxis, np.newaxis]*phase_mapy[np.newaxis,np.newaxis, :, :] + shifts[:, -1][:, np.newaxis, np.newaxis, np.newaxis]*phase_mapx[np.newaxis, np.newaxis, :, :]))
@@ -543,6 +544,26 @@ def subtract_from_max(im):
     '''
     im = get_immax(im) - im
     return im
+
+
+def ismR_generateRings(det_geo=[0, 0], ring=0, aslist=True):
+    '''
+    Generates binary mask for selection of rings for deconvolution. Assumes 2D detector distribution geometry.
+    '''
+    sel = np.zeros(det_geo)
+    selc = np.array(sel.shape)//2
+
+    if ring == 0:
+        sel[selc[0], selc[1]] = 1
+    else:
+        sel[selc[-2]-ring:selc[-2]+ring+1, selc[-1]-ring:selc[-1]+ring+1] = 1
+        sel[selc[-2]-ring+1:selc[-2]+ring, selc[-1]-ring+1:selc[-1]+ring] = 0
+    sel = np.array(sel, dtype=bool)
+
+    if aslist == True:
+        sel = np.reshape(sel, np.prod(sel.shape))
+
+    return sel
 
 
 # %% -----------------------------------------------------

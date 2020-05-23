@@ -4,6 +4,7 @@ All data generating functions will be found in here.
 import numpy as np
 import NanoImagingPack as nip
 from .transformations import irft3dz, rft3dz
+from .utility import shiftby_list
 
 # %%
 # ------------------------------------------------------------------
@@ -41,7 +42,7 @@ def PSF_SIM_PARA(para):
 #                       TEST-OBJECT generators
 # ------------------------------------------------------------------
 
-def generate_testobj(test_object=3):
+def generate_testobj(test_object=3, mypath=''):
     '''
     Generates a 3D testobject depending on choice.
     '''
@@ -145,10 +146,64 @@ def generate_testobj(test_object=3):
     return im
 
 
+def ismR_defaultIMG(obj, psf, NPhot=None, use2D=True):
+    '''
+    Calculates Image using default forward model and Poisson-noise.
+    '''
+    # params
+    objc = np.array(np.floor(np.array(obj.shape)/2.0), dtype=np.uint)
+
+    # calculate image
+    im_ism = forward_model(obj, psf)
+
+    # select in-focus slice -> assume real-image and PSF
+    if use2D:
+        im_ism_sel = np.real(im_ism[:, objc[0]])
+
+    # add Poisson-noise
+    im_ism_sel /= np.max(im_ism_sel)
+    if NPhot is not None:
+        im_ism_sel = nip.poisson(im_ism_sel * NPhot)
+
+    # provide transformed image
+    im_ism_ft = nip.ft2d(im_ism_sel) if use2D else nip.ft3d(im_ism_sel)
+
+    return im_ism_sel, im_ism_ft, objc
 # %%
 # ------------------------------------------------------------------
 #                       PSF-generators
 # ------------------------------------------------------------------
+
+
+def ismR_defaultPSF(obj, lex=488, lem=520, shift_offset=[2, 2], nbr_det=[3, 3]):
+    # generate PSFs
+    para = nip.PSF_PARAMS()
+    PSF_SIM_PARA(para)  # add formerly defined PSF-paramaters
+
+    # non-aberrated excitation
+    para.lambdaEx = 488
+    para.wavelength = 488
+    para.aplanar = para.apl.excitation
+    psfex = nip.psf(obj, para)
+
+    # non-aberrated emission
+    para.lambdaEx = 520
+    para.wavelength = 520
+    para.aplanar = para.apl.emission
+    psfem = nip.psf(obj, para)
+
+    # generate ISM total PSF and normalize to 1 (because if there is a photon reaching the detector it will be detected)
+    psfem_array = shiftby_list(
+        psfem, shift_offset=shift_offset, nbr_det=nbr_det)
+    psf_eff = psfex[np.newaxis] * np.real(psfem_array)
+    psf_eff /= np.sum(psf_eff, keepdims=True)
+    otf_eff = rft3dz(psf_eff)
+
+    # centers
+    psfc = np.array(np.floor(np.array(psf_eff.shape)/2.0), dtype=np.uint)
+
+    return psf_eff, otf_eff, psfc
+
 
 # %%
 # ------------------------------------------------------------------
@@ -217,7 +272,7 @@ def gen_shift_loop(soff, pix):
 #                       FWD-Model
 # ------------------------------------------------------------------
 
-def forward_model(obj, psf, fmodel='fft', **kwargs):
+def forward_model(obj, psf, fmodel='fft', retreal=True, **kwargs):
     '''
     A simple forward model calculation using either fft or rft.
 
@@ -226,6 +281,7 @@ def forward_model(obj, psf, fmodel='fft', **kwargs):
     :obj:       (IMAGE) real image input
     :psf:       (IMAGE) real psf input
     :fmodel:    (STRING) 'fft' or 'rft'
+    :retreal:   (BOOL) wether output should be real
 
     :OUTPUT:
     ========
@@ -240,5 +296,8 @@ def forward_model(obj, psf, fmodel='fft', **kwargs):
         # normalization for 2dim ortho-convolution on last 2 (=fft) axes; RFT is automatically ok due to only normalizing in back-path
         res = irft3dz(rft3dz(obj[np.newaxis])*rft3dz(psf),
                       s=obj.shape) * np.sqrt(np.prod(psf.shape[-2:]))
+
+    if retreal:
+        res = res.real
 
     return res
