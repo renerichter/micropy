@@ -2,7 +2,6 @@
 import numpy as np
 import NanoImagingPack as nip
 # mipy imports
-from .simulation import gen_shift_loop
 from .functions import gaussian1D
 from .numbers import generate_combinations
 
@@ -259,6 +258,61 @@ def shiftby_list(psf, shifts=[], shift_offset=[1, 1], nbr_det=[3, 3], retreal=Tr
                                                                    ] == psf.pixelsize else psf_res.pixelsize[1:]
     return psf_res
 
+
+def gen_shift_npfunc(soff, pix):
+    '''
+    Calculates coordinates for an equally spaced rect-2D-array. Use with e.g. shiftby_list to generate a shifted set of images.
+
+    NOTE: Slower than gen_shift_loop
+
+    :PARAMS:
+    ========
+    :soff:      (LIST) offset between pixel-array (2D)
+    :pix:       (LIST) number of pixels per direction (2D)
+
+    :OUT:
+    =====
+    :c:         (NP.NDARRAY) calculated array spacing
+
+    Test with ipython:
+    ==================
+    %timeit c1 = gen_shift_npfunc([1,1],[5,5])
+    %timeit c2 = gen_shift_loop([1,1],[5,5])
+    # 29.7 µs ± 883 ns per loop (mean ± std. dev. of 7 runs, 10000 loops each)
+    # 18.7 µs ± 1.09 µs per loop (mean ± std. dev. of 7 runs, 10000 loops each)
+    '''
+    a = np.repeat(
+        np.arange(-int(pix[0]/2.0), int(pix[0]/2.0)+1)[np.newaxis, :], pix[1], 0).flatten()
+    b = np.repeat(
+        np.arange(-int(pix[1]/2.0), int(pix[1]/2.0)+1)[:, np.newaxis], pix[0], 1).flatten()
+    c = [[soff[0]*m, soff[1]*n] for m, n in zip(b, a)]
+    return c
+
+
+def gen_shift_loop(soff, pix):
+    '''
+    Calculates coordinates for an equally spaced rect-2D-array. Use with e.g. shiftby_list to generate a shifted set of images.
+
+    TODO:
+        1) generalize for different dimensions (e.g. give unit-cell and generate pattern)
+        2) generalize for nD-input
+
+    :PARAMS:
+    ========
+    :soff:      (LIST) offset between pixel-array (2D)
+    :pix:       (LIST) number of pixels per direction (2D)
+
+    :OUT:
+    =====
+    :c:         (NP.NDARRAY) calculated array spacing
+    '''
+    c = []
+    xo = -int(pix[1]/2.0)
+    yo = -int(pix[0]/2.0)
+    for jj in range(pix[0]):
+        for kk in range(pix[1]):
+            c.append([soff[0]*(yo+jj), soff[1]*(xo+kk)])
+    return np.array(c)
 # %%
 # ------------------------------------------------------------------
 #                       SHAPE-MANIPULATION
