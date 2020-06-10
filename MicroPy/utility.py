@@ -428,8 +428,10 @@ def normto(im, dims=(), method='max', direct=True):
 
     :PARAM:
     =======
-    :im:        input image
-    :method:    method for normalization -> 'max','min','mean'
+    :im:        (ARRAY)     input image
+    :dims:      (TUPLE)     dimensions to be used for normalization
+    :method:    (STRING)    method for normalization -> 'max','min','mean'
+    :direct:    (BOOL)      apply in-place?
 
     OUTPUT:
     =======

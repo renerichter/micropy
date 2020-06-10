@@ -5,10 +5,12 @@ The ISM processing toolbox.
 import numpy as np
 import NanoImagingPack as nip
 from scipy.ndimage.morphology import binary_fill_holes
+from scipy.ndimage import binary_closing
 
 # mipy imports
 from .transformations import irft3dz
 from .utility import findshift
+
 
 # %%
 # ---------------------------------------------------------------
@@ -84,13 +86,14 @@ def otf_get_mask(otf, mode='rft', eps=1e-5, bool_mask=False, closing=None):
     :eps:       (FLOAT) limit (multiplied by center_pinhole) for calculating OTF-support shape
     :bool_mask: (BOOL) decide whether to return mask as image or a boolean-map
     :closing:   (INT/LIST) whether binary closing operation should be applied onto map
-                if INT -> 0,1,2 select 1-size, 2-size (RECT-shaped) and 3-size (PLUS-shaped) kernel
+                if INT -> choose with 0,1,..,4 from list [np.ones((2, 2)), np.ones((2, 2)), nip.rr([3,3]) <= 1,nip.rr([5,5]) <= 2, nip.rr([7,7]) <= 3]
                 if LIST -> custom-shape to be used
 
+    TODO:   1) compare scipy.ndimage.binary_closing with scipy.ndimage.morphology.binary_fillholes
 
     :OUT:
     =====
-    :my_mask:           calculated Mask = used OTF Support
+    :my_mask:           calculated Mask = used OTF Support; Note: If closing used, new (closed) my_mask is concatenated onto existing my_mask!
     :proj_mask:         z-projection of mask to get range for inversion calculation
     :zoff:              z-position of 0 frequency in fourier-space
     :center_pinhole:    central pinhole from input pinhole stack (by numbers, not by correlation)
@@ -101,35 +104,42 @@ def otf_get_mask(otf, mode='rft', eps=1e-5, bool_mask=False, closing=None):
     center_max = np.max(np.abs(otf[center_pinhole]))
     eps = center_max * eps
 
-    # calculate mask and get z-projection
+    # calculate mask
     my_mask = (np.abs(otf[center_pinhole]) > eps)*1
+
+    # close using the cosen structuring element 
+    if closing is not None:
+        
+        # create closing
+        if type(closing) == int:
+            closing = ([np.ones((2, 2)), np.ones((2, 2)), nip.rr([3,3]) <= 1,nip.rr([5,5]) <= 2, nip.rr([7,7]) <= 3][closing])*1
+        
+        # fill mask -> only 2D operation
+        if my_mask.ndim > 2:
+            mms = my_mask.shape
+            my_mask = np.reshape(my_mask,(int(np.prod(mms[:-2])),mms[-2],mms[-1]))
+            my_mask_filled = np.copy(my_mask)
+            for m in range(my_mask.shape[0]):
+                my_mask_filled[m] = binary_closing(my_mask[m], structure=closing).astype(np.int)
+            my_mask_filled = np.reshape(my_mask_filled,mms)
+            my_mask = np.reshape(my_mask,mms)
+    else: 
+        my_mask_filled = my_mask
+
+    # old mode???? WHAT IS HAPPENING HERE???
     if mode == 'old':
-        zoff = int(np.floor(otf.shape[1]/2.0))  # z-offset
-        proj_mask = my_mask[zoff:].sum(axis=0)
-    elif mode == 'rft':
-        zoff = 0
-        proj_mask = my_mask.sum(axis=0)
-    else:
-        zoff = 0
-        proj_mask = nip.catE(
-            (int(my_mask.shape[0]/2.0)-my_mask[:int(my_mask.shape[0]/2.0)].sum(axis=0), my_mask.sum(axis=0)))
+        zoff = otf.shape[1]//2  # z-offset
+        proj_mask = my_mask_filled[zoff:].sum(axis=0)
+    else: 
+        zoff = np.zeros(otf.shape[-2:],dtype=int)
+        proj_mask = my_mask_filled.sum(axis=0) if mode == 'rft' else nip.catE((int(my_mask_filled.shape[0]/2.0)-my_mask_filled[:int(my_mask_filled.shape[0]/2.0)].sum(axis=0), my_mask_filled.sum(axis=0)))
 
     if bool_mask:
+        my_mask_filled = np.array(my_mask_filled, dtype=bool)
         my_mask = np.array(my_mask, dtype=bool)
 
-    if not closing == None:
-        from scipy.ndimage import binary_closing
-        if type(closing) == int:
-            b3s = np.zeros((3, 3))
-            b3s[1, 1:3] = 1
-            b3s[1:3, 1] = 1
-            closing = [np.ones((1, 1)), np.ones((2, 2)), b3s][closing]
-        my_mask_filled = np.array(binary_closing(
-            my_mask, structure=closing).astype(np.int), dtype=bool)
-        my_mask = nip.catE((my_mask, my_mask_filled))
-
-    # return
-    return my_mask, proj_mask, zoff, center_pinhole
+    # done?
+    return my_mask, my_mask_filled, proj_mask, zoff, center_pinhole
 
 
 def test_otf_symmetry(otf):
@@ -162,49 +172,81 @@ def test_otf_symmetry(otf):
     nip.v5(nip.cat((psfh3, psfc, psfh2)))
 
 
-def unmix_matrix(otf, mode='rft', eps=1e-4, svdlim=1e-15, hermitian=False):
+def pinv_unmix(a, rcond=1e-15, svdnum=None, eps_reg=0, use_own=False):
+    """
+    Functions as a wrapper and a regularized version of the np.linalg.pinv.
+
+    :PARAM:
+    =======
+    :a:         (ARRAY/IMAGE) Array to invert
+    :rcond:     (FLOAT) relative cutoff
+    :svdlim:    (INT) maximum nbr of SVD-values to keep
+    :eps:       (FLOAT) regularizer
+
+    """
+    # use original pinv?
+    if not use_own:
+        res = np.linalg.pinv(a=a,rcond=rcond)
+
+    else:
+        a = a.conjugate()
+        u, s, vt = np.linalg.svd(a, full_matrices=False)
+
+        # discard small singular values; regularize singular-values if wanted -> note: eps_reg is 0 on default
+        if svdnum == None:
+            cutoff = np.array(rcond)[..., np.newaxis] * np.amax(s, axis=-1, keepdims=True)
+            large = s > cutoff
+            
+            # Tikhonov regularization analogue to idea 1/(OTF+eps) where eps becomes dominant when OTF<eps, especially reduces to 1/eps when OTF<<eps
+            s =  np.divide(s, s*s+eps_reg, where=large, out=s) if eps_reg else np.divide(1, s, where=large, out=s)   
+            s[~large] = 0 
+        else:
+            cutoff = s[:svdnum+1] if svdnum < len(s) else s
+            cutoff = cutoff/(cutoff*cutoff+eps_reg) if eps_reg else 1/cutoff
+            
+            s = np.zeros(s.shape)
+            s[:len(cutoff)]=cutoff
+
+        res = np.matmul(np.transpose(vt), np.multiply(s[..., np.newaxis], np.transpose(u)))   
+
+    # done?
+    return res
+
+
+
+def unmix_matrix(otf, mode='rft', eps_mask=5e-4, eps_reg=1e-3, svdlim=1e-8, svdnum=None, hermitian=False, use_own=False, closing=None):
     '''
     Calculates the unmixing matrix. Assums pi-rotational-symmetry around origin (=conjugate), because PSF is real and only shifted laterally. No aberrations etc. Hence, only half of the OTF-support along z is calculated.
 
     :PARAMS:
     ========
-    :PSF_eff:   Multi-Pinhole PSF of shape [pinhole_dim,Z,Y,X]
-    :eps:       thresh-value for calculating the non-zero support (and hence the used kx,ky frequencies)
-    :mode:      mode of used FTs -> 'old': manual stitching; 'rft': RFT-based 
-    :svdlim:    minimum relative size of the smallest SVD-value to the biggest for the matrix inversion (limits the non-empty SVD-matrix-size)
-    :hermitian: if input is hermitian -> typically: not
+    :PSF_eff:   (IMAGE)     Multi-Pinhole PSF of shape [pinhole_dim,Z,Y,X]
+    :eps:       (FLOAT)     thresh-value for calculating the non-zero support (and hence the used kx,ky frequencies)
+    :mode:      (STRING)    mode of used FTs -> 'old': manual stitching; 'rft': RFT-based 
+    :svdrel:    (FlOAT)     minimum relative size of the smallest SVD-value to the biggest for the matrix inversion (limits the non-empty SVD-matrix-size)
+    :svdlim:    (INT)       maximum number of included singular values -> note: if svdlim is set, svdrel is ignored
+    :hermitian: (BOOL)      input hermitian? (typically: False, because of (at least) numerical differences)
 
     :OUT:
     ====
-    otf_unmix:  returns the unmix OTF of shape [z/2,pinhole_dim,Y,X]
+    :otf_unmix:         (IMAGE) the (inverted=) unmix OTF of shape [z/2,pinhole_dim,Y,X]
+    :otf_unmix_full:    (IMAGE) <DEPRECATED>!! -> for old reconstruction: unmix was done on half-space using FFT, hence full OTF had to be constructed manually -> not needed anymore because reconstruction is now done via RFT       
+    :my_mask:           (IMAGE) mask used for defining limits of OTF-support
+    :proj_mask:         (IMAGE) sum of mask along z-axis (used for inversion-range)
     '''
-    if mode == 'old':
-        my_mask, proj_mask, zoff, center_pinhole = otf_get_mask(
-            otf=otf, mode=mode, eps=eps)
-        otf[:, zoff] = otf[:, zoff] * 2
-    elif mode == 'rft':
-        my_mask, proj_mask, zoff, center_pinhole = otf_get_mask(
-            otf=otf, mode=mode, eps=eps)
-        zoff = np.zeros(proj_mask.shape, dtype=np.uint8)
-    elif mode == 'fft':
-        my_mask, proj_mask, zoff, center_pinhole = otf_get_mask(
-            otf=otf, mode=mode, eps=eps)
-        zoff = np.squeeze(proj_mask[0])
-        proj_mask = np.squeeze(proj_mask[1])
-    else:
-        raise ValueError("No proper mode chosen!")
+    # parameters/preparation
     otf_unmix = np.transpose(
         np.zeros(otf.shape, dtype=np.complex_), [1, 0, 2, 3])
 
-    # fill eventuell holes in mask -> TODO: to late here?
-    my_mask = nip.image(binary_fill_holes(my_mask))*1
+    # calculate mask
+    _, my_mask, proj_mask, zoff, _ = otf_get_mask(otf, mode='rft', eps=eps_mask, bool_mask=False, closing=closing)
 
     # loop over all kx,ky
     for kk in range(otf_unmix.shape[-2]):
         for jj in range(otf_unmix.shape[-1]):
             if my_mask[:, kk, jj].any():
-                otf_unmix[zoff[kk, jj]:zoff[kk, jj]+proj_mask[kk, jj], :, kk, jj] = np.linalg.pinv(
-                    otf[:, zoff[kk, jj]:zoff[kk, jj]+proj_mask[kk, jj], kk, jj], rcond=svdlim)  # ,hermitian=hermitian
+                otf_unmix[zoff[kk, jj]:zoff[kk, jj]+proj_mask[kk, jj], :, kk, jj] = pinv_unmix(
+                    otf[:, zoff[kk, jj]:zoff[kk, jj]+proj_mask[kk, jj], kk, jj], rcond=svdlim, svdnum=svdnum, eps_reg=eps_reg, use_own=use_own)  # otf[:, zoff[kk, jj]:zoff[kk, jj]+proj_mask[kk, jj], kk, jj] #otf[:, :,90,90]
     otf_unmix = nip.image(otf_unmix)
 
     # create full otf_unmix if necessary
@@ -216,6 +258,7 @@ def unmix_matrix(otf, mode='rft', eps=1e-4, svdlim=1e-15, hermitian=False):
     else:
         otf_unmix_full = otf_unmix
 
+    # done?
     return otf_unmix, otf_unmix_full, my_mask, proj_mask
 
 
@@ -224,10 +267,11 @@ def unmix_image_ft(im_unmix_ft, recon_shape=None, mode='rft', show_phases=False)
     Fouriertransforms along -2,-1 and applies RFT along -3 (=kz), as only half space was used due to positivity and rotation symmetry.
     '''
     # sanity
-    if type(recon_shape) == type(None):
+    if recon_shape is None:
         recon_shape = np.array(im_unmix_ft.shape)
         recon_shape[-3] = (recon_shape[-3]*2)-1
 
+    # inverse transformation depending on mode
     if mode == 'old':
         # normal ft along kx,ky as infos are symmetric
         unmix_im = nip.ift(im_unmix_ft, axes=(-2, -1), ret='complex')
@@ -249,10 +293,12 @@ def unmix_image_ft(im_unmix_ft, recon_shape=None, mode='rft', show_phases=False)
         unmix_im = nip.ift3d(im_unmix_ft)
     else:
         raise ValueError("No proper mode chosen!")
+
+    # done?
     return unmix_im, recon_shape
 
 
-def unmix_recover_thickslice(otf_unmix, im_ism_ft, otf_unmix_full=None):
+def unmix_recover_thickslice(unmixer, im, unmixer_full=None):
     '''
     Does the recovery multiplication step. Need to apply unmix matrix for every kx and ky individually. 
 
@@ -266,11 +312,16 @@ def unmix_recover_thickslice(otf_unmix, im_ism_ft, otf_unmix_full=None):
     :im_unmix:      3D unmixed images of dim [kz,kx,ky]
 
     '''
-    im_unmix = nip.image(np.einsum('ijkl,jkl->ikl', otf_unmix, im_ism_ft))
-    if not type(otf_unmix_full) == type(None):
+    # the real thing
+    im_unmix = nip.image(np.einsum('ijkl,jkl->ikl', unmixer, im))
+    
+    # only for backward-compatibility of reconstructed full-PSF
+    if unmixer_full is not None:
         im_unmix_full = nip.image(
-            np.einsum('ijkl,jkl->ikl', otf_unmix_full, im_ism_ft))
+            np.einsum('ijkl,jkl->ikl', unmixer_full, im))
         im_unmix = [im_unmix, im_unmix_full]
+    
+    # done?
     return im_unmix
 
 
