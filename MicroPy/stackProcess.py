@@ -995,9 +995,9 @@ def uc2_preprocessing(load_path, save_path, binning=[2, 2], batch_size=50, previ
         data_stack, data_stack_rf = loadStackfast(
             file_list=fl[ids:ide], logger=logger.warning)
         data_stack_rf = [m+ids for m in data_stack_rf]
-        if preview == True:
-            logger.debug('Only work on {} channel'.format(chan_dict[channel]))
-            data_stack = data_stack[:, channel, :, :]
+        #if preview == True:
+            #logger.debug('Only work on {} channel'.format(chan_dict[channel]))
+            #data_stack = data_stack[:, channel, :, :]
         res['image_number'] = res['image_number'] + data_stack_rf
         res['image_filename_list'] = res['image_filename_list'] + [fl[m]
                                                                    for m in data_stack_rf]
@@ -1008,9 +1008,7 @@ def uc2_preprocessing(load_path, save_path, binning=[2, 2], batch_size=50, previ
 
         # subtract min to take "readout offset" into account
         logger.debug('Subtract Minima.')
-        data_stack = data_stack - \
-            add_multi_newaxis(
-                np.min(data_stack, axis=(-2, -1)), newax_pos=[-1, -1])
+        data_stack = data_stack - np.min(data_stack, keepdims=True)
 
         # Do binning and set video-pixel-param
         if binning:
@@ -1021,7 +1019,10 @@ def uc2_preprocessing(load_path, save_path, binning=[2, 2], batch_size=50, previ
         if cla == 0:
             vid_param['vpixels'] = list(data_stack.shape[-2:])
 
-        if not preview:
+        if preview:
+            kl = []
+            sellist = []
+        else:
             # Calculate chosen metrics --> all channels
             logger.debug('Calculate Metrics for Stack and ROI.')
             if cla == 0:
@@ -1081,11 +1082,12 @@ def uc2_preprocessing(load_path, save_path, binning=[2, 2], batch_size=50, previ
         logger.debug('Applied {} shifts.'.format(len(nbr_shifts)))
         # calculate mean of active & shifted stack and store --> only 1 channel
         mean_format = 'tif'
-        logger.debug(
-            'Calculate mean of active stack and store into {}.'.format(mean_path + mean_format))
-        ds_mean = np.array(np.mean(data_stack, axis=0), dtype=np.float16)
-        nip.imsave(nip.image(ds_mean), mean_path,
-                   form=mean_format, BitDepth='auto')
+        if not preview:
+            logger.debug(
+                'Calculate mean of active stack and store into {}.'.format(mean_path + mean_format))
+            ds_mean = np.array(np.mean(data_stack, axis=0), dtype=np.float16)
+            nip.imsave(nip.image(ds_mean), mean_path,
+                    form=mean_format, BitDepth='auto')
         tend = time() - tstart
         del data_stack
         logger.debug('Iteration {} took: {}s.'.format(
@@ -1147,8 +1149,14 @@ def uc2_processing(load_path, save_path, res_old=None, batch_size=50, stack_mean
     if len(res_old['shift_list']) == 0:
         shifts_max = [0, 0]
     else:
-        shifts_max = np.array(np.round(
-            np.max(np.abs(np.array(res_old['shift_list'])), axis=((0, 1)))), dtype=np.uint16)
+        if not type(res_old['shift_list']) == np.ndarray:
+            res_help = np.array(res_old['shift_list'][:-1])
+            res_helpr = res_old['shift_list'][-1]
+            shifts_maxh = np.max(np.abs(res_help),axis=(0,1))
+            shifts_maxhr = np.max(np.abs(res_helpr),axis=0)
+            shifts_max = np.array(np.round(np.max(np.vstack((shifts_maxh,shifts_maxhr)),axis=0)),dtype=np.uint16)
+        else: 
+            shifts_max = np.array(np.round(np.max(np.abs(res_old['shift_list']), axis=((0, 1)))), dtype=np.uint16)
         if (shifts_max == [0, 0]).all():
             shifts_max = [4, 4]
 

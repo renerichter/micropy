@@ -210,7 +210,7 @@ def ismR_defaultPSF(obj, lex=488, lem=520, shift_offset=[2, 2], nbr_det=[3, 3]):
 #                       FWD-Model
 # ------------------------------------------------------------------
 
-def forward_model(obj, psf, fmodel='fft', retreal=True, **kwargs):
+def forward_model(obj, psf, fmodel='fft', retreal=True, is_list=False,**kwargs):
     '''
     A simple forward model calculation using either fft or rft.
 
@@ -225,7 +225,6 @@ def forward_model(obj, psf, fmodel='fft', retreal=True, **kwargs):
     ========
     :res:       (IMAGE) simulated image
     '''
-
     if fmodel == 'fft':
         # normalization for 3dim ortho-convolution normalization on last 3 axes
         res = nip.ift3d(nip.ft3d(
@@ -233,7 +232,7 @@ def forward_model(obj, psf, fmodel='fft', retreal=True, **kwargs):
     else:
         # normalization for 2dim ortho-convolution on last 2 (=fft) axes; RFT is automatically ok due to only normalizing in back-path
         res = irft3dz(rft3dz(obj[np.newaxis])*rft3dz(psf),
-                      s=obj.shape) * np.sqrt(np.prod(psf.shape[-2:]))
+                      s=psf.shape) * np.sqrt(np.prod(psf.shape[-2:]))
 
     if retreal:
         res = res.real

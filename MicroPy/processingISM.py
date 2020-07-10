@@ -81,7 +81,7 @@ def otf_get_mask(otf, mode='rft', eps=1e-5, bool_mask=False, closing=None):
 
     :PARAM:
     =======
-    :otf:       (IMAGE) known 3D-otf of shape [pinhole_dim,Z,Y,X]
+    :otf:       (IMAGE) known 3D-otf of shape [pinhole_dim,Z,Y,X] -> basically works on any dimensionality, but assumes first index to be list-dimension and uses center as reference
     :mode:      (STRING) mode used to calculate the given OTF (to properly calculate mask) -> 'old', 'rft', 'fft' (DEFAULT)
     :eps:       (FLOAT) limit (multiplied by center_pinhole) for calculating OTF-support shape
     :bool_mask: (BOOL) decide whether to return mask as image or a boolean-map
@@ -123,6 +123,8 @@ def otf_get_mask(otf, mode='rft', eps=1e-5, bool_mask=False, closing=None):
                 my_mask_filled[m] = binary_closing(my_mask[m], structure=closing).astype(np.int)
             my_mask_filled = np.reshape(my_mask_filled,mms)
             my_mask = np.reshape(my_mask,mms)
+        else:
+            my_mask_filled = binary_closing(my_mask, structure=closing).astype(np.int)
     else: 
         my_mask_filled = my_mask
 
