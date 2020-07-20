@@ -364,6 +364,79 @@ def check_path(file_path):
     return file_path
 
 
+def convert_time2str(nbr=1,nbr2Time=[0,0,1,0,0]):
+    '''
+    Converts a given timepoint (in ms) to strangi
+    '''
+    tdict = ['ms','s','m','h','d']
+    fdict = [1000,60,60,24,100000]
+    timestr = ""
+    start_found = False
+
+    # skip empty tails and convert into 
+    tt = [nbr*m for m in nbr2Time]
+    for m in range(len(tt)):
+        if nbr2Time[m] > 0 and not start_found:
+            start_found = True
+        if start_found:
+            if m == 4:
+                assert(tt[m] < fdict[m],"Unbelieveable, you made    measurements longer than 273years?!")
+            a = tt[m] // fdict[m]
+            if a > 0:
+                tt[m+1] += a
+                tt[m] = np.mod(tt[m],fdict[m])
+            timestr = "{:02}{}".format(tt[m],tdict[m]) + timestr
+        else:
+            pass
+    
+    # done?
+    return timestr
+
+def label_image(im,nbr=0,nbr2Time=[0,0,1,0,0],pixelsize=None,font_size=8):
+    '''
+    Atomic version of deprecated vid_addContent_and_format.
+    Assumes 2D-grey images for now.
+
+    PARAMS:
+    =======
+    :im:        (IMAGE) File to work on
+    :nbr:       (INT) number of image
+    :nbr2Time:  (ARRAY) List of distance between equally spaced time-events -> units are: ['ms','s','m','h','d'] -> on default: [0,0,1,0,0] means 1 minute per image
+    :pixelsize: (FLOAT) size of a pixel assumed in µm
+
+    OUTPUT:
+    =======
+    :im:    labeled_image
+    '''
+    # parameters
+    scalebar_ratio = 5
+    scalebar_size = 0.1
+
+    # create image -> assumed 2D-grey-images for now
+    a_pil = PIL.Image.fromarray(im.astype('uint8'), 'L')
+    a_fill = 255
+    draw = PIL.ImageDraw.Draw(a_pil)
+    font = PIL.ImageFont.truetype(font='complex_.ttf', size=font_size)
+
+    # get and draw time
+    timestr = convert_time2str(nbr=nbr,nbr2Time=nbr2Time)
+    draw.text((0, a_pil.height-font_size), timestr, fill=a_fill, font=font)
+
+    # get scalebar properties and draw
+    if pixelsize is not None:
+        # scalebar
+        scalebar_height = scalebar_height//scalebar_ratio
+        scalebar_width = int(im.shape[-1]*scalebar_size)
+        scalebar_pos = [a_pil.height - 2*scalebar_height,a_pil.width - int(1.5*scalebar_width)]
+        draw.rectangle((scalebar_pos[0],  scalebar_pos[1] , scalebar_height, scalebar_width), fill=a_fill)
+
+        # text
+        
+        draw.text((vid_prop[1]-font_size//2*5, 0),
+                    text_channel, fill=a_fill, font=font)
+        
+
+
 def vid_addContent_and_format(im1=[], im_sel=[], path_dict={}, out='', image_timer=[], channel=1, vid_prop=[], font_size=12, text_channel=1):
     '''
     HAS TO BE CHANGED! EXTRACTED VIDEO-WRITING FUNCTION.
@@ -1104,7 +1177,7 @@ def uc2_preprocessing(load_path, save_path, binning=[2, 2], batch_size=50, previ
     return res
 
 
-def uc2_processing(load_path, save_path, res_old=None, batch_size=50, stack_mean=None, vid_param=None, load_fn_proto='tif', channel=None, colorful=0, inverse_intensity=False, correction_method='mean'):
+def uc2_processing(load_path, save_path, res_old=None, batch_size=50, stack_mean=None, vid_param=None, load_fn_proto='tif', channel=None, colorful=0, inverse_intensity=False, correction_method='mean', draw_frameProperties=False):
     '''
     Final clean-up of data
     '''
@@ -1232,6 +1305,8 @@ def uc2_processing(load_path, save_path, res_old=None, batch_size=50, stack_mean
             np.repeat(data_stack[:, np.newaxis, :, :], axis=1, repeats=3))
         for udi in range(len(data_stack)):
             out = True if (cla == 0 and udi == 0) else out
+            if draw_frameProperties:
+                data_stack[udi] = label_image(im=data_stack[udi],nbr=ids+udi,nbr2Time=[0,0,1,0,0],pixelsize=None)
             out, vid_param, hasChannels, isstack = save2vid(
                 data_stack[udi], save_file=save_vid, vid_param=vid_param, out=out)
         tend = time() - tstart
