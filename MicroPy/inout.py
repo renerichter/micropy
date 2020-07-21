@@ -382,34 +382,42 @@ def rename_files(file_dir, extension='jpg',version=1):
     file_list = [m for m in file_list if m[-len(extension):] == extension]
 
     # sorts the string-list ascending by length
-    file_list.sort(key=len)  
-    index_max_nbr = len(file_list)
-    file_max_length = len(file_list[-1])  
+    if len(file_list):
+        file_list.sort(key=len)  
+        index_max_nbr = len(file_list)
+        file_max_length = len(file_list[-1])  
 
-    # do renaming
-    if not len(file_list[0]) == file_max_length:
-        for myc in range(0, index_max_nbr-1):
-            file_len = len(file_list[myc])
-            if(file_len < file_max_length):
-                #if version == 0:  # for older measurements structure was 'yyyy-mm-dd_techique_nbr_TECH_NIQUE.jpg'
-                #    pos_help = re.search('_[0-9]+_', file_list[myc])
-                #elif version == 1:  # for new structure, e.g '2019-07-12_Custom_7114.jpg'
-                #    pos_help = re.search('_[0-9]+.', file_list[myc])
-                #elif version == 2:  # for new structure, e.g '20190815-TYPE-Technique--00001.jpg'
-                #    pos_help = re.search('--[0-9]+.', file_list[myc])
-                #else:  # for new structure, e.g '20190815-TYPE-Technique-00001.jpg'
-                #    pos_help = re.search('-[0-9]+.', file_list[myc])
-                try:
-                    pos_help = re.search('(_|--|-)[0-9]+(.|_)', file_list[myc])
-                    string_help = str(0)*(file_max_length-file_len)
-                    offset = pos_help.start()+pos_help.lastindex-1
-                    os.rename(file_dir + file_list[myc], file_dir + file_list[myc][0:offset] + string_help + file_list[myc][offset:])
-                except Exception as e: 
-                    print("Input file myc={}, hence: {} has wrong formatting. Exception: -->{}<-- raised. ".format(myc,file_list[myc],e))
-                    
-        brename = True
-    tdelta = time.time()-tstart
-    print('Renaming took: {0}s.'.format(tdelta))
+        # do renaming
+        if not len(file_list[0]) == file_max_length:
+            for myc in range(0, index_max_nbr-1):
+                file_len = len(file_list[myc])
+                if(file_len < file_max_length):
+                    #if version == 0:  # for older measurements structure was 'yyyy-mm-dd_techique_nbr_TECH_NIQUE.jpg'
+                    #    pos_help = re.search('_[0-9]+_', file_list[myc])
+                    #elif version == 1:  # for new structure, e.g '2019-07-12_Custom_7114.jpg'
+                    #    pos_help = re.search('_[0-9]+.', file_list[myc])
+                    #elif version == 2:  # for new structure, e.g '20190815-TYPE-Technique--00001.jpg'
+                    #    pos_help = re.search('--[0-9]+.', file_list[myc])
+                    #else:  # for new structure, e.g '20190815-TYPE-Technique-00001.jpg'
+                    #    pos_help = re.search('-[0-9]+.', file_list[myc])
+                    try:
+                        pos_help = re.search('(_|--|-)[0-9]+(.|_)', file_list[myc])
+                        string_help = str(0)*(file_max_length-file_len)
+                        offset = pos_help.start()+pos_help.lastindex-1
+                        os.rename(file_dir + file_list[myc], file_dir + file_list[myc][0:offset] + string_help + file_list[myc][offset:])
+                    except Exception as e: 
+                        print("Input file myc={}, hence: {} has wrong formatting. Exception: -->{}<-- raised. ".format(myc,file_list[myc],e))
+                        
+            brename = True
+        tdelta = time.time()-tstart
+        print('Renaming took: {0}s.'.format(tdelta))
+
+    else: 
+        print('No file with extension >{}< found in directory {}.'.format(extension,file_dir))
+        tdelta = 0
+        brename = False
+
+    # done?
     return tdelta, brename
 
 

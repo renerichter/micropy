@@ -1,21 +1,28 @@
+# import from internal modules
 from .inout import get_filelist, get_batch_numbers, loadStack, loadStackfast, dir_test_existance, add_logging, rename_files, fill_zeros, format_time
 from .basicTools import getIterationProperties, get_range
 from .utility import channel_getshift, image_getshift, add_multi_newaxis, create_value_on_dimpos, subtract_from_max
 from .filters import stf_basic, diff_tenengrad
-import numpy as np
-import NanoImagingPack as nip
+
+# import external modules
 import cv2
+from datetime import datetime
+import io
+import json
+import logging
+import matplotlib as mpl
+import matplotlib.pyplot as plt
+from matplotlib import rcParams as mplParams
+from matplotlib_scalebar.scalebar import ScaleBar
+import NanoImagingPack as nip
+import numpy as np
 import os
 import PIL
 import psutil
-import json
-from time import time
-import logging
-from datetime import datetime
-from time import time, sleep
-import matplotlib.pyplot as plt
 from socket import gethostname
+from time import time, sleep
 import yaml
+
 
 # %%
 # -------------------------------- VIDEO TOOLS -------------------------------
@@ -392,7 +399,83 @@ def convert_time2str(nbr=1,nbr2Time=[0,0,1,0,0]):
     # done?
     return timestr
 
-def label_image(im,nbr=0,nbr2Time=[0,0,1,0,0],pixelsize=None,font_size=8):
+def matplotlib_imageInActualSize(im, printstat=False):
+    '''
+    Displays image in actual size. Slightly changed from here : https://stackoverflow.com/a/53816322
+    '''
+    dpi = mplParams['figure.dpi']
+    figsize = im.shape[-1] / float(dpi), im.shape[-2] / float(dpi)
+    fig = plt.figure(figsize=figsize)
+    if printstat:
+        print("Figure.shape = {}.\nFigure.size = {}.".format(im.shape,figsize))
+
+    # done?
+    return fig
+
+def matplotlib_omitAxesAndBoxes(fig, im):
+    '''
+    Omits axes. Slightly changed from here : https://stackoverflow.com/a/53816322
+    '''
+    ax = fig.add_axes([0, 0, 1, 1])
+
+    # Hide spines, ticks, etc.
+    ax.axis('off')
+    ax.axes.get_xaxis().set_visible(False)
+    ax.axes.get_yaxis().set_visible(False)
+
+    # Display the image.
+    if im.ndim == 2:
+        ax.imshow(im, cmap='gray', interpolation='none')
+    elif im.ndim == 3: 
+        # assumes shape: [RGB,Y,X]
+        ax.imshow(np.transpose(im,[1,2,0]), interpolation='none')
+    else:
+        raise ValueError("Wrong dimensionality of image supplied.")
+
+    # done?
+    return ax
+
+def matplotlib_toNumpy(fig):
+    '''
+    Converts a pyplot to numpy array for eg pixel-wise comparison. Inspired by: https://stackoverflow.com/a/61443397.
+    '''
+    # "save" into buffer to get correct formatting
+    io_buf = io.BytesIO()
+    fig.savefig(io_buf, format='raw')
+
+    # get buffer and reshape to proper size
+    io_buf.seek(0)
+    im = np.reshape(np.frombuffer(io_buf.getvalue(), dtype=np.uint8),
+                        newshape=(int(fig.bbox.bounds[3]), int(fig.bbox.bounds[2]), -1))
+    io_buf.close()
+
+    # cut out from [Y,X,RGBA]
+    im = np.transpose(im,[2,0,1])[:3]
+
+    # done?
+    return im
+
+def matplotlib_TextAndScalebar(im, ax, textstr,font_size=None,y_offset=None,dx=0.2,units="um", color='white'):
+    '''
+    Adds text to the lower-left part of the image and a scalebar to the lower right edge. 
+    Note: Not generic yet, but enough for the actual purpose.
+    '''
+    # parameters
+    font_size = im.shape[-1] // 25 if font_size == None else font_size
+    y_offset = int(im.shape[-2]*0.99) if y_offset == None else y_offset
+
+
+    # set and add scalebar
+    scalebar = ScaleBar(dx=0.17,units="um",dimension='si-length',length_fraction=0.2, location='lower right', frameon=False, color=color,font_properties={'size': font_size, 'family': 'Helvetica'}) 
+    ax.add_artist(scalebar)
+
+    # add text
+    plt.text(0,y_offset, textstr,fontsize=font_size, color='white', fontname='Helvetica') 
+
+    # done?
+    return ax
+
+def label_image(im,nbr=0,nbr2Time=[0,0,1,0,0],pixelsize=0.17,pixelunit="um",font_size=None, use_matplotlib=True):
     '''
     Atomic version of deprecated vid_addContent_and_format.
     Assumes 2D-grey images for now.
@@ -407,34 +490,59 @@ def label_image(im,nbr=0,nbr2Time=[0,0,1,0,0],pixelsize=None,font_size=8):
     OUTPUT:
     =======
     :im:    labeled_image
+
+    NOTE: PIL implementation not finished
     '''
-    # parameters
-    scalebar_ratio = 5
-    scalebar_size = 0.1
-
-    # create image -> assumed 2D-grey-images for now
-    a_pil = PIL.Image.fromarray(im.astype('uint8'), 'L')
-    a_fill = 255
-    draw = PIL.ImageDraw.Draw(a_pil)
-    font = PIL.ImageFont.truetype(font='complex_.ttf', size=font_size)
-
-    # get and draw time
+    # get time-string
     timestr = convert_time2str(nbr=nbr,nbr2Time=nbr2Time)
-    draw.text((0, a_pil.height-font_size), timestr, fill=a_fill, font=font)
 
-    # get scalebar properties and draw
-    if pixelsize is not None:
-        # scalebar
-        scalebar_height = scalebar_height//scalebar_ratio
-        scalebar_width = int(im.shape[-1]*scalebar_size)
-        scalebar_pos = [a_pil.height - 2*scalebar_height,a_pil.width - int(1.5*scalebar_width)]
-        draw.rectangle((scalebar_pos[0],  scalebar_pos[1] , scalebar_height, scalebar_width), fill=a_fill)
+    # make sure to suppress logging from matplotlib-matching
+    #logging.getLogger('matplotlib').setLevel(logging.WARNING)
+    logging.getLogger('matplotlib.font_manager').disabled = True
 
-        # text
+    if use_matplotlib:
+        # prepare convert to work with active DPI
+        fig1 = matplotlib_imageInActualSize(im, printstat=False)
+
+        # omit any bounding boxes as good as possible
+        ax1 = matplotlib_omitAxesAndBoxes(fig1, im)
+
+        # add text and scalebar
+        ax1 = matplotlib_TextAndScalebar(im, ax1, timestr,dx=pixelsize,units=pixelunit, font_size=None, color='white')
+
+        # get back to numpy
+        im_res = matplotlib_toNumpy(fig1)
+
+        # free RAM
+        plt.close()
+
+    else:
+        # parameters
+        scalebar_ratio = 5
+        scalebar_size = 0.1
+
+        # create image -> assumed 2D-grey-images for now
+        a_pil = PIL.Image.fromarray(im.astype('uint8'), 'L')
+        a_fill = 255
+        draw = PIL.ImageDraw.Draw(a_pil)
+        font = PIL.ImageFont.truetype(font='complex_.ttf', size=font_size)
+
+        # get and draw time
+
+        draw.text((0, a_pil.height-font_size), timestr, fill=a_fill, font=font)
+
+        # get scalebar properties and draw
+        if pixelsize is not None:
+            # scalebar
+            scalebar_height = scalebar_height//scalebar_ratio
+            scalebar_width = int(im.shape[-1]*scalebar_size)
+            scalebar_pos = [a_pil.height - 2*scalebar_height,a_pil.width - int(1.5*scalebar_width)]
+            draw.rectangle((scalebar_pos[0],  scalebar_pos[1] , scalebar_height, scalebar_width), fill=a_fill)
+
+        im_res = a_pil
         
-        draw.text((vid_prop[1]-font_size//2*5, 0),
-                    text_channel, fill=a_fill, font=font)
-        
+    #done?
+    return im_res
 
 
 def vid_addContent_and_format(im1=[], im_sel=[], path_dict={}, out='', image_timer=[], channel=1, vid_prop=[], font_size=12, text_channel=1):
@@ -1177,14 +1285,17 @@ def uc2_preprocessing(load_path, save_path, binning=[2, 2], batch_size=50, previ
     return res
 
 
-def uc2_processing(load_path, save_path, res_old=None, batch_size=50, stack_mean=None, vid_param=None, load_fn_proto='tif', channel=None, colorful=0, inverse_intensity=False, correction_method='mean', draw_frameProperties=False):
+def uc2_processing(load_path, save_path, res_old=None, batch_size=50, stack_mean=None, vid_param=None, load_fn_proto='tif', channel=None, colorful=0, inverse_intensity=False, correction_method='mean', draw_frameProperties=False, pixelsize=0.17, pixelunit="um", only_convert_2video=False, fl_lim=None):
     '''
-    Final clean-up of data
+    Final clean-up of data.
     '''
     # parameters
     tbegin = time()
     tnow = datetime.strftime(datetime.now(), "%Y%m%d_%H%M%S")
 
+    # set backend -> standard is: 'TkAgg'
+    if draw_frameProperties: 
+        mpl.use('Agg')
     # paths
     save_vid = save_path + vid_param['vname'] + \
         '-processed-{}fps'.format(vid_param['vfps'])
@@ -1213,25 +1324,32 @@ def uc2_processing(load_path, save_path, res_old=None, batch_size=50, stack_mean
     logger.debug('Get Filelist for load_path={}. Results will be stored in save_path={}.'.format(
         load_path, save_path))
     fl = get_filelist(load_path=load_path, fn_proto=load_fn_proto)
+    if not fl_lim is None:
+        fl = fl[:fl_lim]
     [fl_len, fl_iter, fl_lastiter] = get_batch_numbers(
         filelist=fl, batch_size=batch_size)
 
     # Parameters
     global_max = np.max(np.array(res_old['image_max'])[:, 1])
     norm_factor1 = 255/global_max
-    if len(res_old['shift_list']) == 0:
-        shifts_max = [0, 0]
-    else:
-        if not type(res_old['shift_list']) == np.ndarray:
-            res_help = np.array(res_old['shift_list'][:-1])
-            res_helpr = res_old['shift_list'][-1]
-            shifts_maxh = np.max(np.abs(res_help),axis=(0,1))
-            shifts_maxhr = np.max(np.abs(res_helpr),axis=0)
-            shifts_max = np.array(np.round(np.max(np.vstack((shifts_maxh,shifts_maxhr)),axis=0)),dtype=np.uint16)
-        else: 
-            shifts_max = np.array(np.round(np.max(np.abs(res_old['shift_list']), axis=((0, 1)))), dtype=np.uint16)
-        if (shifts_max == [0, 0]).all():
-            shifts_max = [4, 4]
+    if not only_convert_2video:
+        if len(res_old['shift_list']) == 0:
+            shifts_max = [0, 0]
+        else:
+            if not type(res_old['shift_list']) == np.ndarray:
+                if len(res_old['shift_list']) == 1:
+                    res_help = res_old['shift_list'][0]
+                    shifts_max = np.array(np.round(np.max(np.abs(res_help),axis=0)), dtype=np.uint16)
+                else:
+                    res_help = np.array(res_old['shift_list'][:-1])
+                    res_helpr = res_old['shift_list'][-1]
+                    shifts_maxh = np.max(np.abs(res_help),axis=(0,1))
+                    shifts_maxhr = np.max(np.abs(res_helpr),axis=0)
+                    shifts_max = np.array(np.round(np.max(np.vstack((shifts_maxh,shifts_maxhr)),axis=0)),dtype=np.uint16)
+            else: 
+                shifts_max = np.array(np.round(np.max(np.abs(res_old['shift_list']), axis=((0, 1)))), dtype=np.uint16)
+            if (shifts_max == [0, 0]).all():
+                shifts_max = [4, 4]
 
     # do iteration
     for cla in range(fl_iter):
@@ -1256,46 +1374,48 @@ def uc2_processing(load_path, save_path, res_old=None, batch_size=50, stack_mean
         res['image_filename_list'] = res['image_filename_list'] + [fl[m]
                                                                    for m in data_stack_rf]
 
-        # small error in divison/correction, but avoids division by zero problems
-        if stack_mean.min() < 1:
-            delta = stack_mean.min()
-            stack_mean += (1-delta)
+        if not only_convert_2video:
+            # small error in divison/correction, but avoids division by zero problems
+            if stack_mean.min() < 1:
+                delta = stack_mean.min()
+                stack_mean += (1-delta)
 
-        # correct by mean and normalize to stack-full range
-        if correction_method == 'max':
-            corr_factor = data_stack.max(axis=(-2, -1))
-            data_stack = (data_stack / stack_mean[np.newaxis])
-            data_stack = data_stack * dsm[:, np.newaxis, np.newaxis]/np.max(
-                data_stack, axis=(-2, -1))[:, np.newaxis, np.newaxis]  # *norm_factor1
-        elif correction_method == 'mean':
-            data_stack = (data_stack / stack_mean[np.newaxis])
-            # corr_factor = np.iinfo(np.uint8).max / data_stack.mean()
-            corr_factor = 100
-            data_stack = data_stack / data_stack.mean(
-                (-2, -1))[:, np.newaxis, np.newaxis] * corr_factor
-            data_stack[data_stack > np.iinfo(
-                np.uint8).max] = np.iinfo(np.uint8).max
-            if inverse_intensity:
-                data_stack = np.iinfo(np.uint8).max - data_stack
-        else:
-            pass
-        # crop image
-        data_stack = data_stack[:, shifts_max[0]:data_stack.shape[1] -
-                                shifts_max[0], shifts_max[1]:data_stack.shape[2]-shifts_max[1]]
+            # correct by mean and normalize to stack-full range
+            if correction_method == 'max':
+                corr_factor = data_stack.max(axis=(-2, -1))
+                data_stack = (data_stack / stack_mean[np.newaxis])
+                data_stack = data_stack * dsm[:, np.newaxis, np.newaxis]/np.max(
+                    data_stack, axis=(-2, -1))[:, np.newaxis, np.newaxis]  # *norm_factor1
+            elif correction_method == 'mean':
+                data_stack = (data_stack / stack_mean[np.newaxis])
+                # corr_factor = np.iinfo(np.uint8).max / data_stack.mean()
+                corr_factor = 100
+                data_stack = data_stack / data_stack.mean(
+                    (-2, -1))[:, np.newaxis, np.newaxis] * corr_factor
+                data_stack[data_stack > np.iinfo(
+                    np.uint8).max] = np.iinfo(np.uint8).max
+                if inverse_intensity:
+                    data_stack = np.iinfo(np.uint8).max - data_stack
+            else:
+                pass
+            # crop image
+            data_stack = data_stack[:, shifts_max[0]:data_stack.shape[1] -
+                                    shifts_max[0], shifts_max[1]:data_stack.shape[2]-shifts_max[1]]
 
+            # save images
+            data_stack = nip.image(data_stack)
+            logger.debug('Store images in TIFF-files.')
+            if not data_stack.dtype == np.dtype('uint8'):  # float16
+                data_stack = nip.image(limit_bitdepth(
+                    data_stack, 'uint8', imin=None, imax=None, inorm=False, hascolor=True))
+            for udi in range(len(data_stack)):
+                nip.imsave(data_stack[udi], save_path_images +
+                        res['image_filename_list'][ids+udi][:-4], form='tif', BitDepth='auto')
+        
         # set video dimensions
         if cla == 0:
             vid_param['vpixels'] = list(data_stack.shape[-2:])
-
-        # save images
-        data_stack = nip.image(data_stack)
-        logger.debug('Store images in TIFF-files.')
-        if not data_stack.dtype == np.dtype('uint8'):  # float16
-            data_stack = nip.image(limit_bitdepth(
-                data_stack, 'uint8', imin=None, imax=None, inorm=False, hascolor=True))
-        for udi in range(len(data_stack)):
-            nip.imsave(data_stack[udi], save_path_images +
-                       res['image_filename_list'][ids+udi][:-4], form='tif', BitDepth='auto')
+        
         # store video
         logger.debug('Create Video')
         if not data_stack.dtype == np.dtype('uint8'):
@@ -1306,7 +1426,7 @@ def uc2_processing(load_path, save_path, res_old=None, batch_size=50, stack_mean
         for udi in range(len(data_stack)):
             out = True if (cla == 0 and udi == 0) else out
             if draw_frameProperties:
-                data_stack[udi] = label_image(im=data_stack[udi],nbr=ids+udi,nbr2Time=[0,0,1,0,0],pixelsize=None)
+                data_stack[udi] = label_image(im=data_stack[udi],nbr=ids+udi,nbr2Time=[0,0,1,0,0],pixelsize=pixelsize)
             out, vid_param, hasChannels, isstack = save2vid(
                 data_stack[udi], save_file=save_vid, vid_param=vid_param, out=out)
         tend = time() - tstart
