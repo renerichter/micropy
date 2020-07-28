@@ -238,3 +238,48 @@ def forward_model(obj, psf, fmodel='fft', retreal=True, is_list=False,**kwargs):
         res = res.real
 
     return res
+
+# %%
+# ------------------------------------------------------------------
+#                       Noise-Generators
+# ------------------------------------------------------------------
+
+def add_symmetric_point(im,pos,val):
+    '''
+    Adds a symmetric point around the Fourier-origin. Takes evenness of image-sizes into account. For now: only works on same dimensionality of im and pos.
+
+    Note: No boundary-checks etc done
+    '''
+    offsets = np.mod(np.array(im.shape),2)
+    pos2 = [(im.shape[m] - offsets[m]) - va for m,va in enumerate(pos)]
+    im[tuple(pos)] = val
+    im[tuple(pos2)] = val
+    return im
+
+def generate_pickupNoise(imshape,pickup_pos,pickup_level):
+    '''
+    Generates a pickupNoise-image.
+
+    PARAMS:
+    =======
+    :imshape:       (TUPLE) shape of output-image
+    :pickup_pos:    (LIST) of 
+    :pickup_level:  (LIST) of values for pickup
+
+    OUTPUTS:
+    ========
+    :im_pnFT:    (IMAGE) generated fourier-image
+    :im_pn:      (IMAGE) noise-term-image
+
+    EXAMPLE:
+    ========
+    im_pnFT, im_pn = generate_pickupNoise(imshape=(5,5,8),pickup_pos=[[2,3,4],[0,1,5]],pickup_level=[10,20])
+    '''
+    for m,pos in enumerate(pickup_pos):
+        im_pnFT = nip.image(np.zeros(imshape))
+        im_pnFT = add_symmetric_point(im_pnFT,pos,pickup_level[m])
+        im_pn = np.real(nip.ft(im_pnFT))
+        im_pn -= np.min(im_pn,keepdims=True)
+    
+    #done?
+    return im_pnFT, im_pn

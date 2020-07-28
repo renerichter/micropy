@@ -475,7 +475,7 @@ def matplotlib_TextAndScalebar(im, ax, textstr,font_size=None,y_offset=None,dx=0
     # done?
     return ax
 
-def label_image(im,nbr=0,nbr2Time=[0,0,1,0,0],pixelsize=0.17,pixelunit="um",font_size=None, use_matplotlib=True):
+def label_image(im,nbr=0,nbr2Time=[0,0,1,0,0],pixelsize=0.17,pixelunit="um",font_size=None, use_matplotlib=True, logger=None):
     '''
     Atomic version of deprecated vid_addContent_and_format.
     Assumes 2D-grey images for now.
@@ -512,6 +512,14 @@ def label_image(im,nbr=0,nbr2Time=[0,0,1,0,0],pixelsize=0.17,pixelunit="um",font
 
         # get back to numpy
         im_res = matplotlib_toNumpy(fig1)
+
+        # make sure for correct shape
+        if not im_res.shape == im.shape:
+            if logger is not None: 
+                logger.debug(f"Corrected im_nbr{nbr} from shape={im_res.shape} to shape={im.shape}")
+            else: 
+                print(f"Corrected im_nbr{nbr} from shape={im_res.shape} to shape={im.shape}")
+            im_res = nip.extract(im_res,im.shape)
 
         # free RAM
         plt.close()
@@ -906,19 +914,20 @@ def uc2_preprocessing_refuseImages(data_stack, res, ids=0, ide=0, channel=1, cri
     res:        manipulated dictionary
     kl:         index-list of excluded elements
     '''
+    thresh = 0.15
     im_dat = np.array([np.array(res['image_min'])[ids:ide, channel], np.array(
         res['image_mean'])[ids:ide, channel], np.array(res['image_max'])[ids:ide, channel]])
     if criteria == 'mean':
         # use mean of active stack to have a more stable measure
         tm = np.mean(im_dat[1])
-        kl = np.array(np.where(im_dat[1] < 0.15*tm))
+        c = [m or n for m,n in zip(im_dat[1] < thresh*tm,im_dat[1] > (2-thresh)*tm)]
+        kl = np.where(c)[0]
         if kl.size:
-            for m in kl:
-                m = int(m)
+            for idx,pos in enumerate(kl):
                 res['image_skipped_filename'].append(
-                    res['image_filename_list'][ids+m])
-                res['image_skipped_index'].append(ids + m)
-                data_stack = np.delete(data_stack, obj=m, axis=0)
+                    res['image_filename_list'][ids+pos])
+                res['image_skipped_index'].append(ids + pos)
+                data_stack = np.delete(data_stack, obj=pos-idx, axis=0)
             # del
     return data_stack, res, kl
 
@@ -1077,7 +1086,7 @@ def get_mean_from_stack(load_path, save_path='', load_fn_proto='jpg', mean_range
     return stack_mean
 
 
-def uc2_preprocessing(load_path, save_path, binning=[2, 2], batch_size=50, preview=False, interleave=100, ROIs=[], channel=1, mean_ref=False, load_fn_proto='jpg', vid_param={}, proc_range=None, prec=10, inverse_intensity=False, delete_means=True, threshhold=[]):
+def uc2_preprocessing(load_path, save_path, binning=[2, 2], batch_size=50, preview=False, interleave=100, ROIs=[], channel=1, mean_ref=False, load_fn_proto='jpg', vid_param={}, proc_range=None, prec=10, inverse_intensity=False, delete_means=True, threshhold=[], use_shifts=True, check_filenames=False):
     '''
     UC2-preprocessing.
     if preview=True:
@@ -1088,9 +1097,6 @@ def uc2_preprocessing(load_path, save_path, binning=[2, 2], batch_size=50, previ
     else:
 
     '''
-    # flags
-    check_filenames = True
-
     # supporting definitions
     chan_dict = {0: 'red', 1: 'green', 2: 'blue'}
     name_metrics = ['max', 'min', 'mean', 'median', 'tenengrad']
@@ -1240,7 +1246,7 @@ def uc2_preprocessing(load_path, save_path, binning=[2, 2], batch_size=50, previ
         nbr_shifts = []
         for udi in range(batch_size):
             if udi not in kl:
-                if udi in sellist:
+                if udi in sellist and use_shifts:
                     # shift-values can be used directly -> negative values mean "image has to be shifted back  towards bigger pixel-pos-values"
                     try:
                         data_stack[udi] = nip.shift2Dby(
@@ -1285,7 +1291,7 @@ def uc2_preprocessing(load_path, save_path, binning=[2, 2], batch_size=50, previ
     return res
 
 
-def uc2_processing(load_path, save_path, res_old=None, batch_size=50, stack_mean=None, vid_param=None, load_fn_proto='tif', channel=None, colorful=0, inverse_intensity=False, correction_method='mean', draw_frameProperties=False, pixelsize=0.17, pixelunit="um", only_convert_2video=False, fl_lim=None):
+def uc2_processing(load_path, save_path, res_old=None, batch_size=50, stack_mean=None, vid_param=None, load_fn_proto='tif', channel=None, colorful=0, inverse_intensity=False, correction_method='mean', use_shifts=True, draw_frameProperties=False, pixelsize=0.17, pixelunit="um", only_convert_2video=False, proc_range=None):
     '''
     Final clean-up of data.
     '''
@@ -1324,15 +1330,15 @@ def uc2_processing(load_path, save_path, res_old=None, batch_size=50, stack_mean
     logger.debug('Get Filelist for load_path={}. Results will be stored in save_path={}.'.format(
         load_path, save_path))
     fl = get_filelist(load_path=load_path, fn_proto=load_fn_proto)
-    if not fl_lim is None:
-        fl = fl[:fl_lim]
+    if not proc_range == None:
+        fl = fl[proc_range[0]:proc_range[1]]
     [fl_len, fl_iter, fl_lastiter] = get_batch_numbers(
         filelist=fl, batch_size=batch_size)
 
     # Parameters
     global_max = np.max(np.array(res_old['image_max'])[:, 1])
     norm_factor1 = 255/global_max
-    if not only_convert_2video:
+    if not only_convert_2video and use_shifts:
         if len(res_old['shift_list']) == 0:
             shifts_max = [0, 0]
         else:
@@ -1350,6 +1356,8 @@ def uc2_processing(load_path, save_path, res_old=None, batch_size=50, stack_mean
                 shifts_max = np.array(np.round(np.max(np.abs(res_old['shift_list']), axis=((0, 1)))), dtype=np.uint16)
             if (shifts_max == [0, 0]).all():
                 shifts_max = [4, 4]
+    else:
+        shifts_max = [0,0]
 
     # do iteration
     for cla in range(fl_iter):
@@ -1380,7 +1388,7 @@ def uc2_processing(load_path, save_path, res_old=None, batch_size=50, stack_mean
                 delta = stack_mean.min()
                 stack_mean += (1-delta)
 
-            # correct by mean and normalize to stack-full range
+            # correct by mean and normalize to stack-full range -> TODO: not fully implemented
             if correction_method == 'max':
                 corr_factor = data_stack.max(axis=(-2, -1))
                 data_stack = (data_stack / stack_mean[np.newaxis])
@@ -1426,7 +1434,7 @@ def uc2_processing(load_path, save_path, res_old=None, batch_size=50, stack_mean
         for udi in range(len(data_stack)):
             out = True if (cla == 0 and udi == 0) else out
             if draw_frameProperties:
-                data_stack[udi] = label_image(im=data_stack[udi],nbr=ids+udi,nbr2Time=[0,0,1,0,0],pixelsize=pixelsize)
+                data_stack[udi] = label_image(im=data_stack[udi],nbr=ids+udi,nbr2Time=[0,0,1,0,0],pixelsize=pixelsize, logger=logger)
             out, vid_param, hasChannels, isstack = save2vid(
                 data_stack[udi], save_file=save_vid, vid_param=vid_param, out=out)
         tend = time() - tstart
