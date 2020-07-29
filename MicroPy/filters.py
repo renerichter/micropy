@@ -336,9 +336,101 @@ def image_sharpness(im, im_filters=['Tenengrad']):
     '''
     #
     from numpy import mean
-    if 'Tenengrad' in im_filters:
-        res.append(tenengrad(im))
-    elif 'VollathF4' in im_filters:
-        res.append(vollathF4(im))
+    #if 'Tenengrad' in im_filters:
+    #    res.append(tenengrad(im))
+    #elif 'VollathF4' in im_filters:
+    #    res.append(vollathF4(im))
 
-    return res
+    #return res
+    pass
+
+
+# %%
+# --------------------------------------------------------
+#               GENERAL PIXEL-OPERATIONS
+# --------------------------------------------------------
+#
+def local_annealing_atom(im,pos,mode='value',value=0, patch_size=[3,3],iter_anneal=False,iterations=1):
+    '''
+    Local annealing of a given position. 
+    Function does inplace operation and hence technically no return has to be done!
+
+    PARAMS
+    =======
+    :im:            (IMAGE) used image
+    :pos:           (TUPLE) position that will be changed
+    :mode:          (STRING) useable modes 
+                        'value': overwrites with the given value at pos
+                        'mean','max','min': calculates the respective value from the given patch_size around pos
+    :value:         (FLOAT) value for overwriting
+    :patch_size:    (LIST) size of patch used for calculation
+    :iter_anneal:   (BOOL) whether iterative annealing should be used
+    :iterations:    (INT) number of iterations for iterative annealing
+
+    OUTPUTS:
+    ========
+    :im:        (IMAGE) resulting image
+
+    EXAMPLE
+    =======
+    a = nip.rr([7,7])
+    a[3,4] = 100
+    b1 = local_annealing_atom(a.copy(),(3,4),mode='value',value=0)
+    b2 = local_annealing_atom(a.copy(),(3,4),mode='max')
+    b3 = local_annealing_atom(a.copy(),(3,4),mode='mean')
+    b4 = local_annealing_atom(a.copy(),(3,4),mode='min')
+    b5 = local_annealing_atom(a.copy(),(3,4),mode='mean',iter_anneal=True,iterations=3)
+    toshowB = nip.catE((mipy.normto(a),mipy.normto(b1),mipy.normto(b2),mipy.normto(b3),mipy.normto(b4),mipy.normto(b5)))
+    nip.v5(mipy.stack2tiles(toshowB))
+
+    '''
+    is_complex = True if im.dtype == 'complex' else False
+
+    if mode=='value':
+        im[pos] = value
+    else:
+        iterations = iterations if iter_anneal else 1
+        for _ in range(iterations):
+            a = nip.extractFt(im,ROIsize=patch_size,mycenter=pos) if is_complex else nip.extract(im,ROIsize=patch_size,centerpos=pos)
+            if mode == 'mean':
+                a = np.mean(a)
+            elif mode == 'max':
+                a = np.max(a)
+            elif mode == 'min':
+                a = np.min(a)
+            else: 
+                raise ValueError('Not implemented yet, but no problem! What do you wish?')
+            im[pos] = a
+
+    # done?
+    return im 
+
+
+def local_annealing(im,pos,mode='value',value=0,patch_size=[3,3],iter_anneal=False,iterations=1):
+    '''
+    Acts on list of positions. 
+    Note: acts on input image in-place and hence out-put should only be used/thought as renaming due to input-data being changed as well. 
+    
+    :PARAMS:
+    ========
+    :pos:   (LIST) of TUPLE!
+    
+    For detailed description on usage-example and further parameters check "local_annealing_atom"-function.
+
+    :EXAMPLE:
+    =========
+    a=nip.rr([7,7])
+    a[1,2] = 100; a[3,4] = 100;
+    b6 = local_annealing(a.copy(),[(3,4),(1,2)],mode='mean',patch_size=[4,4],iter_anneal=True,iterations=3)
+    toshowA = nip.catE((mipy.normto(a),mipy.normto(b6)))
+    nip.v5(mipy.stack2tiles(toshowA))
+    
+    '''
+    for _,apos in enumerate(pos):
+        im = local_annealing_atom(im,apos,mode=mode,value=value,patch_size=patch_size,iter_anneal=iter_anneal,iterations=iterations)
+    
+    # done?
+    return im
+
+
+    

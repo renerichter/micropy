@@ -251,10 +251,10 @@ def add_symmetric_point(im,pos,val):
     Note: No boundary-checks etc done
     '''
     offsets = np.mod(np.array(im.shape),2)
-    pos2 = [(im.shape[m] - offsets[m]) - va for m,va in enumerate(pos)]
-    im[tuple(pos)] = val
-    im[tuple(pos2)] = val
-    return im
+    pos2 = tuple([(im.shape[m] - offsets[m]) - va for m,va in enumerate(pos)])
+    im[pos] = val
+    im[pos2] = val
+    return im, pos2
 
 def generate_pickupNoise(imshape,pickup_pos,pickup_level):
     '''
@@ -268,18 +268,22 @@ def generate_pickupNoise(imshape,pickup_pos,pickup_level):
 
     OUTPUTS:
     ========
-    :im_pnFT:    (IMAGE) generated fourier-image
-    :im_pn:      (IMAGE) noise-term-image
+    :im_pnFT:       (IMAGE) generated fourier-image
+    :im_pn:         (IMAGE) noise-term-image
+    :poslist:       (LIST) of Tuples with positions used
 
     EXAMPLE:
     ========
     im_pnFT, im_pn = generate_pickupNoise(imshape=(5,5,8),pickup_pos=[[2,3,4],[0,1,5]],pickup_level=[10,20])
     '''
+    poslist = []
     for m,pos in enumerate(pickup_pos):
+        pos = tuple(pos)
         im_pnFT = nip.image(np.zeros(imshape))
-        im_pnFT = add_symmetric_point(im_pnFT,pos,pickup_level[m])
+        im_pnFT,pos2 = add_symmetric_point(im_pnFT,pos,pickup_level[m])
+        poslist.append([pos,pos2])
         im_pn = np.real(nip.ft(im_pnFT))
         im_pn -= np.min(im_pn,keepdims=True)
     
     #done?
-    return im_pnFT, im_pn
+    return im_pnFT, im_pn, poslist
