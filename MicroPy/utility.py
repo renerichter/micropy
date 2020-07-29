@@ -184,6 +184,9 @@ def findshift(im1, im2, prec=100, printout=False):
     '''
     Just a wrapper for the Skimage function using sub-pixel shifts, but with nice info-printout.
     link: https://scikit-image.org/docs/dev/auto_examples/transform/plot_register_translation.html
+
+    Check "image_getshift" to use for a stack or with a reference.
+
     :param:
     =======
     :im1: reference image
@@ -258,6 +261,54 @@ def shiftby_list(psf, shifts=[], shift_offset=[1, 1], nbr_det=[3, 3], retreal=Tr
                                                                    ] == psf.pixelsize else psf_res.pixelsize[1:]
     return psf_res
 
+def find_shiftperiod(shift_stack,thresh=0.25):
+    '''
+    Finds the shift-period for an input-stack.
+
+    TODO:
+    1) fix for small stacks. 
+    2) find soft thresholds instead of arbitrarily chosen value.
+
+    :PARAMS:
+    ========
+    :shift_stack:   (ARRAY) Array of estimated shifts per image
+    :thresh:        (FLOAT) relative (range: [0,1]) value to use for period cut
+
+    :OUTPUTS:
+    =========
+    :pmean:         (FLOAT) calculated mean period-length
+    :pmedian:       (FLOAT) calculated median period-length
+    :period_lengths:(LIST) found period_lengths
+
+    :EXAMPLE:
+    ========
+    c = mipy.shiftby_list(nip.readim(),shift_offset=[3.3,5.6],nbr_det=[1,10])
+    c = np.reshape(np.transpose(nip.repmat(c,replicationFactors=[7,1,1,1]),[1,0,2,3]),[70,c.shape[-1],c.shape[-2]])
+    shifts = mipy.image_getshift(c,c[0])
+    pmean,pmedian, period_lengths = find_shiftperiod(shifts,thresh=0.05)
+    print("pmean={}\npmedian={}\nperiod_lengths={}".format(pmean,pmedian,period_lengths))     
+    '''
+    periods = []
+    bias = 0
+
+    # get difference-values
+    for m,val in enumerate(shift_stack[:-1]):
+        if np.any(abs(shift_stack[m+1]-val) > abs(val)*thresh):
+            periods.append(m)
+
+    # get first period length (take "0" into account)
+    period_lengths = [periods[0]+1,]
+    
+    # get other lengths
+    for m,val in enumerate(periods[:-1]):
+        period_lengths.append(periods[m+1] - val)
+
+    # average over period-lengths
+    pmean = np.mean(period_lengths)
+    pmedian = np.median(period_lengths)
+
+    # done?
+    return pmean,pmedian, period_lengths
 
 def gen_shift_npfunc(soff, pix):
     '''
@@ -692,3 +743,37 @@ def defocus_stack(im, mode='symmGauss', param=[0, [1, 10]], start='center'):
     else:
         raise ValueError("This mode is not implemented yet.")
     return res
+
+# %% -----------------------------------------------------
+# ----                  EXTREMUM-ANALYSIS
+# --------------------------------------------------------
+
+def find_extrema_1D(im,visres=True):
+    '''
+    Searches extrema based on 1D function argrelextrema from scipy.signal.
+    '''
+    # imports
+    from scipy.signal import argrelextrema
+
+    #parameters
+    output_shape = im.shape
+    flatim = im.flatten()
+
+    # find local maxima 
+    a = argrelextrema(flatim, np.greater)
+
+    #display
+    if visres:
+        b= visualize_extrema_1D(flatim,value=10,output_shape=output_shape)
+    
+    # done?
+    return a,b
+
+def visualize_extrema_1D(flatim,localmax,value,output_shape):
+    '''
+    Calculates and Visualizes extrema from Scipy-signal (1D) toolbox. 
+    '''
+    b = np.zeros(flatim.shape)
+    for m in localmax[0]: 
+        b[m] = 10
+    return b.reshape(output_shape)
