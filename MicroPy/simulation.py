@@ -3,6 +3,7 @@ All data generating functions will be found in here.
 '''
 import numpy as np
 import NanoImagingPack as nip
+import copy
 from .transformations import irft3dz, rft3dz
 from .utility import shiftby_list
 
@@ -35,6 +36,9 @@ def PSF_SIM_PARA(para):
     para.vectorized = False
     para.aplanar = para.apl.no
     para.aperture_method = 'jinc'
+
+    # done?
+    return para
 
 
 # %%
@@ -173,7 +177,133 @@ def ismR_defaultIMG(obj, psf, NPhot=None, use2D=True):
 # ------------------------------------------------------------------
 #                       PSF-generators
 # ------------------------------------------------------------------
+def calculatePSF_confocal(obj,psf_params,psfp=False):
+    '''
+    Calculates confocal PSF. 
+    See calculatePSF for explanation on parameters
+    '''
+    psfex = nip.psf(obj,psf_params[0])
+    if not psfp:
+        psf_params.append(copy.deepcopy(psf_params[0]))
+        psf_params[1].wavelength = 510
+        psf_params[1].pinhole = 0.6
+    psfem = nip.psf(obj,psf_params[1])
+    pinhole = generate_pinhole(psfem,psf_params[1])
+    psf = psfex * nip.convolve(psfem,pinhole)
 
+    # done?
+    return psf
+
+
+def calculatePSF(obj,psf_params=None,method='brightfield',amplitude=False):
+    '''
+    Calculates different PSFs according to the selected method. 
+
+    :PARAMS:
+    ========
+    :im:            (IMAGE) object-image to provide shape and pixel-size
+    :psf_params:    (LIST) of STRUCTS from nip.PSF_PARAMS-type -> contains all necessary simulation parameters 
+    :method:        (STRING) method to be used. Options are:
+                'brightfield': standard PSF_em
+                'confocal': PSF_ex * CONV(PSF_em,Pinhole)
+                '2photon': (PSF_ex*PSF_ex) * PSF
+                'ism': CONV(PSF_ex,detector_geometry)*PSF_em
+                'dsax': PSF^sat_ex * PSF_em
+                'dsaxISM': CONV(PSF^sat_ex,detector_geometry) * PSF_em
+                'sim':  to be done
+                'light-sheet': to be done
+                'ptychography': to  be done
+    :amplitude:     (BOOL) if true, returns amplitude PSF
+
+    :OUTPUT:
+    ========
+    :psf:       (IMAGE) calculated (a)psf
+
+    :EXAMPLE:
+    =========
+    psfpara = nip.PSF_PARAMS()
+    psfpara.wavelength = 488
+    psfpara.NA = 1.4
+    psfpara.n = 1.518
+    psfpara.pinhole = 0.6 # in Airy-Units of PSFem (widefield)
+    psfparams=[psfpara,psfpara]
+    psf = calculatePSF(im,psf_params=psfparams,method='confocal',amplitude=False)
+
+    '''
+    psfp = False
+    if psf_params==None:
+        psf_params = nip.PSF_PARAMS()
+        psf_params.wavelength = 488
+        psf_params.NA = 1.4
+        psf_params.n = 1.518
+        psf_params = [psf_params,]
+    else:
+        psfp = True
+
+    if method=='brightfield':
+        psf = nip.psf(obj,psf_params[0])
+    elif method == 'confocal':
+        psf = calculatePSF_confocal(obj=obj,psf_params=psf_params,psfp=psfp)
+    elif method == '2photon':
+        pass
+    elif method == 'ism':
+        pass
+    elif method == 'dsax':
+        pass
+    elif method == 'dsaxISM':
+        pass
+    elif method == 'SIM':
+        pass
+    elif method == 'ptychography':
+        pass
+    else: 
+        raise ValueError('Method not implemented yet.')
+
+    # done?
+    return psf
+    
+def generate_pinhole(psf,psf_params,pshape='circular',pedge='hard'):
+    '''
+    Calculates and generates a pinhole from the simulation properties.
+    
+    :PARAMS:
+    ========
+    :psf:           (IMAGE) PSF to provide shape and pixel-size
+    :psf_params:    (LIST) of STRUCTS from nip.PSF_PARAMS-type -> contains all necessary simulation parameters 
+    :pshape:        (STRING) possible shapes for pinhole
+                    'circular': 
+                    'rect': rectangular pinhole -> to be implemented
+                    'hexagon': hexagonal pinhole-> to be implemented
+    :pedge:         (STRING) properties of pinhole edges 
+                    'hard': just a hard edge
+                    'gauss': gaussian damped edge -> to be implemented
+                    'sinc': sinc damped edge -> to be implemented
+                    'invgauss': gaussian increased edges -> to be implemented
+
+    :OUTPUT:
+    ========
+    :pinhole:       (IMAGE) calculated pinhole
+
+    :EXAMPLE:
+    =========
+    
+    '''
+    # pinhole-size from theoretical AU by: 1.22 * lambda / NA
+    airyUNIT =  1.22 * psf_params.wavelength / psf_params.NA
+    pinhole_radius = psf_params.pinhole * airyUNIT / (2 * np.array(psf.pixelsize[-2:]))
+
+    if pshape=='circular':
+        pinhole = nip.rr(psf.shape) <= pinhole_radius[-1]
+    else:
+        raise ValueError(f"Used pshape={pshape} not implemented yet ")
+
+    if pedge == 'hard':
+        pass
+    else:
+        raise ValueError(f"Used pedge={pedge} not implemented yet ")
+    
+    # done?
+    return pinhole
 
 def ismR_defaultPSF(obj, lex=488, lem=520, shift_offset=[2, 2], nbr_det=[3, 3]):
     # generate PSFs
@@ -277,9 +407,9 @@ def generate_pickupNoise(imshape,pickup_pos,pickup_level):
     im_pnFT, im_pn = generate_pickupNoise(imshape=(5,5,8),pickup_pos=[[2,3,4],[0,1,5]],pickup_level=[10,20])
     '''
     poslist = []
+    im_pnFT = nip.image(np.zeros(imshape))
     for m,pos in enumerate(pickup_pos):
         pos = tuple(pos)
-        im_pnFT = nip.image(np.zeros(imshape))
         im_pnFT,pos2 = add_symmetric_point(im_pnFT,pos,pickup_level[m])
         poslist.append([pos,pos2])
         im_pn = np.real(nip.ft(im_pnFT))
