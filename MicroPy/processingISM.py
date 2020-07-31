@@ -10,6 +10,7 @@ from scipy.ndimage import binary_closing
 # mipy imports
 from .transformations import irft3dz
 from .utility import findshift
+from .inout import stack2tiles
 
 
 # %%
@@ -280,10 +281,8 @@ def unmix_image_ft(im_unmix_ft, recon_shape=None, mode='rft', show_phases=False)
 
         # show phases before and after two FTs
         if show_phases:
-            nip.v5(stack2tiles(im_unmix_ft, tileshape=get_tileshape(
-                im_unmix_ft)), showPhases=True)
-            nip.v5(stack2tiles(unmix_im, tileshape=get_tileshape(
-                unmix_im)), showPhases=True)
+            nip.v5(stack2tiles(im_unmix_ft), showPhases=True)
+            nip.v5(stack2tiles(unmix_im), showPhases=True)
 
         # per definition does a RFT transform on the last axis given and normal fft along the others
         #unmix_im = np.fft.irfft(unmix_im,n=recon_shape,axes=0)

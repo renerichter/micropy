@@ -747,6 +747,42 @@ def defocus_stack(im, mode='symmGauss', param=[0, [1, 10]], start='center'):
 # %% -----------------------------------------------------
 # ----                  EXTREMUM-ANALYSIS
 # --------------------------------------------------------
+def getPoints(im,viewer=None,compare=False):
+    '''
+    Function to collect and reformat points from an image using nip.v5 viewer. Inspired from "nip->transformations->findTransformFromMarkers" function.
+    Comparison of up to two images implemented for now. Easily enhanceable for n-images (=stack).
+
+    :PARAMS:
+    ========
+    :im:            (IMAGE) input image
+    :viewer:        (VIEWER) already open v5 instance
+    :compare:       (BOOL) whether to use comparison or 1-image mode
+
+    :OUTPUT:
+    ========
+    :picklist:      (ARRAY) of selected points
+
+    :EXAMPLE:
+    =========
+    picklist = mipy.getPoints([nip.readim(),nip.readim()],viewer=None,compare=True)
+    print(picklist)
+    '''
+    
+    if viewer is None: 
+        viewer = nip.v5(im)
+    input('Please position markers (press "m") in alternating elements (toggle with "e") or simply alternating positions.\nUse "0" or "9" to step through markers and "M" to delete a marker.\n "A" and "a" to Zoom.\nTo turn off the automatic maximum search for marker positioning use the menu "n".')
+    mm = viewer.getMarkers()
+    if compare:
+        if len(mm) < 6:
+            raise ValueError('At least 3 markers are needed for both images!')
+        src = np.array(mm[::2])[:, 4:2:-1]
+        dst = np.array(mm[1::2])[:, 4:2:-1]
+        picklist = [src,dst]
+    else: 
+        picklist = np.array(mm)[:, 4:2:-1]
+    
+    return picklist
+
 
 def find_extrema_1D(im,visres=True):
     '''
@@ -764,7 +800,7 @@ def find_extrema_1D(im,visres=True):
 
     #display
     if visres:
-        b= visualize_extrema_1D(flatim,value=10,output_shape=output_shape)
+        b = visualize_extrema_1D(flatim=flatim, localmax = a, value=10, output_shape=output_shape)
     
     # done?
     return a,b

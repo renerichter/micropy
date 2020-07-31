@@ -32,7 +32,7 @@ def add_logging(logger_filepath='./logme.log', start_logger='RAWprocessor'):
     fh.setLevel(logging.DEBUG)
     fh.setFormatter(fromage)
     if 'logger' in locals():
-        if len(logger.handlerse):
+        if len(logger.handlers):
             for loghdl in logger.handlers:
                 logger.removeHandler(loghdl)
     if len(root.handlers):
@@ -338,7 +338,7 @@ def load_SPE(fname):
     '''
     Load function for SPE-class.
     '''
-    fid = mipy.SPEloader(fname)
+    fid = SPEloader(fname)
     img = fid.load_img()
     fid.close()
     return nip.image(img)
@@ -488,7 +488,7 @@ def print_stack2subplot(imstack, plt_raster=[4, 4], plt_format=[8, 6], title=Non
         imstack_len = len(imstack)
     # needs NanoImagingPack imported as nip
     elif type(imstack) == nip.image or type(imstack) == np.array:
-        imstack_len = imstack.shape
+        imstack_len = imstack.ndim-2
     else:
         raise TypeError("Unexpected Data-type.")
     if not(imstack_len > 0):
@@ -550,11 +550,11 @@ def stack2plot(x, ystack, refs=None, title=None, xlabel=None, ylabel=None, color
     return fig1
 
 
-def plot_save(ppointer, save_name, save_format='png'):
+def plot_save(ppointer, save_name, save_format='png',dpi=300):
     '''
     Just an easy wrapper.
     '''
-    ppointer.savefig(save_name+'.'+save_format, dpi=300, bbox_inches='tight')
+    ppointer.savefig(save_name + f".{save_format}", dpi=dpi, bbox_inches='tight',format=save_format)
 
 
 # %% ------------------------------------------------------

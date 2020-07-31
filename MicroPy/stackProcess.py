@@ -455,7 +455,7 @@ def matplotlib_toNumpy(fig):
     # done?
     return im
 
-def matplotlib_TextAndScalebar(im, ax, textstr,font_size=None,y_offset=None,dx=0.2,units="um", color='white'):
+def matplotlib_TextAndScalebar(im, ax, textstr,font_size=None,y_offset=None,dx=0.2,units="um", color='white',length_fraction=0.2):
     '''
     Adds text to the lower-left part of the image and a scalebar to the lower right edge. 
     Note: Not generic yet, but enough for the actual purpose.
@@ -466,11 +466,11 @@ def matplotlib_TextAndScalebar(im, ax, textstr,font_size=None,y_offset=None,dx=0
 
 
     # set and add scalebar
-    scalebar = ScaleBar(dx=0.17,units="um",dimension='si-length',length_fraction=0.2, location='lower right', frameon=False, color=color,font_properties={'size': font_size, 'family': 'Helvetica'}) 
+    scalebar = ScaleBar(dx=dx,units="um",dimension='si-length',length_fraction=length_fraction, location='lower right', frameon=False, color=color,font_properties={'size': font_size, 'family': 'Helvetica'}) 
     ax.add_artist(scalebar)
 
     # add text
-    plt.text(0,y_offset, textstr,fontsize=font_size, color='white', fontname='Helvetica') 
+    ax.text(0,y_offset, textstr,fontsize=font_size, color='white', fontname='Helvetica') 
 
     # done?
     return ax
