@@ -1,18 +1,20 @@
 '''
 All data generating functions will be found in here.
 '''
-import numpy as np
-import NanoImagingPack as nip
-import copy
+# mipy imports
+from .basicTools import sanityCheck_structure
 from .transformations import irft3dz, rft3dz
-from .utility import shiftby_list
+from .utility import shiftby_list, add_multi_newaxis
+
+# external imports
+import copy
+import NanoImagingPack as nip
+import numpy as np
 
 # %%
 # ------------------------------------------------------------------
 #                       Parameter-generators
 # ------------------------------------------------------------------
-
-
 def PSF_SIM_PARA(para):
     '''
     Set standard-parameters for a PSF-simulation using the nip.PSF_PARAMS() set.
@@ -177,27 +179,79 @@ def ismR_defaultIMG(obj, psf, NPhot=None, use2D=True):
 # ------------------------------------------------------------------
 #                       PSF-generators
 # ------------------------------------------------------------------
-def calculatePSF_confocal(obj,psf_params,psfp=False):
+def calculatePSF_confocal(obj,psf_params,psfp=False,psfex=None,psfdet=None,pinhole=None,**kwargs):
     '''
     Calculates confocal PSF. 
     See calculatePSF for explanation on parameters
     '''
-    psfex = nip.psf(obj,psf_params[0])
-    if not psfp:
-        psf_params.append(copy.deepcopy(psf_params[0]))
-        psf_params[1].wavelength = 510
-        psf_params[1].pinhole = 0.6
-    psfem = nip.psf(obj,psf_params[1])
-    pinhole = generate_pinhole(psfem,psf_params[1])
-    psf = psfex * nip.convolve(psfem,pinhole)
+    
+    if psfex is None:
+        psfex = nip.psf(obj,psf_params[0])
+        if psfex.pixelsize == None: 
+            psfex.pixelsize = obj.pixelsize
+    
+    if psfdet is None:
+        if not psfp:
+            psf_params.append(copy.deepcopy(psf_params[0]))
+            psf_params[1].wavelength = 510
+            psf_params[1].lambdaEx = 510
+            psf_params[1].pinhole = 0.6
+        psfdet = nip.psf(obj,psf_params[1])
+    
+        # but why is dimension different? What changes in PSF generation?
+        if psfex.ndim < psfdet.ndim:
+            psfdet = psfdet[0]
+        
+        if psfdet.pixelsize is None:
+            psfdet.pixelsize = psfex.pixelsize
+
+    if pinhole is None: 
+        pinhole = generate_pinhole(psf=psfdet,psf_params=psf_params[1])
+
+    psf = psfex * nip.convolve(psfdet,pinhole)
+
+    # done?
+    return psf, psfex, psfdet, pinhole
+
+def calculatePSF_sax(psfex,k_fluo):
+    '''
+    Calculates Saturated excitation PSF from given saturation parameter k_fluo. 
+    Assumes PSFex to be normalized to one. (from: Heintzmann, R. Saturated patterned excitation microscopy with two-dimensional excitation patterns. Micron 34, 283–291 (2003).)
+    '''
+    psf = k_fluo * psfex / (k_fluo+psfex)
 
     # done?
     return psf
 
+def calculatePSF_ism(psfex,psfdet,psfdet_array=None,shift_offset=[2,2],nbr_det=[3,3],fmodel='rft',pinhole=None):
+    '''
+    Assumes each camera-pixel as closed pinhole and hence just shifts the PSF_detection. 
+    TODO: 
+        1) Add shape- and size of pixel. -> test!
+        2) implement for 3D
+    '''
+    # calculate PSF_array for each detector pixel -> normalize array as whole detector can at max detect one of arriving one photon
+    if psfdet_array is None:            
+        psfdet_array = shiftby_list(psfdet,shift_offset=shift_offset,nbr_det=nbr_det).real
+        if pinhole is not None:
+            nbrnewaxis = psfdet_array.ndim-pinhole.ndim
+            psfdet_array = nip.convolve(psfdet_array,add_multi_newaxis(pinhole,[0,]*nbrnewaxis))
+        psfdet_array /= np.sum(psfdet_array,keepdims=True)
 
-def calculatePSF(obj,psf_params=None,method='brightfield',amplitude=False):
+    # final (confocal) PSF per pixel via PSFex*PSFdet
+    psf_eff = psfex[np.newaxis] * psfdet_array
+
+    # get OTF
+    otf_eff = mipy.rftnd(psf_eff,raxis=-2,faxes=(-1,)) if fmodel=='rft' else nip.ft2d(psf_eff)
+
+    # done?
+    return psf_eff, otf_eff, psfdet_array
+
+def calculatePSF(obj,psf_params=None,method='brightfield',amplitude=False,**kwargs):
     '''
     Calculates different PSFs according to the selected method. 
+
+    TODO: 1) fix dsax + dsaxISM structure and idea
 
     :PARAMS:
     ========
@@ -208,7 +262,8 @@ def calculatePSF(obj,psf_params=None,method='brightfield',amplitude=False):
                 'confocal': PSF_ex * CONV(PSF_em,Pinhole)
                 '2photon': (PSF_ex*PSF_ex) * PSF
                 'ism': CONV(PSF_ex,detector_geometry)*PSF_em
-                'dsax': PSF^sat_ex * PSF_em
+                'sax': Confocal with saturated PSF
+                'dsax': multiple saturated PSFs
                 'dsaxISM': CONV(PSF^sat_ex,detector_geometry) * PSF_em
                 'sim':  to be done
                 'light-sheet': to be done
@@ -218,6 +273,17 @@ def calculatePSF(obj,psf_params=None,method='brightfield',amplitude=False):
     :OUTPUT:
     ========
     :psf:       (IMAGE) calculated (a)psf
+    -> depending on option: 
+                'brightfield': psf
+                'confocal': [psf, psfex, psfdet, pinhole]
+                '2photon': to be done
+                'ism':  [psf_eff, otf_eff, psfex,psfdet_array]
+                'sax': [psf, psfex, psfex_sat, psfdet, pinhole]
+                'dsax': [psf, psfex_sat, psfdet, pinhole]
+                'dsaxISM': [psf_effl, otf_effl, psfex_satl, psfdetl, psfdet_array]
+                'sim':  to be done
+                'light-sheet': to be done
+                'ptychography': to  be done
 
     :EXAMPLE:
     =========
@@ -241,17 +307,110 @@ def calculatePSF(obj,psf_params=None,method='brightfield',amplitude=False):
         psfp = True
 
     if method=='brightfield':
-        psf = nip.psf(obj,psf_params[0])
+        psf_res = nip.psf(obj,psf_params[0])
+        if psf_res.pixelsize == None:
+            psf_res.pixelsize = obj.pixelsize
+
     elif method == 'confocal':
-        psf = calculatePSF_confocal(obj=obj,psf_params=psf_params,psfp=psfp)
+        # fish entries from input-list
+        psfex = None if not 'psfex' in kwargs else kwargs['psfex']
+        psfdet = None if not 'psfdet' in kwargs else kwargs['psfdet']
+        pinhole = None if not 'pinhole' in kwargs else kwargs['pinhole']
+        psfp = False if len(psf_params)<2 else psfp
+
+        # calculate PSF and return
+        psf, psfex, psfdet, pinhole = calculatePSF_confocal(obj=obj,psf_params=psf_params,psfp=psfp,**kwargs)
+        psf_res = [psf, psfex, psfdet, pinhole]
+
     elif method == '2photon':
         pass
+
     elif method == 'ism':
-        pass
+        # fish entries from input-list
+        psfex = None if not 'psfex' in kwargs else kwargs['psfex']
+        psfdet = None if not 'psfdet' in kwargs else kwargs['psfdet']
+        psfdet_array = None if not 'psfdet_array' in kwargs else kwargs['psfdet_array']
+        shift_offset = None if not 'shift_offset' in kwargs else kwargs['shift_offset']
+        nbr_det = None if not 'nbr_det' in kwargs else kwargs['nbr_det']
+        fmodel = None if not 'fmodel' in kwargs else kwargs['fmodel']
+        pinhole = None if not 'pinhole' in kwargs else kwargs['pinhole']
+
+        # calculate ISM        
+        psf, psfex, psfdet, pinhole = calculatePSF(obj=obj,psf_params=psf_params,method='confocal',amplitude=amplitude, psfex=psfex,psfdet=psfdet)
+        psf_eff, otf_eff, psfdet_array = calculatePSF_ism(psfex=psfex,psfdet=psfdet,psfdet_array=psfdet_array,shift_offset=shift_offset,nbr_det=nbr_det,fmodel=fmodel,pinhole=pinhole)
+        psf_res = [psf_eff, otf_eff, psfex,psfdet_array]
+
+    elif method == 'sax':
+        # fish entries from input-list
+        k_fluo = 1/6 if not 'k_fluo' in kwargs else kwargs['k_fluo']
+        psfex = None if not 'psfex' in kwargs else kwargs['psfex']
+        psfdet = None if not 'psfdet' in kwargs else kwargs['psfdet']
+
+        # sanity check-parameters
+        for m in range(len(psf_params)):
+            psf_params[m] = sanityCheck_structure(psf_params[m],params={'k_fluo':k_fluo})
+
+        # caculate saturated PSF
+        if psfex is None:
+            psfex = calculatePSF(obj=obj,psf_params=psf_params,method='brightfield',amplitude=amplitude,**kwargs)[0]
+        psfex_sat = calculatePSF_sax(psfex,k_fluo=k_fluo)
+
+        # calculate total (confocal) PSF
+        psf, psfex_sat, psfdet, pinhole = calculatePSF(obj=obj,psf_params=psf_params,method='confocal',amplitude=amplitude,psfex=psfex_sat,psfdet=psfdet)
+        psf_res = [psf, psfex, psfex_sat, psfdet, pinhole]
+
     elif method == 'dsax':
-        pass
+        # fish entries from input-list
+        k_fluo = 1/6 if not 'k_fluo' in kwargs else kwargs['k_fluo']
+        excitation_ratio = [1,0.1,0.01] if not 'excitation_ratio' in kwargs else kwargs['excitation_ratio']
+        order = 2 if not 'order' in kwargs else kwargs['order']
+
+        # check sanity of entries of params_dict
+        for m in range(len(psf_params)):
+            psf_params[m] = sanityCheck_structure(psf_params[m],params={'k_fluo':k_fluo,'excitation_ratio':excitation_ratio,'order':order})
+
+        # calculate dsax orders
+        
+        psf, psfex, psfex_sat, psfdet, pinhole = calculatePSF(obj,psf_params=psf_params,method='sax',amplitude=amplitude,k_fluo=k_fluo)
+        psf_satl = [psf,]
+        psfex_satl = [psfex,]
+        psfdetl = [psfdet,]
+        for m in range(1,len(excitation_ratio)):
+            psft, _, psfex_satt, psfdett, pinhole = calculatePSF(obj,psf_params=psf_params,method='sax',amplitude=amplitude,k_fluo=k_fluo,psfex=psfex*excitation_ratio[m],psfdet=psfdet)
+            psf_satl.append(psft)
+            psfex_satl.append(psfex_satt)
+            psfdetl.append(psfdett)
+        #psf_satl = nip.image(np.array(psf_satl))
+        #psfex_satl = nip.image(np.array(psfex_satl))
+        #psfdetl = nip.image(np.array(psfdetl))
+
+        # done?
+        psf_res = [psf_satl, psfex_satl, psfdetl, pinhole]
+
     elif method == 'dsaxISM':
-        pass
+        # calculate DSAX-ISM PSF for amount of orders (with different excitation factors)
+        psf_satl, psfex_satl, psfdetl, pinhole = calculatePSF(obj,psf_params=psf_params,method='dsax',amplitude=amplitude,**kwargs)
+        
+        # test and add entries
+        sanityCheck_structure(kwargs,{'psfex':None,'psfdet':None})
+        
+        # calculate dsaxISM-PSF
+        psf_effl = []
+        otf_effl = []
+        psfdet_array = None
+        #pinhole_array = None
+        for m in range(len(psfex_satl)):
+            kwargs['psfex']  = psfex_satl[m]
+            kwargs['psfdet']  = psfdetl[m]
+            kwargs['psfdet_array'] = psfdet_array
+            #kwargs['pinhole_array'] = pinhole_array
+            psf_eff, otf_eff, _ , psfdet_array = calculatePSF(obj,psf_params=psf_params,method='ism',amplitude=amplitude,**kwargs)
+            psf_effl.append(psf_eff)
+            otf_effl.append(otf_eff)
+
+        # done?
+        psf_res = [psf_effl, otf_effl, psfex_satl, psfdetl, psfdet_array]
+
     elif method == 'SIM':
         pass
     elif method == 'ptychography':
@@ -260,8 +419,10 @@ def calculatePSF(obj,psf_params=None,method='brightfield',amplitude=False):
         raise ValueError('Method not implemented yet.')
 
     # done?
-    return psf
+    return psf_res
+
     
+
 def generate_pinhole(psf,psf_params,pshape='circular',pedge='hard'):
     '''
     Calculates and generates a pinhole from the simulation properties.
@@ -306,7 +467,7 @@ def generate_pinhole(psf,psf_params,pshape='circular',pedge='hard'):
     return pinhole
 
 def ismR_defaultPSF(obj, lex=488, lem=520, shift_offset=[2, 2], nbr_det=[3, 3]):
-    # generate PSFs
+        # generate PSFs
     para = nip.PSF_PARAMS()
     PSF_SIM_PARA(para)  # add formerly defined PSF-paramaters
 

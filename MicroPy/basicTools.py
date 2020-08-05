@@ -62,4 +62,55 @@ def getIterationProperties(load_experiment, offset=0, file_limit=10, batch_size=
     return file_list[offset:last_file], file_total, batch_iterations, batch_last_iter
 
 
-# %% My Version from NIP!
+# %%
+# ------------------------------------------------------------------
+#                    Safety Checks on Structures 
+# ------------------------------------------------------------------
+
+def sanityCheck_structure(pstruct,params={'psfdet_array':None,'shift_offset':[2,2],'nbr_det':[3,3],'fmodel':'rft'},isclass=False,show_results=False):
+    '''
+    Checks whether given parameters are variables in the structure and adds them if not. 
+
+    TODO: 1) implement for list,tuple
+
+    :PARAMS:
+    ========
+    :pstruct:      (STRUCTURE) to be tested
+    :params:        (LIST) of STRINGS to use for element testing
+
+    :OUTPUT:
+    =======
+    :params:        (LIST) updated list
+
+    :EXAMPLE:
+    =========
+    psf_params = nip.PSF_PARAMS()
+    params={'wavelength':488,'pol':'lin','aplanar':True,'mytest':20}
+    psf_params = sanityCheck_structure(psf_params,params)
+    '''
+    res_had = f"I found the following entries:\n----------------------------\n"
+    res_add = "I added the following entries:\n----------------------------\n"
+    if type(pstruct) == nip.util.struct or isclass:
+        for m in params:
+            if hasattr(pstruct,m):
+                res_had += f"{m:<20}= " + str(getattr(pstruct,m)) + "\n"
+            else: 
+                setattr(pstruct,m,params[m])
+                res_add += f"{m:<20}= {params[m]}\n"
+    elif type(pstruct) == dict:
+        for m in params:
+            if m in pstruct:
+                res_had += f"{m:<20}= " + str(pstruct[m]) + "\n"
+            else:
+                pstruct[m] = params[m]
+                res_add += f"{m:<20}= {params[m]}\n"
+    else:
+        raise Exception(f'Type={type(pstruct)} not implemented yet.')
+
+    # display results
+    if show_results:
+        print(res_had)
+        print(res_add)
+
+    # done?
+    return pstruct

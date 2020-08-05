@@ -236,22 +236,20 @@ def shiftby_list(psf, shifts=[], shift_offset=[1, 1], nbr_det=[3, 3], retreal=Tr
     ========
     mipy.shiftby_list(nip.readim(),shifts=[[1,1],[2,2],[5,5]])
     '''
+    # calculate shifts if not provided
     if shifts == []:
+        shift_offset = [1, 1] if shift_offset is None else shift_offset
+        nbr_det = [1, 1] if nbr_det is None else nbr_det
         shifts = gen_shift_loop(shift_offset, nbr_det)
-    #phase_mapx = nip.xx(psf.shape[-2:], freq='ftfreq')
-    #phase_mapy = nip.yy(psf.shape[-2:], freq='ftfreq')
-
+    
+    # build ramp and shift
     ax = tuple(np.arange(psf.ndim))
     axb = tuple(np.arange(psf.ndim)+1)
     phase_ramp_list = np.ones((len(shifts),)+psf.shape, dtype=np.complex_)
     for m in ax[-2:]:
-        phase_ramp_list *= add_multi_newaxis(np.exp(-1j*2*np.pi * add_multi_newaxis(shifts[:, m-len(psf.shape[:-2])], [-1, ]*(m+1))*nip.ramp1D(
-            psf.shape[m], ramp_dim=m, placement='center', freq='ftfreq', pixelsize=psf.pixelsize)[np.newaxis]), [-1]*(psf.ndim-m-1))
+        phase_ramp_list *= add_multi_newaxis(np.exp(-1j*2*np.pi * add_multi_newaxis(shifts[:, m-len(psf.shape[:-2])], [-1, ]*(m+1))*nip.ramp1D(psf.shape[m], ramp_dim=m, placement='center', freq='ftfreq', pixelsize=psf.pixelsize)[np.newaxis]), [-1]*(psf.ndim-m-1))
 
-    #phase_ramp_list_old = np.exp(-1j*2*np.pi*(shifts[:, -2][:, np.newaxis, np.newaxis, np.newaxis]*phase_mapy[np.newaxis,np.newaxis, :, :] + shifts[:, -1][:, np.newaxis, np.newaxis, np.newaxis]*phase_mapx[np.newaxis, np.newaxis, :, :]))
-
-    psf_res = nip.ift(nip.ft(psf, axes=ax)[
-                      np.newaxis]*phase_ramp_list, axes=axb)
+    psf_res = nip.ift(nip.ft(psf, axes=ax)[np.newaxis]*phase_ramp_list, axes=axb)
 
     if retreal:
         psf_res = psf_res.real
