@@ -364,6 +364,45 @@ def gen_shift_loop(soff, pix):
     return np.array(c)
 # %%
 # ------------------------------------------------------------------
+#                       PINHOLE-MANIPULATIONS
+# ------------------------------------------------------------------
+def get_pinholecenter(im,method='sum'):
+    '''
+    Uses argmax to find pinhole center assuming axis=(0,1)=pinhole_axes and axis=(-2,-1)=sample-axis. Calculates shift-mask.
+
+    :PARAM:
+    =======
+    :im:        input image (at least 4dim)
+    :method:    method used to calculate center position, implemented: 'sum', 'max', 'min'
+
+    :OUT:
+    =====
+    :pinhc:     coordinates of pinhole-center
+    :smask:     shift-coordinates necessary to be used with nip.extract() to shift image center to new center position
+    :maskshape: shape of pinhole-dimension of input image
+
+    '''
+    if method=='sum':
+        im_ana = np.sum(im,axis=(-2,-1))
+    elif method=='max':
+        im_ana = np.max(im,axis=(-2,-1))
+    elif method=='min':
+        im_ana = np.min(im,axis=(-2,-1))
+    else: 
+        raise ValueError("Chosen method not implemented")
+
+    # find center
+    pinhc = np.argmax(im_ana)
+    pinhc = [int(pinhc/im.shape[0]),np.mod(pinhc,im.shape[1])]
+
+    # get shift-mask
+    maskshape = np.array(im.shape[:2])
+    smask = np.array(maskshape-pinhc,dtype=np.uint8)
+    
+    return pinhc, smask, maskshape
+
+# %%
+# ------------------------------------------------------------------
 #                       SHAPE-MANIPULATION
 # ------------------------------------------------------------------
 

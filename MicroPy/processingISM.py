@@ -4,12 +4,13 @@ The ISM processing toolbox.
 # %% imports
 import numpy as np
 import NanoImagingPack as nip
+import InverseModelling as im
 from scipy.ndimage.morphology import binary_fill_holes
 from scipy.ndimage import binary_closing
 
 # mipy imports
 from .transformations import irft3dz
-from .utility import findshift
+from .utility import findshift, midVallist
 from .inout import stack2tiles
 
 
@@ -647,6 +648,131 @@ def ismR_sheppardSUM(im, shift_map=[], shift_method='nearest', pincen=[], pinsiz
 
     # return created results
     return ismR, shift_map, mask, pincen
+
+def ismR_weightedAveraging(imfl,otfl,noise_norm=True,wmode='leave',fmode='fft',fshape=None,closing=2,suppcomp=False):
+    '''
+    Weighted Averaging for multi-view reconstruction. List implementation so that it can be applied to multiple Data-sets. Needs list of PSFs (list) for different images (=views). 
+    Note, make sure that:  
+        -> applied FT is the same in both cases
+        -> sum of all PSFs (views) was normalized to 1
+        -> symmetric Fourier-transform [normalization 1/sqrt(N_image)] is used
+
+    TODO:
+        1) check normalization of IFT
+        2) Catch user-errors
+        3) generalize for higher dimensions
+        4) add covariance-terms
+
+    :PARAM:
+    =======
+    :imfl:          (NDARRAY) of Fourier-transformed images to work on -> Shape: [VIEWDIM,otherDIMS]
+    :otfl:          (NDARRAY) of OTFs 
+    :noise_norm:    (BOOL)  
+    :wmode:         (STRING) Which mode to use for OTF in weights -> options: 'real', 'conj', 'abs', 'leave' (DEFAULT)
+    :fmode:         (STRING) Transformation used for transformed input images
+    :fshape:        (LIST)  Original Shape of Fourier-Transformed image to do right back-transformation in case of noise-normalization
+    :suppcomp:      (BOOL) gives back an image with the comparison of the noise-level vs support size
+
+    :OUT:
+    =====
+    :ismWA:      (IMAGE) recombined image
+    :weights:    (LIST) weights calculated for scaling
+
+    '''
+    # parameter
+    dims = list(range(1,otfl.ndim,1))
+    validmask,_,_,_,_ = otf_get_mask(otfl, mode='rft', eps=1e-5,bool_mask=True,closing=closing)
+    
+
+    # In approximation of Poisson-Noise the Variance in Fourier-Space is the sum of the Mean-Values in Real-Space -> hence: MidVal(OTF); norm-OTF by sigma**2 = normalizing OTF to 1 and hence each PSF to individual sum=1
+    sigma2_otfl = midVallist(otfl,dims,keepdims=True).real
+    weights = otfl / sigma2_otfl  
+    #weightsn[~validmask] = 0
+
+    # norm max of OTF to 1 = norm sumPSF to 1;
+    #sigma2_imfl = mipy.midVallist(imfl,dims,keepdims=True).real
+    if wmode == 'real':
+        weights = weights.real
+    elif wmode == 'conj':
+        weights = np.conj(weights)
+    elif wmode == 'abs':
+        weights = np.abs(weights)
+    else: 
+        pass
+    #weights = otfl / sigma2_imfl
+    weightsn = nip.image(np.copy(weights))
+    weightsn[~np.repeat(validmask[np.newaxis],repeats=otfl.shape[0],axis=-otfl.ndim)] = 0
+    # 1/OTF might strongly diverge outside OTF-support -> put Mask 
+    eps=0.01
+    wsum = np.array(weightsn[0])    
+    wsum = np.divide(np.ones(weightsn[0].shape,dtype=weightsn.dtype),np.sum(weightsn+eps,axis=0),where=validmask,out=wsum)
+    #wsum = 1.0/np.sum(weightsn+eps,axis=0)
+    #wsum[~validmask]=0
+
+    # apply weights
+    ismWA = wsum * np.sum(imfl * weightsn,axis=0)
+
+    # noise normalize
+    if noise_norm:
+        # noise-normalize, set zero outside of OTF-support
+        sigman = np.array(weightsn[0])    
+        sigman = np.divide(np.ones(weightsn[0].shape,dtype=weightsn.dtype),np.sqrt(np.sum(weightsn * weights,axis=0)),where=validmask,out=wsum)
+        ismWAN = np.sum(imfl * weightsn,axis=0) * sigman
+
+        # get Poisson-noise for Frequencies > k_cutoff right
+        ismWANh = np.real(nip.ift(ismWAN))
+        ismWANh = nip.poisson(ismWANh - ismWANh.min(),NPhot=None)
+        ismWAN = ismWAN + nip.ft(ismWANh)*(1-validmask)
+        ismWAN = nip.ift(ismWAN).real
+
+    # return in real-space
+    ismWA = nip.ift(ismWA).real
+
+    # print 
+    if suppcomp:
+        import matplotlib.pyplot as plt
+        a = plt.figure()
+        plt.plot(x,y,)
+
+    # done?
+    return ismWA, ismWAN
+
+def ismR_deconvolution(imfl,psfl,method='multi',regl=None,lambdal=None,NIter=100,tflog_name=None):
+    '''
+    Simple Wrapper for ISM-Deconvolution to be done. Shall especially used for a mixture of sheppard-sum, weighted averaging and deconvolutions.
+
+    :PARAM:
+    =======
+    :imfl:      (LIST) Image or List of images (depending on method)
+    :psfl:      (LIST) OTF or List of OTFs (depending on method)
+    :method:    (STRING) Chosing reconstruction -> 'multi', 'combi'
+    :regl:      (LIST) of regularizers to be used [in Order]
+    :lambdal:   (LIST) of lambdas to be used. Has to fit to regl.
+    :NIter:     (DEC) Number of iterations.
+
+    :OUTPUT:
+    ========
+    :imd:       Deconvolved image
+
+    :EXAMPLE:
+    =========
+    imd = ismR_deconvolution(imfl,psfl,method='multi')
+    '''
+    # parameters
+    if regl==None:
+        regl = ['TV','GR','GS']
+        lambdal = [2e-4,1e-3,2e-4]
+
+    if method=='combi':
+        #BorderSize = np.array([30, 30])
+        #res = im.Deconvolve(nimg, psfParam, NIter=NIter, regularization=regl, mylambda = rev[m], BorderRegion=0.1, useSeparablePSF=False)
+        pass
+    elif method == 'multi':
+        res = im.Deconvolve(imfl, psfl, NIter=NIter, regularization=regl, mylambda = lambdal, BorderRegion=0.1, useSeparablePSF=False)
+        #print('test')
+    else: 
+        raise ValueError('Method unknown. Please specify your needs.')
+    return res
 
 
 def ismR_drawshift(shift_map):

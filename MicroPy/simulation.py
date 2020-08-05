@@ -335,8 +335,11 @@ def calculatePSF(obj,psf_params=None,method='brightfield',amplitude=False,**kwar
         fmodel = None if not 'fmodel' in kwargs else kwargs['fmodel']
         pinhole = None if not 'pinhole' in kwargs else kwargs['pinhole']
 
-        # calculate ISM        
-        psf, psfex, psfdet, pinhole = calculatePSF(obj=obj,psf_params=psf_params,method='confocal',amplitude=amplitude, psfex=psfex,psfdet=psfdet)
+        # calculate confocal PSF
+        if psfex is None and psfdet is None:
+            psf, psfex, psfdet, pinhole = calculatePSF(obj=obj,psf_params=psf_params,method='confocal',amplitude=amplitude, psfex=psfex,psfdet=psfdet)
+
+        # calculate resulting ISM-PSF
         psf_eff, otf_eff, psfdet_array = calculatePSF_ism(psfex=psfex,psfdet=psfdet,psfdet_array=psfdet_array,shift_offset=shift_offset,nbr_det=nbr_det,fmodel=fmodel,pinhole=pinhole)
         psf_res = [psf_eff, otf_eff, psfex,psfdet_array]
 
