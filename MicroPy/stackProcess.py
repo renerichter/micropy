@@ -82,7 +82,7 @@ def convert_stk2vid(save_file, file_list=None, batch_size=None, mode=0, vid_para
     return True
 
 
-def save2vid(im, save_file=None, vid_param={}, out=False):
+def save2vid(im, save_file=None, vid_param={}, out=False,hasChannels=None,isstack=None):
     '''
     Saves an image or image-stack to a given path. All necessary parameters are hidden in vid_param.
     Needs opencv3 (py3) and FFMPEG installed (has to be installed explicitely in windows).
@@ -101,7 +101,11 @@ def save2vid(im, save_file=None, vid_param={}, out=False):
     save_file = [
         'D:/Data/01_Fluidi/data/processed/Inkubator-Setup02-UC2_Inku_450nm/20190815/expt_017/','20190815-01']
     '''
-    im, hasChannels, isstack = save2vid_assure_stack_shape(im)
+    # sanity checks
+    im, hc, iss = save2vid_assure_stack_shape(im)
+    hasChannels = hc if hasChannels is None else hasChannels
+    isstack = iss if isstack is None else isstack
+       
     if type(out) == bool:
         save_path, vid_param = sanitycheck_save2vid(save_file, vid_param)
         vid = save2vid_initcontainer(save_path, vid_param)
@@ -110,6 +114,7 @@ def save2vid(im, save_file=None, vid_param={}, out=False):
     if not im.dtype == np.dtype(vid_param['bitformat']):
         im = limit_bitdepth(
             im, vid_param['bitformat'], imin=None, imax=None, inorm=False, hascolor=hasChannels)
+    
     # save stack or image
     if isstack:
         imh = np.transpose(im, [0, 2, 3, 1]) if im.shape[-3] == 3 else im
@@ -202,7 +207,7 @@ def limit_bitdepth(im, iformat='uint8', imin=None, imax=None, inorm=True, hascol
     return im
 
 
-def save2vid_assure_stack_shape(im):
+def save2vid_assure_stack_shape(im,isstack=False,hasChannels=False):
     '''
     Tests the stack for the appropriate format and converts if necessary for conversion.
     Input-Image needs to have X,Y-dimensions at last position, hence for 3D-stack with 2 channels e.g. [stackdim,channeldim,Y,X].
@@ -211,8 +216,6 @@ def save2vid_assure_stack_shape(im):
     =======
     :im:        numpy or nip-array (image)
     '''
-    isstack = False
-    hasChannels = False
     # convert stack to correct color_space
     if im.ndim < 2:
         raise ValueError("Dimension of input-image is too small.")

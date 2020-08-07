@@ -13,3 +13,7 @@ from .stackProcess import *
 from .testing import *
 from .transformations import *
 from .utility import *
+from .config import *
+
+if useDECON:
+    from .deconvolution import *

@@ -4,7 +4,6 @@ The ISM processing toolbox.
 # %% imports
 import numpy as np
 import NanoImagingPack as nip
-import InverseModelling as im
 from scipy.ndimage.morphology import binary_fill_holes
 from scipy.ndimage import binary_closing
 
@@ -736,43 +735,6 @@ def ismR_weightedAveraging(imfl,otfl,noise_norm=True,wmode='leave',fmode='fft',f
 
     # done?
     return ismWA, ismWAN
-
-def ismR_deconvolution(imfl,psfl,method='multi',regl=None,lambdal=None,NIter=100,tflog_name=None):
-    '''
-    Simple Wrapper for ISM-Deconvolution to be done. Shall especially used for a mixture of sheppard-sum, weighted averaging and deconvolutions.
-
-    :PARAM:
-    =======
-    :imfl:      (LIST) Image or List of images (depending on method)
-    :psfl:      (LIST) OTF or List of OTFs (depending on method)
-    :method:    (STRING) Chosing reconstruction -> 'multi', 'combi'
-    :regl:      (LIST) of regularizers to be used [in Order]
-    :lambdal:   (LIST) of lambdas to be used. Has to fit to regl.
-    :NIter:     (DEC) Number of iterations.
-
-    :OUTPUT:
-    ========
-    :imd:       Deconvolved image
-
-    :EXAMPLE:
-    =========
-    imd = ismR_deconvolution(imfl,psfl,method='multi')
-    '''
-    # parameters
-    if regl==None:
-        regl = ['TV','GR','GS']
-        lambdal = [2e-4,1e-3,2e-4]
-
-    if method=='combi':
-        #BorderSize = np.array([30, 30])
-        #res = im.Deconvolve(nimg, psfParam, NIter=NIter, regularization=regl, mylambda = rev[m], BorderRegion=0.1, useSeparablePSF=False)
-        pass
-    elif method == 'multi':
-        res = im.Deconvolve(imfl, psfl, NIter=NIter, regularization=regl, mylambda = lambdal, BorderRegion=0.1, useSeparablePSF=False)
-        #print('test')
-    else: 
-        raise ValueError('Method unknown. Please specify your needs.')
-    return res
 
 
 def ismR_drawshift(shift_map):
