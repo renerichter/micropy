@@ -352,26 +352,22 @@ def sanitycheck_save2vid(save_file, vid_param):
 def check_path(file_path):
     '''
     Checks whether file_path exists and if not, creates it.
+    Note: Assume that Filepath ends with "\\" or "/" to mark a directory. 
     '''
-    if type(file_path) == str:
-        if file_path[-1] not in ["/", "\\"]:
-            import re
-            regs = re.compile(r'([\w:]+)*/((\w+)*/)*')
-            regss = regs.search(file_path)
-            if regss == None:
-                regs = re.compile(r'([\w:]+)*\\((\w+)*\\)*')
-                regss = regs.search(file_path)
-            if regss == None:
-                raise ValueError(
-                    'Could not match directory path in file_path.')
-            else:
-                file_path = regss.group()
-        if not os.path.isdir(file_path):
-            os.makedirs(file_path)
-            print('File path' + file_path + ' freshly created')
-    else:
-        raise ValueError("File_Path not of string-type.")
-    return file_path
+    # match path
+    try: 
+        import re
+        file_path_new = re.compile(r'([A-Z:|/\w*]+)*[\\|/](([\w-]+)*[\\|/])*').search(file_path).group()
+    except Exception as e:
+        print(f"Exception {e} ocurred. Could not match directory path in file_path or given file_path is not of string-type.")            
+    
+    # create if necessary
+    if not os.path.isdir(file_path_new):
+            os.makedirs(file_path_new)
+            print('File path -> ' + file_path_new + ' <- freshly created!')
+
+    # done?
+    return file_path_new
 
 
 def convert_time2str(nbr=1,nbr2Time=[0,0,1,0,0]):
