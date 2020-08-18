@@ -359,7 +359,7 @@ def ismR_pinholecenter(im, method='max'):
 
     # find center
     pincen = np.argmax(im_ana)
-    pincen = [int(pincen/im.shape[0]), np.mod(pincen, im.shape[1])]
+    pincen = [int(pincen/im.shape[1]), np.mod(pincen, im.shape[1])]
 
     # get shape and center-pos
     mask_shape = np.array(im.shape[:2])
@@ -411,38 +411,47 @@ def ismR_shiftmask2D(im, pinsize, mask_shape, pincen, pinshape):
     return shiftmask
 
 
-def ismR_genShiftmap(im, mask_shape, pincen, shift_method='nearest'):
+def ismR_genShiftmap(im, mask, pincen, shift_method='nearest'):
     '''
-    Generates Shiftmap for ISM SheppardSUM-reconstruction. 
+    Generates Shiftmap for ISM SheppardSUM-reconstruction. Assumes shape: [LIST,pinhole_y,pinhole_x]
 
     :PARAM:
     =======
     :im:            input nD-image (first two dimensions are detector plane)
-    :mask_shape:    should be within the first two image dimensions
+    :mask:    should be within the first two image dimensions
     :pincen:        center of mask-pinhole
 
     :OUT:
     =====
     :shift_map:          shift-map for all pinhole-pixels
     '''
-    shift_map = [[0, ]*mask_shape[1] for m in range(mask_shape[0])]
+    shift_map = np.array([[[0,0],]*mask.shape[1] for m in range(mask.shape[0])])
     if shift_method == 'nearest':
-        xshift, _, _, _ = findshift(
-            im[pincen[0], pincen[1]+1], im[pincen[0], pincen[1]], 100)
-        yshift, _, _, _ = findshift(
-            im[pincen[0]+1, pincen[1]], im[pincen[0], pincen[1]], 100)
-        for k in range(mask_shape[0]):
-            for l in range(mask_shape[1]):
+
+        # checks for nearest only if dimension is bigger than 0
+        if mask.shape[1] > 1:
+            xshift, _, _, _ = findshift(im[pincen[0], pincen[1]+1], im[pincen[0], pincen[1]], 100) 
+        else:
+            xshift = np.zeros(2)
+        if mask.shape[0] > 1:
+            yshift, _, _, _ = findshift(im[pincen[0]+1, pincen[1]], im[pincen[0], pincen[1]], 100)  
+        else: 
+            yshift= np.zeros(2)
+
+        # build map per pinhole
+        for k in range(mask.shape[0]):
+            for l in range(mask.shape[1]):
                 shift_map[k][l] = (k-pincen[0])*yshift + (l-pincen[1])*xshift
+    
     elif shift_method == 'mask':
-        for k in range(mask_shape[0]):
-            for l in range(mask_shape[1]):
+        for k in range(mask.shape[0]):
+            for l in range(mask.shape[1]):
                 if mask[k, l] > 0:
                     shift_map[k][l], _, _, _ = findshift(
                         im[k, l], im[pincen[0], pincen[1]], 100)
     elif shift_method == 'complete':
-        for k in range(mask_shape[0]):
-            for l in range(mask_shape[1]):
+        for k in range(mask.shape[0]):
+            for l in range(mask.shape[1]):
                 shift_map[k, l], _, _, _ = findshift(
                     im[k, l], im[pincen[0], pincen[1]], 100)
     else:
@@ -596,7 +605,7 @@ def ismR_confocal(im, axes=(0, 1), pinsize=None, pinshape='circle', pincen=None,
     return imconfs
 
 
-def ismR_sheppardSUM(im, shift_map=[], shift_method='nearest', pincen=[], pinsiz=[]):
+def ismR_sheppardSUM(im, shift_map=[], shift_method='nearest', pincen=None, pinsiz=None, mask_shape=None):
     '''
     Calculates sheppardSUM on image (for rectangular detector arrangement), meaning: 
     1) find center of pinhole for all scans using max-image-peak (on center should have brightest signal) if not particularly given 
@@ -610,11 +619,11 @@ def ismR_sheppardSUM(im, shift_map=[], shift_method='nearest', pincen=[], pinsiz
 
     :PARAM:
     =======
-    :im:            Input image; assume nD for now, but structure should be like(pinholeDim=pd) [pdY,pdX,...(n-4)-extraDim...,Y,X]
-    :shift_map:          list for shifts to be applied on channels -> needs to have same structure as pd
-    :shift_method:   Method to be used to find the shifts between the single detector and the center pixel -> 1) 'nearest': compare center pinhole together with 1 pix-below and 1 pix-to-the-right pinhole 2) 'mask': all pinholes that reside within mask (created by pinsiz)  3) 'complete': calculate shifts for all detectors 
-    :pincen:        2D-center-pinhole position (e.g. [5,6])
-    :pinsiz:        Diameter of the pinhole-mask to be used for calculations
+    :im:            (IMAGE)     Input image; assume nD for now, but structure should be like(pinholeDim=pd) [pdY,pdX,...(n-4)-extraDim...,Y,X]
+    :shift_map:     (LIST)      list for shifts to be applied on channels -> needs to have same structure as pd
+    :shift_method:  (STRING)    Method to be used to find the shifts between the single detector and the center pixel -> 1) 'nearest': compare center pinhole together with 1 pix-below and 1 pix-to-the-right pinhole 2) 'mask': all pinholes that reside within mask (created by pinsiz)  3) 'complete': calculate shifts for all detectors 
+    :pincen:        (LIST)      2D-center-pinhole position (e.g. [5,6])
+    :pinsiz:        (LIST)      Diameter of the pinhole-mask to be used for calculations, eg "[5,]" to have a circular pinhole or "[3,8]" for rect
 
     OUT:
     ====
@@ -624,20 +633,35 @@ def ismR_sheppardSUM(im, shift_map=[], shift_method='nearest', pincen=[], pinsiz
     :pincen:        center-point of mask/pinhole
     '''
     # get pinhole center
-    if pincen == []:
+    if pincen == [] or pincen is None:
         pincen, mask_shift, mask_shape = ismR_pinholecenter(im, 'sum')
 
     # get pinhole mask
-    if pinsiz == []:
+    if pinsiz == [] or pincen is None:
         mask = nip.image(np.ones(im.shape[:2]))
     else:
-        mask = nip.extract((nip.rr((mask_shape)) <= np.floor(
-            pinsiz/2.0))*1, mask_shape, mask_shift)[:, :, np.newaxis, np.newaxis]
+        # test whether circular pinhole
+        pinsiz = pinsiz*2 if len(pinsiz) == 1 else pinsiz
+        pinshape='circ' if  pinsiz[-1] == pinsiz[-2] else 'rect'
+
+        # generate pinhole
+        if pinshape == 'rect':
+            mask_x = (abs(nip.xx(mask_shape,placement='center')) <= pinsiz[-1]//2)*1
+            mask_y = (abs(nip.yy(mask_shape,placement='center')) <= pinsiz[-2]//2)*1
+            mask = mask_x + mask_y
+            mask[mask < (np.max(mask_x) + np.max(mask_y))] = 0
+            #nip.v5(nip.catE((mask,nip.extract(mask, mask_shape, pincen))))
+            #nip.v5(mask)
+        else: 
+            mask = (nip.rr(mask_shape,placement='center') <= pinsiz[-1]//2)*1
+        
+        # shift mask to determined center position --> need to fix AGAIN! -> was: "mask_shift" instead of "pincen", but did not work for 1D-array
+        mask = nip.extract(mask_x+mask_y, mask_shape, pincen)[:, :, np.newaxis, np.newaxis]
 
     # find shift-list -> Note: 'nearest' is standard
     if shift_map == []:
         shift_map, figS, axS = ismR_genShiftmap(
-            im=im, mask_shape=mask_shape, pincen=pincen, shift_method='nearest')
+            im=im, mask=mask, pincen=pincen, shift_method=shift_method)
 
     # apply shifts -> assumes that 1st two dimensions are of detector-shape ----> for now via loop, later parallel
     ims = ismR_sheppardShift(im, shift_map, method='iter', use_copy=True)
