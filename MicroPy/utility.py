@@ -366,7 +366,7 @@ def gen_shift_loop(soff, pix):
 # ------------------------------------------------------------------
 #                       PINHOLE-MANIPULATIONS
 # ------------------------------------------------------------------
-def get_pinholecenter(im,method='sum'):
+def pinhole_getcenter(im,method='sum'):
     '''
     Uses argmax to find pinhole center assuming axis=(0,1)=pinhole_axes and axis=(-2,-1)=sample-axis. Calculates shift-mask.
 
@@ -382,24 +382,51 @@ def get_pinholecenter(im,method='sum'):
     :maskshape: shape of pinhole-dimension of input image
 
     '''
-    if method=='sum':
-        im_ana = np.sum(im,axis=(-2,-1))
-    elif method=='max':
-        im_ana = np.max(im,axis=(-2,-1))
-    elif method=='min':
-        im_ana = np.min(im,axis=(-2,-1))
-    else: 
+    # parameter
+    saxis = list(np.arange(1,im.ndim))
+
+    # project scan into detector plane
+    if method == 'sum':
+        im_detproj = np.sum(im, axis=saxis)
+    elif method == 'max':
+        im_detproj = np.max(im, axis=saxis)
+    elif method == 'min':
+        im_detproj = np.min(im, axis=saxis)
+    else:
         raise ValueError("Chosen method not implemented")
 
-    # find center
-    pinhc = np.argmax(im_ana)
-    pinhc = [int(pinhc/im.shape[0]),np.mod(pinhc,im.shape[1])]
+    # find center via maximum-point
+    pincenter = np.argmax(im_detproj)
 
-    # get shift-mask
-    maskshape = np.array(im.shape[:2])
-    smask = np.array(maskshape-pinhc,dtype=np.uint8)
+    # done?
+    return pincenter, im_detproj
+
+def pinhole_shift(pinhole,pincenter):
+    '''
+    Gets pinhole mask and shift.
     
-    return pinhc, smask, maskshape
+    :PARAMS:
+    ========
+    :pinhole:   (IMAGE)     pinhole mask/image
+    :pincenter: (INT)       Center position of pinhole
+
+    :OUT:
+    =====
+    :pinshift:  (LIST)      calculated shifts
+    :pinhole:   (IMAGE)     shifted pinhole
+    '''
+    
+    # pincenter to 2d
+    if pinhole.ndim > 1: 
+        pincentern = [pincenter//pinhole.shape[-1],np.mod(pincenter,pinhole.shape[-1])]
+        pinshift = np.array(np.array(pinhole.shape)//2-pincentern, dtype=np.int8)
+        pinholen = nip.extract(pinhole, pinhole.shape, pinshift)
+    else: 
+        pinshift = np.array(len(pinhole)//2-pincenter, dtype=np.int8)
+        pinholen = np.roll(pinhole,shift=pinshift,axis=0)
+
+    # done? 
+    return pinholen, pinshift
 
 # %%
 # ------------------------------------------------------------------
