@@ -357,7 +357,8 @@ def check_path(file_path):
     # match path
     try: 
         import re
-        file_path_new = re.compile(r'([A-Z:|/\w*]+)*[\\|/](([\w-]+)*[\\|/])*').search(file_path).group()
+        #file_path_new = re.compile(r'([A-Z:|/\w*]+)*[\\|/](([\w-]+)*[\\|/])*').search(file_path).group()
+        file_path_new = re.compile(r'[\\|/]*([\w-]*[:|.]*[\\|/]+)*').search(file_path).group()
     except Exception as e:
         print(f"Exception {e} ocurred. Could not match directory path in file_path or given file_path is not of string-type.")            
     
@@ -474,7 +475,7 @@ def matplotlib_TextAndScalebar(im, ax, textstr,font_size=None,y_offset=None,dx=0
     # done?
     return ax
 
-def label_image(im,nbr=0,nbr2Time=[0,0,1,0,0],pixelsize=0.17,pixelunit="um",font_size=None, use_matplotlib=True, logger=None):
+def label_image(im,nbr=0,nbr2Time=[0,0,1,0,0],pixelsize=0.17,pixelunit="um",font_size=None, use_matplotlib=True, logger=None, log_correction=False):
     '''
     Atomic version of deprecated vid_addContent_and_format.
     Assumes 2D-grey images for now.
@@ -514,10 +515,11 @@ def label_image(im,nbr=0,nbr2Time=[0,0,1,0,0],pixelsize=0.17,pixelunit="um",font
 
         # make sure for correct shape
         if not im_res.shape == im.shape:
-            if logger is not None: 
-                logger.debug(f"Corrected im_nbr{nbr} from shape={im_res.shape} to shape={im.shape}")
-            else: 
-                print(f"Corrected im_nbr{nbr} from shape={im_res.shape} to shape={im.shape}")
+            if log_correction:
+                if logger is not None: 
+                    logger.debug(f"Corrected im_nbr{nbr} from shape={im_res.shape} to shape={im.shape}")
+                else: 
+                    print(f"Corrected im_nbr{nbr} from shape={im_res.shape} to shape={im.shape}")
             im_res = nip.extract(im_res,im.shape)
 
         # free RAM
