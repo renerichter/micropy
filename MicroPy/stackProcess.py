@@ -1,7 +1,7 @@
 # import from internal modules
 from .inout import get_filelist, get_batch_numbers, loadStack, loadStackfast, dir_test_existance, add_logging, rename_files, fill_zeros, format_time
 from .basicTools import getIterationProperties, get_range
-from .utility import channel_getshift, image_getshift, add_multi_newaxis, create_value_on_dimpos, subtract_from_max
+from .utility import channel_getshift, image_getshift, create_value_on_dimpos, subtract_from_max
 from .filters import stf_basic, diff_tenengrad
 
 # import external modules

@@ -581,3 +581,72 @@ def generate_pickupNoise(imshape,pickup_pos,pickup_level):
     
     #done?
     return im_pnFT, im_pn, poslist
+
+# %%
+# ------------------------------------------------------------------
+#                       SAMPLING-EFFECTS
+# ------------------------------------------------------------------
+
+def sim_pixelSampling(im,method='kernel',lensing_kernel=None,strides=None,keepsize=False):
+    '''
+    Effect by pixel-sampling. If a lensing_kernel is provided the convolution method is used, else the strided version. Implemented for 2D, so if it should be used for nD, just np.transpose the target 2-dimensions to dimension [0,1]. 
+
+    :PARAMS:
+    ========
+    :im:                (IMAGE) input image
+    :method:            (string) method to use 
+                                'kernel' (convolution based),
+                                'strideSUM' (sums within strides),
+                                'stride' (just every n-th pixel)
+    :lensing_kernel:    (ARRAY) kernel to be used 
+    :strides:           (ARRAY) Strides per dimension
+
+    OUTPUTS:
+    ========
+    :imo:               (IMAGE) sampled image
+
+    Example:
+    ========
+    # parameters
+    strides = [4,4]
+    lensing_kernel = np.ones(strides); lensing_kernel[0,:] = 0; lensing_kernel[:,0] = 0; 
+
+    # read image
+    im = nip.readim()
+    
+    # eval
+    imL = sim_pixelSampling(im,lensing_kernel=lensing_kernel,strides=None)
+    imS = sim_pixelSampling(im,lensing_kernel=None,strides=strides)
+
+    # compare results
+    print(np.allclose(imL,imS))
+
+
+    TODO:
+    =====
+    1)  in "stridesSUM" -> 1-pixels shift for uneven pixel-pitch between extract-routine and mere selection
+    '''
+    imh = nip.image(np.zeros(im.shape))
+    if method=='kernel':
+        [kernel_center,kernel_stride] = [np.array(lensing_kernel.shape)//2, lensing_kernel.shape]
+        imo = nip.convolve(im,nip.extract(lensing_kernel,im.shape))
+        imo = nip.image(imo[kernel_center[0]::kernel_stride[0],kernel_center[1]::kernel_stride[1]])
+        imh[kernel_center[0]::kernel_stride[0],kernel_center[1]::kernel_stride[1]] = imo
+    elif method=='stridesSUM':
+        imo = nip.image(np.zeros((im.shape[0]//strides[0],im.shape[1]//strides[1]),dtype=np.float32))
+        for m in range(1,strides[0]):
+            for n in range(1,strides[1]):
+                try:
+                    imo += im[m::strides[1],n::strides[0]]
+                except:
+                    imo += nip.extract(im[m::strides[1],n::strides[0]],ROIsize=imo.shape)
+        imh[strides[0]//2::strides[0],strides[1]//2::strides[1]] = imo
+    elif method=='strides':
+        imh[strides[0]//2::strides[0],strides[1]//2::strides[1]] = im[strides[0]//2::strides[0],strides[1]//2::strides[1]]
+    else: 
+        print("Selection not implemented yet.")
+
+    if keepsize:
+        imo = imh
+
+    return imo

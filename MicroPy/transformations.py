@@ -170,3 +170,14 @@ def deriv_prepdim(im, dim=0):
     # print('dim_list={},dim_list2={},dim={}'.format(dim_list, dim_list2, dim))
 
     return dim_list, dim_list2, dim
+
+
+# %%
+# ------------------------------------------------------------------
+#                           WRAPPING
+# ------------------------------------------------------------------
+def fwrap(f,n,T,a):
+    '''
+    wraps the period onto a function.
+    '''
+    return a*f(2*np.pi*n/T)
