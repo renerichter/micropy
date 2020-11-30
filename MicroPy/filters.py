@@ -29,7 +29,7 @@ __last_update__ = "12.02.2020"
 import numpy as np
 import NanoImagingPack as nip
 
-from .utility import transpose_arbitrary
+from .utility import transpose_arbitrary, get_nbrpixel
 from .transformations import dct2
 
 # %%
@@ -44,7 +44,7 @@ def cf_vollathF4(im, im_out=True):
     Calculates the Vollath-F4 correllative Sharpness-metric.
     '''
     # res = np.mean(im[:, :-1]*euler_forward_1d(im, dim=1, dx=0))
-    im_res = cf_vollathF4_symmetric_corr(im)
+    im_res = cf_vollathF4_corr(im)
     res = np.mean(im_res, axis=(-2, -1))
     if im_out:
         return res, im_res
@@ -56,8 +56,7 @@ def cf_vollathF4_corr(im):
     '''
     Calculates the Vollath F4-correlation
     '''
-    trlist = transpose_arbitrary(im, idx_startpos=[-2, -1], idx_endpos=[0, 1])
-    im = np.transpose(im, trlist)
+    im, trlist, trlistB = transpose_arbitrary(im, idx_startpos=[-2, -1], idx_endpos=[0, 1])
     im_res = im[:, :-2]*(im[:, 1:-1]-im[:, 2:])
     return np.transpose(im_res, trlist)
 
@@ -79,10 +78,9 @@ def cf_vollathF4_symmetric_corr(im, keep_size=True):
     '''
     Calculates the symmetric Vollath F4-correlation
     '''
-    trlist = transpose_arbitrary(im, idx_startpos=[-2, -1], idx_endpos=[0, 1])
-    im = np.transpose(im, trlist)
+    im, trlist, trlistB = transpose_arbitrary(im, idx_startpos=[-2, -1], idx_endpos=[0, 1])
     if keep_size == True:
-        imh = nip.extract(im, [im.shape[0]+4, im.shape[0]+4])
+        imh = nip.extract(im, [im.shape[0]+4, im.shape[1]+4] + list(im.shape[2:]))
         im_res = np.repeat(im[np.newaxis, :], repeats=4, axis=0)
         im_res[0] = (imh[:, :-2] * (imh[:, 1:-1] - imh[:, 2:]))[2:-2, 2:]
         im_res[1] = (imh[:, 2:] * (imh[:, 1:-1] - imh[:, :-2]))[2:-2, :-2]
@@ -94,7 +92,9 @@ def cf_vollathF4_symmetric_corr(im, keep_size=True):
         im_res.append(im[:, 2:] * (im[:, 1:-1] - im[:, :-2]))
         im_res.append(im[:-2] * (im[1:-1] - im[2:]))
         im_res.append(im[2:] * (im[1:-1] - im[:-2]))
-    return np.transpose(im_res, trlist)
+        im_res = nip.image(np.array(im_res))
+    im_res = np.transpose(im_res, [0,] + [m+1 for m in trlist])
+    return 
 
 
 def cf_vollathF5(im, im_out=True):
@@ -116,8 +116,7 @@ def cf_vollathF5_corr(im):
     '''
     Calculates the Vollath F4-correlation
     '''
-    trlist = transpose_arbitrary(im, idx_startpos=[-2, -1], idx_endpos=[0, 1])
-    im = np.transpose(im, trlist)
+    im, trlist, trlistB = transpose_arbitrary(im, idx_startpos=[-2, -1], idx_endpos=[0, 1])
     return np.transpose(im[:-1, :]*im[1:, :], trlist)
 #
 # -------------------------------------------------------------------------
@@ -144,8 +143,7 @@ def diff_sobel_horizontal(im):
     Filter-shape: [[-1 0 1],[ -2 0 2],[-1 0 1]] -> separabel:  np.outer(np.transpose([1,2,1]),[-1,0,1])
     '''
     # use separability
-    trlist = transpose_arbitrary(im, idx_startpos=[-2, -1], idx_endpos=[1, 0])
-    im = np.transpose(im, trlist)
+    im, trlist, trlistB = transpose_arbitrary(im, idx_startpos=[-2, -1], idx_endpos=[1, 0])
     x_res = im[:, 2:] - im[:, :-2]  # only acts on x
     xy_res = x_res[:-2] + 2*x_res[1:-1] + x_res[2:]  # only uses the y-coords
     return np.transpose(xy_res, trlist)
@@ -157,8 +155,7 @@ def diff_sobel_vertical(im):
     Filter-shape: [[-1,-2,-1],[0,0,0],[1,2,1]] -> separabel:  np.outer(np.transpose([-1,0,1]),[1,2,1])
     '''
     # use separability
-    trlist = transpose_arbitrary(im, idx_startpos=[-2, -1], idx_endpos=[1, 0])
-    im = np.transpose(im, trlist)
+    im, trlist, trlistB = transpose_arbitrary(im, idx_startpos=[-2, -1], idx_endpos=[1, 0])
     x_res = im[:, :-2] + 2*im[:, 1:-1] + im[:, 2:]  # only x coords
     xy_res = x_res[2:] - x_res[:-2]  # further on y coords
     return np.transpose(xy_res)
@@ -235,8 +232,7 @@ def stf_diffim_kurtosis(im):
     '''
     Difference image Kurtosis. Implemented for 2D image.
     '''
-    trlist = transpose_arbitrary(im, idx_startpos=[-2, -1], idx_endpos=[0, 1])
-    im = np.transpose(im, trlist)
+    im, trlist, trlistB = transpose_arbitrary(im, idx_startpos=[-2, -1], idx_endpos=[0, 1])
     return stf_kurtosis(im[1:, 1:] - im[:-1, :-1], switch_axis=True)
 
 

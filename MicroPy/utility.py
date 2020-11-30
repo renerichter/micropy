@@ -434,7 +434,7 @@ def pinhole_shift(pinhole,pincenter):
 # ------------------------------------------------------------------
 
 
-def transpose_arbitrary(imstack, idx_startpos=[-2, -1], idx_endpos=[0, 1]):
+def transpose_arbitrary(imstack, idx_startpos=[-2, -1], idx_endpos=[0, 1], method='exchange'):
     '''
     creates the forward- and backward transpose-list to change stride-order for easy access on elements at particular positions.
 
@@ -445,14 +445,32 @@ def transpose_arbitrary(imstack, idx_startpos=[-2, -1], idx_endpos=[0, 1]):
         idx_startpos = [idx_startpos, ]
     if type(idx_endpos) == int:
         idx_endpos = [idx_endpos, ]
-    # create transpose list
+    
+    # prelim
     trlist = list(range(imstack.ndim))
-    for m in range(len(idx_startpos)):
-        idxh = trlist[idx_startpos[m]]
-        trlist[idx_startpos[m]] = trlist[idx_endpos[m]]
-        trlist[idx_endpos[m]] = idxh
-    return trlist
+    trlistB = list(range(imstack.ndim))
 
+    # create transpose list
+    if method == 'exchange':
+        for m in range(len(idx_startpos)):
+            idxh = trlist[idx_startpos[m]]
+            trlist[idx_startpos[m]] = trlist[idx_endpos[m]]
+            trlist[idx_endpos[m]] = idxh
+            
+            idxh = trlistB[-idx_startpos[m]]
+            trlistB[-idx_startpos[m]] = trlistB[idx_endpos[m]]
+            trlistB[idx_endpos[m]] = idxh
+        trlistB = trlist
+    elif method == 'insert':
+        print('Implementation not finished')
+        trlisth = list(range(imstack.ndim))
+        trlistB = list(range(imstack.ndim))
+        for m in range(len(idx_startpos)):
+            trlist.insert(idx_endpos[m],trlist(idx_startpos[m]))
+            trlist.pop(idx_startpos[m])
+        pass    
+
+    return np.transpose(imstack,trlist), trlist, trlistB
 
 def image_binning(im, bin_size=2, mode='real_sum', normalize='old'):
     '''
