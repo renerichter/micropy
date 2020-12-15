@@ -56,9 +56,9 @@ def cf_vollathF4_corr(im):
     '''
     Calculates the Vollath F4-correlation
     '''
-    im, trlist, trlistB = transpose_arbitrary(im, idx_startpos=[-2, -1], idx_endpos=[0, 1])
+    im = transpose_arbitrary(im, idx_startpos=[-2, -1], idx_endpos=[0, 1],direction='forward')
     im_res = im[:, :-2]*(im[:, 1:-1]-im[:, 2:])
-    return np.transpose(im_res, trlist)
+    return transpose_arbitrary(im_res, idx_startpos=[-2, -1], idx_endpos=[0, 1],direction='forward')
 
 
 def cf_vollathF4_symmetric(im, im_out=True):
@@ -78,7 +78,7 @@ def cf_vollathF4_symmetric_corr(im, keep_size=True):
     '''
     Calculates the symmetric Vollath F4-correlation
     '''
-    im, trlist, trlistB = transpose_arbitrary(im, idx_startpos=[-2, -1], idx_endpos=[0, 1])
+    im = transpose_arbitrary(im, idx_startpos=[-2, -1], idx_endpos=[0, 1],direction='forward')
     if keep_size == True:
         imh = nip.extract(im, [im.shape[0]+4, im.shape[1]+4] + list(im.shape[2:]))
         im_res = np.repeat(im[np.newaxis, :], repeats=4, axis=0)
@@ -93,8 +93,11 @@ def cf_vollathF4_symmetric_corr(im, keep_size=True):
         im_res.append(im[:-2] * (im[1:-1] - im[2:]))
         im_res.append(im[2:] * (im[1:-1] - im[:-2]))
         im_res = nip.image(np.array(im_res))
-    im_res = np.transpose(im_res, [0,] + [m+1 for m in trlist])
-    return 
+
+    # insertion of new dimension leads to shift in endpos, but not startpos
+    idx_endpos = [1, 2]
+    
+    return transpose_arbitrary(im_res,idx_startpos=[-2, -1], idx_endpos=idx_endpos,direction='backward')
 
 
 def cf_vollathF5(im, im_out=True):
@@ -116,8 +119,8 @@ def cf_vollathF5_corr(im):
     '''
     Calculates the Vollath F4-correlation
     '''
-    im, trlist, trlistB = transpose_arbitrary(im, idx_startpos=[-2, -1], idx_endpos=[0, 1])
-    return np.transpose(im[:-1, :]*im[1:, :], trlist)
+    im = transpose_arbitrary(im, idx_startpos=[-2, -1], idx_endpos=[0, 1])
+    return transpose_arbitrary(im[:-1, :]*im[1:, :],idx_startpos=[-2, -1], idx_endpos=[0, 1],direction='backward')
 #
 # -------------------------------------------------------------------------
 # Differential Filters
@@ -134,7 +137,9 @@ def diff_tenengrad(im):
     Calculates Tenengrad-Sharpness Metric.
     '''
     impix = 1.0 / np.sqrt(np.prod(im.shape))
-    return impix * np.sum(diff_sobel_horizontal(im)**2 + diff_sobel_vertical(im)**2, axis=(-2, -1))
+    sh = diff_sobel_horizontal(im)
+    sv = diff_sobel_vertical(im)
+    return impix * np.sum(sh*sh + sv*sv, axis=(-2, -1))
 
 
 def diff_sobel_horizontal(im):
@@ -143,10 +148,14 @@ def diff_sobel_horizontal(im):
     Filter-shape: [[-1 0 1],[ -2 0 2],[-1 0 1]] -> separabel:  np.outer(np.transpose([1,2,1]),[-1,0,1])
     '''
     # use separability
-    im, trlist, trlistB = transpose_arbitrary(im, idx_startpos=[-2, -1], idx_endpos=[1, 0])
+    im = transpose_arbitrary(im, idx_startpos=[-2, -1], idx_endpos=[1, 0],direction='forward')
+
     x_res = im[:, 2:] - im[:, :-2]  # only acts on x
     xy_res = x_res[:-2] + 2*x_res[1:-1] + x_res[2:]  # only uses the y-coords
-    return np.transpose(xy_res, trlist)
+
+    #transpose back
+    xy_res = transpose_arbitrary(xy_res, idx_startpos=[-2, -1], idx_endpos=[1, 0],direction='backward')
+    return xy_res
 
 
 def diff_sobel_vertical(im):
@@ -155,10 +164,14 @@ def diff_sobel_vertical(im):
     Filter-shape: [[-1,-2,-1],[0,0,0],[1,2,1]] -> separabel:  np.outer(np.transpose([-1,0,1]),[1,2,1])
     '''
     # use separability
-    im, trlist, trlistB = transpose_arbitrary(im, idx_startpos=[-2, -1], idx_endpos=[1, 0])
+    im = transpose_arbitrary(im, idx_startpos=[-2, -1], idx_endpos=[1, 0],direction='forward')
+    
     x_res = im[:, :-2] + 2*im[:, 1:-1] + im[:, 2:]  # only x coords
     xy_res = x_res[2:] - x_res[:-2]  # further on y coords
-    return np.transpose(xy_res)
+
+    #transpose back
+    xy_res = transpose_arbitrary(xy_res, idx_startpos=[-2, -1], idx_endpos=[1, 0],direction='backward')
+    return xy_res
 
 
 #
@@ -232,7 +245,7 @@ def stf_diffim_kurtosis(im):
     '''
     Difference image Kurtosis. Implemented for 2D image.
     '''
-    im, trlist, trlistB = transpose_arbitrary(im, idx_startpos=[-2, -1], idx_endpos=[0, 1])
+    im = transpose_arbitrary(im, idx_startpos=[-2, -1], idx_endpos=[0, 1])
     return stf_kurtosis(im[1:, 1:] - im[:-1, :-1], switch_axis=True)
 
 

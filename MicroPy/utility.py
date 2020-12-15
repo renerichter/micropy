@@ -434,43 +434,40 @@ def pinhole_shift(pinhole,pincenter):
 # ------------------------------------------------------------------
 
 
-def transpose_arbitrary(imstack, idx_startpos=[-2, -1], idx_endpos=[0, 1], method='exchange'):
+def transpose_arbitrary(imstack, idx_startpos=[-2, -1], idx_endpos=[0, 1], direction='forward'):
     '''
-    creates the forward- and backward transpose-list to change stride-order for easy access on elements at particular positions.
+    Exchange-based successive array transposition to exchange given start_pos with according endpos. 
 
-    TODO: add security/safety checks
+    EXAMPLE: 
+    =======
+    a = np.reshape(np.arange(2*3*4*5*6),[2,3,4,5,6])
+    b = transpose_arbitrary(a,[-2,-1],[0,1],direction='forward')
+    b1 = transpose_arbitrary(b,[-2,-1],[0,1],direction='backward')
+    print(f"a.shape={a.shape}\nb.shape={b.shape}\nb1.shape={b1.shape}")
     '''
     # some sanity
     if type(idx_startpos) == int:
         idx_startpos = [idx_startpos, ]
     if type(idx_endpos) == int:
         idx_endpos = [idx_endpos, ]
+
+    # assert correct dimensionality
+    if not (len(idx_startpos)==len(idx_endpos)):
+        raise Exception('idx_startpos and idx_endpos do not have the same size.')
     
-    # prelim
-    trlist = list(range(imstack.ndim))
-    trlistB = list(range(imstack.ndim))
+    # work on view of imstack
+    im = imstack
 
-    # create transpose list
-    if method == 'exchange':
-        for m in range(len(idx_startpos)):
-            idxh = trlist[idx_startpos[m]]
-            trlist[idx_startpos[m]] = trlist[idx_endpos[m]]
-            trlist[idx_endpos[m]] = idxh
-            
-            idxh = trlistB[-idx_startpos[m]]
-            trlistB[-idx_startpos[m]] = trlistB[idx_endpos[m]]
-            trlistB[idx_endpos[m]] = idxh
-        trlistB = trlist
-    elif method == 'insert':
-        print('Implementation not finished')
-        trlisth = list(range(imstack.ndim))
-        trlistB = list(range(imstack.ndim))
-        for m in range(len(idx_startpos)):
-            trlist.insert(idx_endpos[m],trlist(idx_startpos[m]))
-            trlist.pop(idx_startpos[m])
-        pass    
+    # check direction
+    if not(direction == 'forward'):
+        idx_startpos = idx_startpos[::-1]
+        idx_endpos = idx_endpos[::-1]
 
-    return np.transpose(imstack,trlist), trlist, trlistB
+    for k,start in enumerate(idx_startpos):            
+        im = np.swapaxes(im,axis1=start,axis2=idx_endpos[k])
+
+    #done?
+    return im
 
 def image_binning(im, bin_size=2, mode='real_sum', normalize='old'):
     '''

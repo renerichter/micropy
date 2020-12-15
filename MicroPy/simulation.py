@@ -535,6 +535,27 @@ def forward_model(obj, psf, fmodel='fft', retreal=True, is_list=False,**kwargs):
 
 # %%
 # ------------------------------------------------------------------
+#                       Stack-Generators
+# ------------------------------------------------------------------
+def gen_defocusStack(im,blurRange=[-12,12],noise=[nip.poisson,100],Nz=41):
+    '''
+    Generates a defocus-stack.
+    '''
+    # 3D stack
+    ims = nip.repmat(im,[Nz,] + [1,]*im.ndim)
+
+    # defocus by simple Gauss-blurring
+    blR = np.arange(blurRange[0],blurRange[1],step=(blurRange[1]-blurRange[0])/Nz)
+    for m in range(ims.shape[0]):
+        ims[m] = nip.gaussian_filter(ims[m],np.abs(blR[m]))
+    
+    # add  noise
+    imsn = noise[0](ims,NPhot=noise[1])
+
+    #done?
+    return ims,imsn
+# %%
+# ------------------------------------------------------------------
 #                       Noise-Generators
 # ------------------------------------------------------------------
 
