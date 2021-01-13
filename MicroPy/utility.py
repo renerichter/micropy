@@ -213,43 +213,70 @@ def findshift(im1, im2, prec=100, printout=False):
     return shift, error, diffphase, tend
 
 
-def shiftby_list(psf, shifts=[], shift_offset=[1, 1], nbr_det=[3, 3], retreal=True):
-    '''
-    Shifts an image by a list of shift-vectors.
-    If shifts not given, calculates an equally spaced rect-2D-array for nbr_det (array) of   with shift_offset spacing in pixels between them.
+def shiftby_list(psf, shifts=None, shift_offset=[1, 1], shift_axes=[-2, -1], nbr_det=[3, 3], retreal=True):
+    """Shifts an image by a list of shift-vectors.
+    If shifts not given, calculates an equally spaced rect-2D-array for nbr_det (array) of  with shift_offset spacing in pixels between them.
+    If shifts given, uses the shape (nbr_det) to calculate the distances between detectors. 
+    The shifts are applied from the right, hence if e.g. a list of 2D-shift-vectors is provided they are applied to [-2,-1].
+
+    Parameters
+    ----------
+    psf : image
+        3D-(Detection)PSF
+    shifts : list, optional
+        shifts to be applied, by default []
+    shift_axes : list, optional
+        Axes to be used for applying the shift (and hence the Fourier-Transform)
+    shift_offset : list, optional
+        distance between 2D-array, by default [1, 1]
+    nbr_det : list, optional
+        , by default [3, 3]
+    retreal : bool, optional
+        whether result should be real or complex, by default True
 
 
-    :PARAM:
-    =======
-    :psf:           3D-(Detection)PSF
-    :shifts:        (LIST) shifts to be applied
-    :shift_offset:  (LIST) distance between 2D-array
-    :nbr_det:       (LIST) shape of detector elements, eg [3,3] is a 3x3 array of detectors
-    :retreal:       (BOOL) whether result should be real or complex
-    :ax:            (TUPLE) two-axes two be used for shift
+    Returns
+    -------
+    psf_res : nip.image
+        list of N+1 DIM of shifted PSF
 
-    :OUTPUT:
-    =======
-    :psf_res:       list of N shifted 3D-(Detection)PSF
-
-    Example:
-    ========
-    mipy.shiftby_list(nip.readim(),shifts=[[1,1],[2,2],[5,5]])
-    '''
+    Example
+    -------
+    >>> mipy.shiftby_list(nip.readim(),shifts=[[1,1],[2,2],[5,5]])
+    """
     # calculate shifts if not provided
-    if shifts == []:
+    if shifts is None:
         shift_offset = [1, 1] if shift_offset is None else shift_offset
         nbr_det = [1, 1] if nbr_det is None else nbr_det
         shifts = gen_shift_loop(shift_offset, nbr_det)
-    
-    # build ramp and shift
-    ax = tuple(np.arange(psf.ndim))
-    axb = tuple(np.arange(psf.ndim)+1)
-    phase_ramp_list = np.ones((len(shifts),)+psf.shape, dtype=np.complex_)
-    for m in ax[-2:]:
-        phase_ramp_list *= add_multi_newaxis(np.exp(-1j*2*np.pi * add_multi_newaxis(shifts[:, m-len(psf.shape[:-2])], [-1, ]*(m+1))*nip.ramp1D(psf.shape[m], ramp_dim=m, placement='center', freq='ftfreq', pixelsize=psf.pixelsize)[np.newaxis]), [-1]*(psf.ndim-m-1))
 
-    psf_res = nip.ift(nip.ft(psf, axes=ax)[np.newaxis]*phase_ramp_list, axes=axb)
+    # assure use of positive numbers
+    shift_axes = np.array(shift_axes)
+    shift_axes[shift_axes < 0] += psf.ndim
+    dimdiff = psf.ndim - len(shifts[0])
+
+    # function shortening
+    maxis = add_multi_newaxis
+
+    def r1d(psfshape, ramp_dim):
+        '''directly adds another dimension (=psf.ndim + 1) to fit with stacking dimension for pinhole'''
+        ramped = maxis(nip.ramp1D(psfshape[ramp_dim], ramp_dim=ramp_dim, placement='center',
+                                  freq='ftfreq', pixelsize=psf.pixelsize), [-1, ]*(len(psfshape)-1-ramp_dim))
+        dimdiff = len(psfshape) - ramped.ndim
+        return maxis(ramped, [0, ]*(dimdiff+1))
+
+    # pre-allocate for speed-up
+    phase_ramp_list = np.ones((len(shifts),)+psf.shape, dtype=np.complex_)
+
+    # calculate shifts
+    for m in shift_axes:
+        phase_ramp_list *= np.exp(-1j*2*np.pi * maxis(shifts[:, m-dimdiff], [-1, ]
+                                                      * psf.ndim) * r1d(psf.shape, m))
+
+    # apply shifts in FT-space and transform back
+    # psf_res = nip.ift(maxis(nip.ft(psf, axes=shift_axes), [0])*phase_ramp_list, axes=shift_axes)
+    psf_res = nip.ift(nip.ft(psf, axes=shift_axes) *
+                      phase_ramp_list, axes=shift_axes+1)
 
     if retreal:
         psf_res = psf_res.real
@@ -257,9 +284,11 @@ def shiftby_list(psf, shifts=[], shift_offset=[1, 1], nbr_det=[3, 3], retreal=Tr
     # correct pixelsizes
     psf_res.pixelsize[1:] = psf.pixelsize if not psf_res.pixelsize[1:
                                                                    ] == psf.pixelsize else psf_res.pixelsize[1:]
+
     return psf_res
 
-def find_shiftperiod(shift_stack,thresh=0.25):
+
+def find_shiftperiod(shift_stack, thresh=0.25):
     '''
     Finds the shift-period for an input-stack.
 
@@ -290,15 +319,15 @@ def find_shiftperiod(shift_stack,thresh=0.25):
     bias = 0
 
     # get difference-values
-    for m,val in enumerate(shift_stack[:-1]):
+    for m, val in enumerate(shift_stack[:-1]):
         if np.any(abs(shift_stack[m+1]-val) > abs(val)*thresh):
             periods.append(m)
 
     # get first period length (take "0" into account)
-    period_lengths = [periods[0]+1,]
-    
+    period_lengths = [periods[0]+1, ]
+
     # get other lengths
-    for m,val in enumerate(periods[:-1]):
+    for m, val in enumerate(periods[:-1]):
         period_lengths.append(periods[m+1] - val)
 
     # average over period-lengths
@@ -306,7 +335,8 @@ def find_shiftperiod(shift_stack,thresh=0.25):
     pmedian = np.median(period_lengths)
 
     # done?
-    return pmean,pmedian, period_lengths
+    return pmean, pmedian, period_lengths
+
 
 def gen_shift_npfunc(soff, pix):
     '''
@@ -339,34 +369,49 @@ def gen_shift_npfunc(soff, pix):
 
 
 def gen_shift_loop(soff, pix):
-    '''
-    Calculates coordinates for an equally spaced rect-2D-array. Use with e.g. shiftby_list to generate a shifted set of images.
+    """Calculates coordinates for an equally spaced rect-2D-array. Use with e.g. shiftby_list to generate a shifted set of images.
 
     TODO:
         1) generalize for different dimensions (e.g. give unit-cell and generate pattern)
         2) generalize for nD-input
 
-    :PARAMS:
-    ========
-    :soff:      (LIST) offset between pixel-array (2D)
-    :pix:       (LIST) number of pixels per direction (2D)
+    Parameters
+    ----------
+    soff : list
+        offset between pixel-array (2D)
+    pix : list
+        number of pixels per direction (2D)
 
-    :OUT:
-    =====
-    :c:         (NP.NDARRAY) calculated array spacing
-    '''
-    c = []
+    Returns
+    -------
+    shiftarr : array of shifts
+        calculated array spacing
+
+    Example
+    -------
+    Tries to always return a centered shiftlist, hence it should be expected that
+    >>> gen_shift_loop([2,3],[1,1])
+    gen_shift_loop([2,3],[1,1])
+    >>> gen_shift_loop([2,3],[1,3])
+    array([[ 0, -3],[ 0,  0],[ 0,  3]])
+    >>> gen_shift_loop([2,3],[0,3])
+    array([], dtype=float64)
+
+    """
+    shiftarr = np.ones([pix[0]*pix[1], 2])
     xo = -int(pix[1]/2.0)
     yo = -int(pix[0]/2.0)
     for jj in range(pix[0]):
         for kk in range(pix[1]):
-            c.append([soff[0]*(yo+jj), soff[1]*(xo+kk)])
-    return np.array(c)
+            shiftarr[jj*pix[1]+kk] = [soff[0]*(yo+jj), soff[1]*(xo+kk)]
+    return shiftarr
 # %%
 # ------------------------------------------------------------------
 #                       PINHOLE-MANIPULATIONS
 # ------------------------------------------------------------------
-def pinhole_getcenter(im,method='sum'):
+
+
+def pinhole_getcenter(im, method='sum'):
     '''
     Uses argmax to find pinhole center assuming axis=(0,1)=pinhole_axes and axis=(-2,-1)=sample-axis. Calculates shift-mask.
 
@@ -383,7 +428,7 @@ def pinhole_getcenter(im,method='sum'):
 
     '''
     # parameter
-    saxis = list(np.arange(1,im.ndim))
+    saxis = list(np.arange(1, im.ndim))
 
     # project scan into detector plane
     if method == 'sum':
@@ -401,10 +446,11 @@ def pinhole_getcenter(im,method='sum'):
     # done?
     return pincenter, im_detproj
 
-def pinhole_shift(pinhole,pincenter):
+
+def pinhole_shift(pinhole, pincenter):
     '''
     Gets pinhole mask and shift.
-    
+
     :PARAMS:
     ========
     :pinhole:   (IMAGE)     pinhole mask/image
@@ -415,17 +461,19 @@ def pinhole_shift(pinhole,pincenter):
     :pinshift:  (LIST)      calculated shifts
     :pinhole:   (IMAGE)     shifted pinhole
     '''
-    
-    # pincenter to 2d
-    if pinhole.ndim > 1: 
-        pincentern = [pincenter//pinhole.shape[-1],np.mod(pincenter,pinhole.shape[-1])]
-        pinshift = np.array(np.array(pinhole.shape)//2-pincentern, dtype=np.int8)
-        pinholen = nip.extract(pinhole, pinhole.shape, pinshift)
-    else: 
-        pinshift = np.array(len(pinhole)//2-pincenter, dtype=np.int8)
-        pinholen = np.roll(pinhole,shift=pinshift,axis=0)
 
-    # done? 
+    # pincenter to 2d
+    if pinhole.ndim > 1:
+        pincentern = [pincenter//pinhole.shape[-1],
+                      np.mod(pincenter, pinhole.shape[-1])]
+        pinshift = np.array(np.array(pinhole.shape) //
+                            2-pincentern, dtype=np.int8)
+        pinholen = nip.extract(pinhole, pinhole.shape, pinshift)
+    else:
+        pinshift = np.array(len(pinhole)//2-pincenter, dtype=np.int8)
+        pinholen = np.roll(pinhole, shift=pinshift, axis=0)
+
+    # done?
     return pinholen, pinshift
 
 # %%
@@ -452,9 +500,10 @@ def transpose_arbitrary(imstack, idx_startpos=[-2, -1], idx_endpos=[0, 1], direc
         idx_endpos = [idx_endpos, ]
 
     # assert correct dimensionality
-    if not (len(idx_startpos)==len(idx_endpos)):
-        raise Exception('idx_startpos and idx_endpos do not have the same size.')
-    
+    if not (len(idx_startpos) == len(idx_endpos)):
+        raise Exception(
+            'idx_startpos and idx_endpos do not have the same size.')
+
     # work on view of imstack
     im = imstack
 
@@ -463,11 +512,12 @@ def transpose_arbitrary(imstack, idx_startpos=[-2, -1], idx_endpos=[0, 1], direc
         idx_startpos = idx_startpos[::-1]
         idx_endpos = idx_endpos[::-1]
 
-    for k,start in enumerate(idx_startpos):            
-        im = np.swapaxes(im,axis1=start,axis2=idx_endpos[k])
+    for k, start in enumerate(idx_startpos):
+        im = np.swapaxes(im, axis1=start, axis2=idx_endpos[k])
 
-    #done?
+    # done?
     return im
+
 
 def image_binning(im, bin_size=2, mode='real_sum', normalize='old'):
     '''
@@ -826,7 +876,9 @@ def defocus_stack(im, mode='symmGauss', param=[0, [1, 10]], start='center'):
 # %% -----------------------------------------------------
 # ----                  EXTREMUM-ANALYSIS
 # --------------------------------------------------------
-def getPoints(im,viewer=None,compare=False):
+
+
+def getPoints(im, viewer=None, compare=False):
     '''
     Function to collect and reformat points from an image using nip.v5 viewer. Inspired from "nip->transformations->findTransformFromMarkers" function.
     Comparison of up to two images implemented for now. Easily enhanceable for n-images (=stack).
@@ -846,8 +898,8 @@ def getPoints(im,viewer=None,compare=False):
     picklist = mipy.getPoints([nip.readim(),nip.readim()],viewer=None,compare=True)
     print(picklist)
     '''
-    
-    if viewer is None: 
+
+    if viewer is None:
         viewer = nip.v5(im)
     input('Please position markers (press "m") in alternating elements (toggle with "e") or simply alternating positions.\nUse "0" or "9" to step through markers and "M" to delete a marker.\n "A" and "a" to Zoom.\nTo turn off the automatic maximum search for marker positioning use the menu "n".')
     mm = viewer.getMarkers()
@@ -856,39 +908,41 @@ def getPoints(im,viewer=None,compare=False):
             raise ValueError('At least 3 markers are needed for both images!')
         src = np.array(mm[::2])[:, 4:2:-1]
         dst = np.array(mm[1::2])[:, 4:2:-1]
-        picklist = [src,dst]
-    else: 
+        picklist = [src, dst]
+    else:
         picklist = np.array(mm)[:, 4:2:-1]
-    
+
     return picklist
 
 
-def find_extrema_1D(im,visres=True):
+def find_extrema_1D(im, visres=True):
     '''
     Searches extrema based on 1D function argrelextrema from scipy.signal.
     '''
     # imports
     from scipy.signal import argrelextrema
 
-    #parameters
+    # parameters
     output_shape = im.shape
     flatim = im.flatten()
 
-    # find local maxima 
+    # find local maxima
     a = argrelextrema(flatim, np.greater)
 
-    #display
+    # display
     if visres:
-        b = visualize_extrema_1D(flatim=flatim, localmax = a, value=10, output_shape=output_shape)
-    
-    # done?
-    return a,b
+        b = visualize_extrema_1D(
+            flatim=flatim, localmax=a, value=10, output_shape=output_shape)
 
-def visualize_extrema_1D(flatim,localmax,value,output_shape):
+    # done?
+    return a, b
+
+
+def visualize_extrema_1D(flatim, localmax, value, output_shape):
     '''
     Calculates and Visualizes extrema from Scipy-signal (1D) toolbox. 
     '''
     b = np.zeros(flatim.shape)
-    for m in localmax[0]: 
+    for m in localmax[0]:
         b[m] = 10
     return b.reshape(output_shape)
