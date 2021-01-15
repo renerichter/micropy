@@ -517,7 +517,7 @@ def ismR_widefield(im, detaxes):
     return np.sum(im, axis=detaxes)
 
 
-def ismR_confocal(im, axes=(0, 1), pinsize=None, pinshape='circle', pincenter=None, store_masked=False):
+def ismR_confocal(im, axes=0, pinsize=None, pinshape='circle', pincenter=None, store_masked=False):
     '''
     Confocal reconstruction of ISM-data. For now: only implemented for 2D-pinhole/detector plane (assumed as (0,1) position).
 
@@ -545,7 +545,7 @@ def ismR_confocal(im, axes=(0, 1), pinsize=None, pinshape='circle', pincenter=No
 
     '''
     if pincenter == None:
-        pincenter, mask_shift, mask_shape = pinhole_getcenter(im, method='max')
+        pincenter, detproj = pinhole_getcenter(im, method='max')
 
     if pinsize == None:
         pinsize = np.array(mask_shape//8, dtype=np.uint)+1

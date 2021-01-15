@@ -411,24 +411,35 @@ def gen_shift_loop(soff, pix):
 # ------------------------------------------------------------------
 
 
-def pinhole_getcenter(im, method='sum'):
-    '''
-    Uses argmax to find pinhole center assuming axis=(0,1)=pinhole_axes and axis=(-2,-1)=sample-axis. Calculates shift-mask.
+def pinhole_getcenter(im, method='sum', saxis=None):
+    """Uses argmax to find pinhole center assuming axis=(0,1)=pinhole_axes and axis=(-2,-1)=sample-axis. Calculates shift-mask.
 
-    :PARAM:
-    =======
-    :im:        input image (at least 4dim)
-    :method:    method used to calculate center position, implemented: 'sum', 'max', 'min'
+    Parameters
+    ----------
+    im : image
+        input image (at least 4dim)
+    method : str, optional
+        method used to calculate center position, implemented: 'sum', 'max', 'min', by default 'sum'
+    saxis : tuple, optional
+        Axis to be used for searching for the center pinhole, by default None  
 
-    :OUT:
-    =====
-    :pinhc:     coordinates of pinhole-center
-    :smask:     shift-coordinates necessary to be used with nip.extract() to shift image center to new center position
-    :maskshape: shape of pinhole-dimension of input image
+    Returns
+    -------
+    pinhc : list
+        coordinates of pinhole-center
+    smask : list
+        shift-coordinates necessary to be used with nip.extract() to shift image center to new center position
+    maskshape : list
+        shape of pinhole-dimension of input image
 
-    '''
+    Raises
+    ------
+    ValueError
+        In case of "method"-variable given that was not implemented
+    """
     # parameter
-    saxis = list(np.arange(1, im.ndim))
+    if saxis == None:
+        saxis = tuple(np.arange(1, im.ndim))
 
     # project scan into detector plane
     if method == 'sum':
