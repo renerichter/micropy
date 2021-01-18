@@ -383,7 +383,93 @@ def ismR_shiftmask2D(im, pinsize, mask_shape, pincenter, pinshape):
     return shiftmask
 
 
-def ismR_genShiftmap(im, mask, pincenter, shift_method='nearest'):
+def ismR_genShiftmap(im, pincenter, nbr_det=None, pinmask=None, shift_method='nearest'):
+    """Generates Shiftmap for ISM SheppardSUM-reconstruction. 
+    Assumes shape: [Pinhole-Dimension , M] where M stands for arbitrary mD-image 
+
+    Parameters
+    ----------
+    im : image
+        Input Image which has the pinhole-dimension as its 0th dimension
+    pincenter : int
+        central detector
+    nbr_det : array, optional
+        Number and Shape of pinhole dimension, eg [2,3] for a 2x3. Needed for shift_method 'nearest', by default None
+    pinmask: array, optional
+        Pinhole-mask needed for mask-based shift calculation, by default None
+    shift_method : str, optional
+        Method to be used for shift-calculation. , by default 'nearest'
+            'nearest': compare center pinhole together with 1 pix-below and 1 pix-to-the-right pinhole; assumes rect detector-grid for now and needs nbr_det
+            'mask': all pinholes that reside within mask ; needs pinmask
+            'complete': calculate shifts for all detectors 
+
+    Returns
+    -------
+    shift_map : array
+         shift-map for all pinhole-pixels
+
+    Raises
+    ------
+    ValueError
+        Raises ValueError if chosen shift_method is not implemented
+    """
+    shift_map = [[0, ]*len(nbr_det)]*im.shape[0]
+    shiftvec = []
+
+    if shift_method == 'nearest':
+        # convert pincenter to det-space
+        pcu = np.unravel_index(pincenter, nbr_det)
+
+        # find shift per period-direction
+        factors = []
+        for m in range(len(nbr_det)):
+
+            # calculate shift, but be aware to not leave the array
+            period = np.prod(np.array(nbr_det[(m+1):]))
+            shifth, _, _, _ = findshift(
+                im[np.mod(pincenter+period, im.shape[0])], im[pincenter], 100)
+            shiftvec.append(shifth)
+
+            # create offsets
+            nbrh = nbr_det[m]
+            nbr_det[m] = 1
+            factors.append(
+                np.repeat(np.arange(nbrh) - pcu[m], np.prod(nbr_det)))
+            nbr_det[m] = nbrh
+        shiftvec = np.array(shiftvec)
+        factors = np.array(factors).T
+
+        # generate shifts for whole array (elementwise-multiplication)
+        shift_map = shiftvec * factors
+
+    elif shift_method == 'mask':
+        imh = im[mask]
+        shifth = []
+        for m in range(imh.shape[0]):
+            shifth, _, _, _ = findshift(
+                imh[m], im[pincenter], 100)
+            shift_maph.append(shifth)
+        shift_map[mask] = np.array(shift_maph)
+
+    elif shift_method == 'complete':
+        for m in range(im.shape[0]):
+            shift_map[m], _, _, _ = findshift(
+                im[m], im[pincenter], 100)
+    else:
+        raise ValueError("Shift-method not implemented")
+
+    # print shift-vectors
+    if len(nbr_det) == 2:
+        sm = np.reshape(shift_map, nbr_det)
+        figS, axS = ismR_drawshift(sm)
+    else:
+        figS, axS = [], []
+
+    # done?
+    return shift_map, figS, axS
+
+
+def ismR_genShiftmap_deprecated(im, mask, pincenter, shift_method='nearest'):
     '''
     Generates Shiftmap for ISM SheppardSUM-reconstruction. Assumes shape: [LIST,pinhole_y,pinhole_x]
 
@@ -439,6 +525,37 @@ def ismR_genShiftmap(im, mask, pincenter, shift_method='nearest'):
 
 
 def ismR_sheppardShift(im, shift_map, method='iter', use_copy=False):
+    '''
+    Does shifting for ISM-SheppardSum. 
+
+    :PARAMS:
+    ========
+    :im:            image to be shifted (first two dimensions should match first two dim of shift_map)
+    :shift_map:          shift map
+    :method:        Available methods for shifting -> 'iter','parallel'
+
+    :OUT:
+    =====
+    :im:            shifted_image
+    :
+
+    '''
+    # work on copy to keep original?
+    imh = nip.image(np.copy(im)) if use_copy else im
+
+    # method to be used
+    if method == 'iter':
+        for m in range(shift_map)
+            imh[m] = nip.shift(im[m], shift_map[m)
+    elif method == 'parallel':
+        raise Warning("Method 'parallel' is not implemented yet.")
+    else:
+        raise ValueError("Chosen method not existent.")
+
+    return imh
+
+
+def ismR_sheppardShift_deprecated(im, shift_map, method='iter', use_copy=False):
     '''
     Does shifting for ISM-SheppardSum. 
 
@@ -529,36 +646,53 @@ def ismR_widefield(im, detaxes):
     return np.sum(im, axis=detaxes)
 
 
-# get distances
-def vec2dist(avec, center, metric):
-    paa
+def ismR_confocal(im, detpos, pinsize=0, pincenter=None, pinmask=None):
+    """Confocal Processing of ISM-Data. Assumes ISM-Direction as 0th-dimension and nD-afterwards for arbitrary image data. 
 
+    Parameters
+    ----------
+    im : image
+        List of nD input images
+    detpos : list
+        Detector positions with respect to a center detector (assumes to be precalculated)
+    pinsize : int, optional
+        Size of pinhole (if pinmask not provided), by default 0
+    pincenter : int, optional
+        central detector, by default None
+    pinmask : list, optional
+        1D-list of pinholes to be used (should have the same 0th-dimension as input im), by default None
 
-def ismR_confocal(im, detpos=None, pinsize=0, pinmetric=None, pincenter=None):
-    '''
+    Returns
+    -------
+    im_conf : image
+        Calculated Confocal image
+    pinmask : list
+        Used pinhole-mask
 
-    '''
+    Example
+    -------
+    >>> obj = nip.readim()
+    >>> psf = mipy.calculatePSF(obj)
+    >>> psfr, _, _, shiftlist = mipy.calculatePSF_ism(
+    psf, psf, shift_offset=[[10, 0], [0, 5]], shift_axes=[-2, -1], nbr_det=[2,3], fmodel='fft', faxes=[-2, -1], pinhole=None)
+    >>> im_conf, pinmask = ismR_confocal(psfr,10)
+
+    """
     # sanity
-    if pincenter == None:
-        pincenter, detproj = pinhole_getcenter(im, method='max')
+    if pincenter is None:
+        pincenter = np.squeeze(np.where(detpos == 0))
 
-    # closed pinhole case only selects central pinhole
-    if pinsize[0] == 0 and len(pinsize) == 1:
-        imconfs = np.squeeze(im[pincenter[0], pincenter[1], :, :])
+    # get pinmask
+    if pinmask is None:
+        pinmask = detpos <= pinsize
 
-    else:
-        shift_mask = ismR_shiftmask2D(
-            im, pinsize=pinsize, mask_shape=mask_shape, pincenter=pincenter, pinshape=pinshape)
+    # calculate confocal image
+    im_conf = np.squeeze(im[pinmask])
+    if np.sum(pinmask) > 1:
+        im_conf = np.sum(im[pinmask], axis=0)
 
-        # do confocal summing
-        imconf = im * shift_mask[:, :, np.newaxis, np.newaxis]
-        imconfs = np.sum(imconf, axis=(0, 1))
-
-        # stack mask Confocal and result if intended
-        if store_masked == True:
-            imconfs = [imconf, imconfs]
-
-    return imconfs
+    # done?
+    return im_conf, pinmask
 
 
 def ismR_confocal_deprecated(im, pinsize=None, pinshape='circle', pincenter=None, store_masked=False):
@@ -673,7 +807,51 @@ def ism_recon(im, method='wf', **kwargs):
     # done?
 
 
-def ismR_sheppardSUM(im, shift_map=[], shift_method='nearest', pincenter=None, pinsize=None, pindim=None, pinshape=None):
+def ismR_sheppardSUM(im, nbr_det, shift_method='nearest', shift_map=[], pincenter=None, pinsize=None, pinshape=None):
+    '''
+    Calculates sheppardSUM on image (for arbitrary detector arrangement). The 0th-Dimension is assumed as detector-dimension and hence allows for arbitrary, but flattened detector geometries.
+
+    The algorithm does: 
+    1) find center of pinhole for all scans using max-image-peak (on center should have brightest signal) if not particularly given 
+    2) define mask/pinhole
+    3) find shifts between all different detectors within mask ->  result in sample coordinates 
+    4) shift back
+
+    :PARAM:
+    =======
+    :im:            (IMAGE)     Input image; assume nD for now, but structure should be like(pinholeDim=pd) [pd,...(n-3)-extraDim...,Y,X]
+    :shift_map:     (LIST)      list for shifts to be applied on channels -> needs to have same structure as pd
+    :shift_method:  (STRING)    Method to be used to find the shifts between the single detector and the center pixel -> see ismR_genShiftmap
+    :pincenter:     (INT)       center-pinhole position (e.g. if pindim=[5,6], then eg pincenter=14)
+    :pinsize:       (LIST)      Diameter of the pinhole-mask to be used for calculations, eg "[5,]" to have a circular pinhole or "[3,8]" for rect
+    :pindim:        (LIST)      Dimensions of pinhole, eg [9,9] if rectangular
+    :pinshape:      (STRING)    shape the pinhole should be generated with, options: 
+                                'circ' : circular pinhole
+                                'rect' : rectangular pinhole
+
+    OUT:
+    ====
+    :ismR:          reassinged ISM-image (within mask)
+    :shift_map:     shift_map
+    :mask:          applied shift_mask
+    :pincenter:        center-point of mask/pinhole
+    '''
+    # find shift-list -> Note: 'nearest' is standard
+    if shift_map == []:
+        shift_map, figS, axS = ismR_genShiftmap(
+            im=im, mask=mask, pincenter=pincenter, shift_method=shift_method)
+
+    # apply shifts
+    ims = ismR_sheppardShift(im, shift_map, method='iter', use_copy=True)
+
+    # different summing methods
+    ismR = ismR_sheppardSUMming(im=ims, mask=mask, sum_method='all')
+
+    # return created results
+    return ismR, shift_map, mask, pincenter
+
+
+def ismR_sheppardSUM_deprecated(im, shift_map=[], shift_method='nearest', pincenter=None, pinsize=None, pindim=None, pinshape=None):
     '''
     Calculates sheppardSUM on image (for arbitrary detector arrangement), meaning: 
     1) find center of pinhole for all scans using max-image-peak (on center should have brightest signal) if not particularly given 

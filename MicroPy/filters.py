@@ -30,7 +30,7 @@ import numpy as np
 import NanoImagingPack as nip
 
 from .utility import transpose_arbitrary, get_nbrpixel
-from .transformations import dct2
+from .transformations import dct2, lp_norm
 
 # %%
 # -------------------------------------------------------------------------
@@ -56,9 +56,10 @@ def cf_vollathF4_corr(im):
     '''
     Calculates the Vollath F4-correlation
     '''
-    im = transpose_arbitrary(im, idx_startpos=[-2, -1], idx_endpos=[0, 1],direction='forward')
+    im = transpose_arbitrary(
+        im, idx_startpos=[-2, -1], idx_endpos=[0, 1], direction='forward')
     im_res = im[:, :-2]*(im[:, 1:-1]-im[:, 2:])
-    return transpose_arbitrary(im_res, idx_startpos=[-2, -1], idx_endpos=[0, 1],direction='forward')
+    return transpose_arbitrary(im_res, idx_startpos=[-2, -1], idx_endpos=[0, 1], direction='forward')
 
 
 def cf_vollathF4_symmetric(im, im_out=True):
@@ -78,9 +79,11 @@ def cf_vollathF4_symmetric_corr(im, keep_size=True):
     '''
     Calculates the symmetric Vollath F4-correlation
     '''
-    im = transpose_arbitrary(im, idx_startpos=[-2, -1], idx_endpos=[0, 1],direction='forward')
+    im = transpose_arbitrary(
+        im, idx_startpos=[-2, -1], idx_endpos=[0, 1], direction='forward')
     if keep_size == True:
-        imh = nip.extract(im, [im.shape[0]+4, im.shape[1]+4] + list(im.shape[2:]))
+        imh = nip.extract(
+            im, [im.shape[0]+4, im.shape[1]+4] + list(im.shape[2:]))
         im_res = np.repeat(im[np.newaxis, :], repeats=4, axis=0)
         im_res[0] = (imh[:, :-2] * (imh[:, 1:-1] - imh[:, 2:]))[2:-2, 2:]
         im_res[1] = (imh[:, 2:] * (imh[:, 1:-1] - imh[:, :-2]))[2:-2, :-2]
@@ -96,8 +99,8 @@ def cf_vollathF4_symmetric_corr(im, keep_size=True):
 
     # insertion of new dimension leads to shift in endpos, but not startpos
     idx_endpos = [1, 2]
-    
-    return transpose_arbitrary(im_res,idx_startpos=[-2, -1], idx_endpos=idx_endpos,direction='backward')
+
+    return transpose_arbitrary(im_res, idx_startpos=[-2, -1], idx_endpos=idx_endpos, direction='backward')
 
 
 def cf_vollathF5(im, im_out=True):
@@ -120,7 +123,7 @@ def cf_vollathF5_corr(im):
     Calculates the Vollath F4-correlation
     '''
     im = transpose_arbitrary(im, idx_startpos=[-2, -1], idx_endpos=[0, 1])
-    return transpose_arbitrary(im[:-1, :]*im[1:, :],idx_startpos=[-2, -1], idx_endpos=[0, 1],direction='backward')
+    return transpose_arbitrary(im[:-1, :]*im[1:, :], idx_startpos=[-2, -1], idx_endpos=[0, 1], direction='backward')
 #
 # -------------------------------------------------------------------------
 # Differential Filters
@@ -148,13 +151,15 @@ def diff_sobel_horizontal(im):
     Filter-shape: [[-1 0 1],[ -2 0 2],[-1 0 1]] -> separabel:  np.outer(np.transpose([1,2,1]),[-1,0,1])
     '''
     # use separability
-    im = transpose_arbitrary(im, idx_startpos=[-2, -1], idx_endpos=[1, 0],direction='forward')
+    im = transpose_arbitrary(
+        im, idx_startpos=[-2, -1], idx_endpos=[1, 0], direction='forward')
 
     x_res = im[:, 2:] - im[:, :-2]  # only acts on x
     xy_res = x_res[:-2] + 2*x_res[1:-1] + x_res[2:]  # only uses the y-coords
 
-    #transpose back
-    xy_res = transpose_arbitrary(xy_res, idx_startpos=[-2, -1], idx_endpos=[1, 0],direction='backward')
+    # transpose back
+    xy_res = transpose_arbitrary(
+        xy_res, idx_startpos=[-2, -1], idx_endpos=[1, 0], direction='backward')
     return xy_res
 
 
@@ -164,13 +169,15 @@ def diff_sobel_vertical(im):
     Filter-shape: [[-1,-2,-1],[0,0,0],[1,2,1]] -> separabel:  np.outer(np.transpose([-1,0,1]),[1,2,1])
     '''
     # use separability
-    im = transpose_arbitrary(im, idx_startpos=[-2, -1], idx_endpos=[1, 0],direction='forward')
-    
+    im = transpose_arbitrary(
+        im, idx_startpos=[-2, -1], idx_endpos=[1, 0], direction='forward')
+
     x_res = im[:, :-2] + 2*im[:, 1:-1] + im[:, 2:]  # only x coords
     xy_res = x_res[2:] - x_res[:-2]  # further on y coords
 
-    #transpose back
-    xy_res = transpose_arbitrary(xy_res, idx_startpos=[-2, -1], idx_endpos=[1, 0],direction='backward')
+    # transpose back
+    xy_res = transpose_arbitrary(
+        xy_res, idx_startpos=[-2, -1], idx_endpos=[1, 0], direction='backward')
     return xy_res
 
 
@@ -345,12 +352,12 @@ def image_sharpness(im, im_filters=['Tenengrad']):
     '''
     #
     from numpy import mean
-    #if 'Tenengrad' in im_filters:
+    # if 'Tenengrad' in im_filters:
     #    res.append(tenengrad(im))
-    #elif 'VollathF4' in im_filters:
+    # elif 'VollathF4' in im_filters:
     #    res.append(vollathF4(im))
 
-    #return res
+    # return res
     pass
 
 
@@ -359,7 +366,7 @@ def image_sharpness(im, im_filters=['Tenengrad']):
 #               GENERAL PIXEL-OPERATIONS
 # --------------------------------------------------------
 #
-def local_annealing_atom(im,pos,mode='value',value=0, patch_size=[3,3],iter_anneal=False,iterations=1):
+def local_annealing_atom(im, pos, mode='value', value=0, patch_size=[3, 3], iter_anneal=False, iterations=1):
     '''
     Local annealing of a given position. 
     Function does inplace operation and hence technically no return has to be done!
@@ -395,35 +402,37 @@ def local_annealing_atom(im,pos,mode='value',value=0, patch_size=[3,3],iter_anne
     '''
     is_complex = True if im.dtype == 'complex' else False
 
-    if mode=='value':
+    if mode == 'value':
         im[pos] = value
     else:
         iterations = iterations if iter_anneal else 1
         for _ in range(iterations):
-            a = nip.extractFt(im,ROIsize=patch_size,mycenter=pos) if is_complex else nip.extract(im,ROIsize=patch_size,centerpos=pos)
+            a = nip.extractFt(im, ROIsize=patch_size, mycenter=pos) if is_complex else nip.extract(
+                im, ROIsize=patch_size, centerpos=pos)
             if mode == 'mean':
                 a = np.mean(a)
             elif mode == 'max':
                 a = np.max(a)
             elif mode == 'min':
                 a = np.min(a)
-            else: 
-                raise ValueError('Not implemented yet, but no problem! What do you wish?')
+            else:
+                raise ValueError(
+                    'Not implemented yet, but no problem! What do you wish?')
             im[pos] = a
 
     # done?
-    return im 
+    return im
 
 
-def local_annealing(im,pos,mode='value',value=0,patch_size=[3,3],iter_anneal=False,iterations=1):
+def local_annealing(im, pos, mode='value', value=0, patch_size=[3, 3], iter_anneal=False, iterations=1):
     '''
     Acts on list of positions. 
     Note: acts on input image in-place and hence out-put should only be used/thought as renaming due to input-data being changed as well. 
-    
+
     :PARAMS:
     ========
     :pos:   (LIST) of TUPLE!
-    
+
     For detailed description on usage-example and further parameters check "local_annealing_atom"-function.
 
     :EXAMPLE:
@@ -433,13 +442,11 @@ def local_annealing(im,pos,mode='value',value=0,patch_size=[3,3],iter_anneal=Fal
     b6 = local_annealing(a.copy(),[(3,4),(1,2)],mode='mean',patch_size=[4,4],iter_anneal=True,iterations=3)
     toshowA = nip.catE((mipy.normto(a),mipy.normto(b6)))
     nip.v5(mipy.stack2tiles(toshowA))
-    
+
     '''
-    for _,apos in enumerate(pos):
-        im = local_annealing_atom(im,apos,mode=mode,value=value,patch_size=patch_size,iter_anneal=iter_anneal,iterations=iterations)
-    
+    for _, apos in enumerate(pos):
+        im = local_annealing_atom(im, apos, mode=mode, value=value,
+                                  patch_size=patch_size, iter_anneal=iter_anneal, iterations=iterations)
+
     # done?
     return im
-
-
-    

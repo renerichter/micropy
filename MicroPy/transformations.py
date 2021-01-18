@@ -128,11 +128,28 @@ def dct2(im, forward=True, axes=[-2, -1]):
 # ------------------------------------------------------------------
 #               NORMS
 # ------------------------------------------------------------------
-def lp_norm(im, p=2):
-    '''
-    Calculates the LP-norm.
-    '''
-    return (np.sum(np.abs(im)**p))**(1.0/p)
+def lp_norm(data, p=2, normaxis=None):
+    """Calculates the LP-norm.
+
+    Parameters
+    ----------
+    data : nd.array
+        Input nD-data 
+    p : int, optional
+        norm-dimensionality, by default 2
+    normaxis : tuple, optional
+        norm-direction , by default None (=all directions)
+
+    Returns
+    -------
+    norm : nd.array
+        calculated norm along chosen (or all) directions
+    """
+    if normaxis is None:
+        norm = (np.sum(np.abs(data)**p))**(1.0/p)
+    else:
+        norm = (np.sum(np.abs(data)**p, axis=tuple(normaxis)))**(1.0/p)
+    return norm
 
 
 # %%
@@ -176,7 +193,7 @@ def deriv_prepdim(im, dim=0):
 # ------------------------------------------------------------------
 #                           WRAPPING
 # ------------------------------------------------------------------
-def fwrap(f,n,T,a):
+def fwrap(f, n, T, a):
     '''
     wraps the period onto a function.
     '''
