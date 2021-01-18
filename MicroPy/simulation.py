@@ -229,12 +229,8 @@ def calculatePSF_sax(psfex, k_fluo):
     return psf
 
 
-def calculatePSF_ism(psfex, psfdet, psfdet_array=None, shift_offset=[2, 2], shift_axes=[-2, -1], nbr_det=[3, 3], fmodel='rft', faxes=[-2, -1], pinhole=None):
+def calculatePSF_ism(psfex, psfdet, psfdet_array=None, shifts=None, shift_offset=[2, 3], shift_axes=[-2, -1], shift_method='uvec', nbr_det=[3, 5], fmodel='rft', faxes=[-2, -1], pinhole=None):
     """ Generates the incoherent intensity ISM-PSF. Takes system excitation and emission PSF and assumes spatial invariance under translation on the detector. 
-
-    TODO: 
-        1) Add shape- and size of pixel. 
-        2) Add collection efficiency. 
 
     Parameters
     ----------
@@ -244,8 +240,14 @@ def calculatePSF_ism(psfex, psfdet, psfdet_array=None, shift_offset=[2, 2], shif
         detection PSF
     psfdet_array : list, optional
         1D-list of detection PSFs = detector. Generated from parameters if not given, by default None
+    shifts : list, optional
+        1D-list of sorted shifts (from biggest negative to biggest positive) to be applied. If not given, shifts (and hence rectangular detector) will be generated. by default None 
     shift_offset : list, optional
         distance in pixels between detector elements, by default [2,2]
+    shift_axes : list, optional
+        Axes to be used for shifts, by default [-2,-1]
+    shift_method : list, optional
+        see gen_shift function for more info, by default 'uvec'
     nbr_det : list, optional
         number of detectors of the recording device, by default [3,3]
     fmodel : str, optional
@@ -268,12 +270,21 @@ def calculatePSF_ism(psfex, psfdet, psfdet_array=None, shift_offset=[2, 2], shif
     --------
     >>> psfex = nip.psf2d()
     >>> psf_eff, otf_eff, psfdet_array = mipy.calculatePSF_ism(psfex, psfex)
+
+    TODO: 
+    -----
+    1) Add shape- and size of pixel. 
+    2) Add collection efficiency. 
     """
     # calculate PSF_array for each detector pixel
     # -> normalize array as whole detector can at max detect one of arriving one photon
     if psfdet_array is None:
-        psfdet_array = shiftby_list(
-            psfdet, shift_offset=shift_offset, shift_axes=shift_axes, nbr_det=nbr_det).real
+        if shifts is None:
+            psfdet_array, shifts = shiftby_list(
+                psfdet, shifts=None, shift_offset=shift_offset, shift_method=shift_method, shift_axes=shift_axes, nbr_det=nbr_det)
+        else:
+            shifts = np.sort(shifts)
+            psfdet_array, _ = shiftby_list(psfdet, shifts=shifts)
         if pinhole is not None:
             nbrnewaxis = psfdet_array.ndim-pinhole.ndim
             psfdet_array = nip.convolve(
@@ -288,7 +299,7 @@ def calculatePSF_ism(psfex, psfdet, psfdet_array=None, shift_offset=[2, 2], shif
                     ) if fmodel == 'rft' else nip.ft(psf_eff, axes=faxes)
 
     # done?
-    return psf_eff, otf_eff, psfdet_array
+    return psf_eff, otf_eff, psfdet_array, shifts
 
 
 def calculatePSF(obj, psf_params=None, method='brightfield', amplitude=False, **kwargs):

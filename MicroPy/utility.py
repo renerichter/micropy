@@ -213,7 +213,7 @@ def findshift(im1, im2, prec=100, printout=False):
     return shift, error, diffphase, tend
 
 
-def shiftby_list(psf, shifts=None, shift_offset=[1, 1], shift_axes=[-2, -1], nbr_det=[3, 3], retreal=True):
+def shiftby_list(psf, shifts=None, shift_offset=[1, 1], shift_method='uvec', shift_axes=[-2, -1], nbr_det=[3, 3], retreal=True):
     """Shifts an image by a list of shift-vectors.
     If shifts not given, calculates an equally spaced rect-2D-array for nbr_det (array) of  with shift_offset spacing in pixels between them.
     If shifts given, uses the shape (nbr_det) to calculate the distances between detectors. 
@@ -228,9 +228,11 @@ def shiftby_list(psf, shifts=None, shift_offset=[1, 1], shift_axes=[-2, -1], nbr
     shift_axes : list, optional
         Axes to be used for applying the shift (and hence the Fourier-Transform)
     shift_offset : list, optional
-        distance between 2D-array, by default [1, 1]
+        depending of method, list of unit-vectors or distances in rectangular
     nbr_det : list, optional
         , by default [3, 3]
+    shift_method : str, optional
+        see gen_shift function for more info, by default 'uvec'
     retreal : bool, optional
         whether result should be real or complex, by default True
 
@@ -242,39 +244,51 @@ def shiftby_list(psf, shifts=None, shift_offset=[1, 1], shift_axes=[-2, -1], nbr
 
     Example
     -------
+    Shift by a given list directly. 
     >>> mipy.shiftby_list(nip.readim(),shifts=[[1,1],[2,2],[5,5]])
+
+    Generate shifts from a unit-cell with non-orthogonal axes in standard cartesian space. 
+    >>> mipy.shiftby_list(nip.readim(),shift_offset=[[1,0.5],[0.3,2]], shift_method='uvec', nbr_det=[2, 3])
+
     """
-    # calculate shifts if not provided
+    # sanity - calculate shifts if not provided
     if shifts is None:
-        shift_offset = [1, 1] if shift_offset is None else shift_offset
+        # sanity
+        if shift_offset is None:
+            if shift_method in ['pix', 'array']:
+                shift_offset = [1, 1]
+            else:
+                axl = len(shift_axes)
+                shift_offset = np.identity(axl)
         nbr_det = [1, 1] if nbr_det is None else nbr_det
-        shifts = gen_shift_loop(shift_offset, nbr_det)
+
+        # create shift_vectors of proper size
+        if shift_method in ['uvec', 'uveci']:
+            shift_offset = np.array(shift_offset)
+            if shift_offset.ndim is not 2:
+                shifth = np.identity(psf.ndim)
+                shifti = []
+                for n, axes in enumerate(shift_axes):
+                    shifti.append(shifth[axes]*shift_offset[n])
+                shift_offset = np.array(shifti)
+
+        # generate shift
+        shifts = gen_shift(method=shift_method, uvec=shift_offset, nbr=nbr_det)
 
     # assure use of positive numbers
     shift_axes = np.array(shift_axes)
     shift_axes[shift_axes < 0] += psf.ndim
     dimdiff = psf.ndim - len(shifts[0])
 
-    # function shortening
-    maxis = add_multi_newaxis
-
-    def r1d(psfshape, ramp_dim):
-        '''directly adds another dimension (=psf.ndim + 1) to fit with stacking dimension for pinhole'''
-        ramped = maxis(nip.ramp1D(psfshape[ramp_dim], ramp_dim=ramp_dim, placement='center',
-                                  freq='ftfreq', pixelsize=psf.pixelsize), [-1, ]*(len(psfshape)-1-ramp_dim))
-        dimdiff = len(psfshape) - ramped.ndim
-        return maxis(ramped, [0, ]*(dimdiff+1))
-
     # pre-allocate for speed-up
     phase_ramp_list = np.ones((len(shifts),)+psf.shape, dtype=np.complex_)
 
     # calculate shifts
     for m in shift_axes:
-        phase_ramp_list *= np.exp(-1j*2*np.pi * maxis(shifts[:, m-dimdiff], [-1, ]
-                                                      * psf.ndim) * r1d(psf.shape, m))
+        phase_ramp_list *= np.exp(-1j*2*np.pi * add_multi_newaxis(shifts[:, m-dimdiff], [-1, ]
+                                                                  * psf.ndim) * r1d(psf.shape, m, psf.pixelsize))
 
     # apply shifts in FT-space and transform back
-    # psf_res = nip.ift(maxis(nip.ft(psf, axes=shift_axes), [0])*phase_ramp_list, axes=shift_axes)
     psf_res = nip.ift(nip.ft(psf, axes=shift_axes) *
                       phase_ramp_list, axes=shift_axes+1)
 
@@ -285,7 +299,33 @@ def shiftby_list(psf, shifts=None, shift_offset=[1, 1], shift_axes=[-2, -1], nbr
     psf_res.pixelsize[1:] = psf.pixelsize if not psf_res.pixelsize[1:
                                                                    ] == psf.pixelsize else psf_res.pixelsize[1:]
 
-    return psf_res
+    return psf_res, shifts
+
+
+def r1d(im_shape, ramp_dim, pixelsize):
+    """directly adds another dimension (=psf.ndim + 1) to fit with stacking dimension for pinhole
+
+    Parameters
+    ----------
+    im_shape : list
+        Shape of the image that a ramp shall be created for 
+    ramp_dim : int
+        ramp dimension
+
+    Returns
+    -------
+    ramp : image
+        1D-ramp with im_shape+1 dimensions
+
+    See Also
+    --------
+    shiftby_list for how it can be used and implemented.
+
+    """
+    ramped = add_multi_newaxis(nip.ramp1D(im_shape[ramp_dim], ramp_dim=ramp_dim, placement='center',
+                                          freq='ftfreq', pixelsize=pixelsize), [-1, ]*(len(im_shape)-1-ramp_dim))
+    dimdiff = len(im_shape) - ramped.ndim
+    return add_multi_newaxis(ramped, [0, ]*(dimdiff+1))
 
 
 def find_shiftperiod(shift_stack, thresh=0.25):
@@ -338,48 +378,147 @@ def find_shiftperiod(shift_stack, thresh=0.25):
     return pmean, pmedian, period_lengths
 
 
-def gen_shift_npfunc(soff, pix):
-    '''
-    Calculates coordinates for an equally spaced rect-2D-array. Use with e.g. shiftby_list to generate a shifted set of images.
+def gen_shift(method='uvec', **kwargs):
+    """Interface to generate shifts.
 
-    NOTE: Slower than gen_shift_loop
+    Parameters
+    ----------
+    method : str, optional
+        method to be used for shifting, by default 'uvec'
+        'uvec' : unit-vector based calculation of arbitrary shape, but unitary spacing
+        'uveci': symmetric, but non-unitary spacing between detector orders
+        'pix: : deprecated rectangular-shape for-loop-based method
+        'array: : deprecated rectangular-shape array-based method
+    kwargs: dict
+        necessary entries for called-functions -> see "See Also" for more information.
 
-    :PARAMS:
-    ========
-    :soff:      (LIST) offset between pixel-array (2D)
-    :pix:       (LIST) number of pixels per direction (2D)
+    Returns
+    -------
+    shiftarr : array
+        1D-List of nD-Shift-vectors
 
-    :OUT:
-    =====
-    :c:         (NP.NDARRAY) calculated array spacing
+    Example
+    -------
+    >>> mipy.gen_shift(method='uvec', uvec=[[1,0.5],[0.3,2]],nbr=[2,3])
+    array([[-1.3, -2.5],[-1. , -0.5],[-0.7,  1.5],
+       [-0.3, -2. ],[ 0. ,  0. ],[ 0.3,  2. ]])
 
-    Test with ipython:
-    ==================
-    %timeit c1 = gen_shift_npfunc([1,1],[5,5])
-    %timeit c2 = gen_shift_loop([1,1],[5,5])
-    # 29.7 µs ± 883 ns per loop (mean ± std. dev. of 7 runs, 10000 loops each)
-    # 18.7 µs ± 1.09 µs per loop (mean ± std. dev. of 7 runs, 10000 loops each)
-    '''
-    a = np.repeat(
-        np.arange(-int(pix[0]/2.0), int(pix[0]/2.0)+1)[np.newaxis, :], pix[1], 0).flatten()
-    b = np.repeat(
-        np.arange(-int(pix[1]/2.0), int(pix[1]/2.0)+1)[:, np.newaxis], pix[0], 1).flatten()
-    c = [[soff[0]*m, soff[1]*n] for m, n in zip(b, a)]
-    return c
+    >>> mipy.gen_shift(method='pix', soff=[1,3],nbr=[2,3])
+    array([[-1., -3.],[-1.,  0.],[-1.,  3.],
+       [ 0., -3.],[ 0.,  0.],[ 0.,  3.]])
+
+    See Also
+    --------
+    For input parameters check into the method that you want to use. 
+    gen_shift_uvec : generates shifts for arbitrary unit-vectors 
+    gen_shift_uveci : generates shifts for arbitrary unit-vectors with different spacings between orders
+    gen_shift_loop_pix : generates shifts for rectangular unit-vector [[1,0],[0,1]] array
+    gen_shift_npfunc : generates shifts for rectangular unit-vector [[1,0],[0,1]] array
+
+    Performance Comparison
+    ----------------------
+    From: https://ipython.org/ipython-doc/dev/interactive/reference.html#embedding
+
+    >>> from IPython.terminal.embed import InteractiveShellEmbed
+        ipshell = InteractiveShellEmbed()
+        ipshell.dummy_mode = True
+        ipshell.magic("%timeit mipy.gen_shift_uvec([[2,0],[0,3]],[15,20])")
+        ipshell.magic("%timeit mipy.gen_shift_loop_pix([2,3],[15,20])")
+        ipshell.magic("%timeit mipy.gen_shift_npfunc([2,3],[15,20])")
+        ipshell()
+    82.7 µs ± 4.88 µs per loop (mean ± std. dev. of 7 runs, 10000 loops each)
+    483 µs ± 82.1 µs per loop (mean ± std. dev. of 7 runs, 1000 loops each)
+    271 µs ± 17.6 µs per loop (mean ± std. dev. of 7 runs, 1000 loops each)
+
+    For smaller pinhole settings pix is faster, but in this case uvec outperforms the two other implementations.
+
+    TODO
+    ----
+    1) implement 'gen_shift_loop_uveci'
+    """
+    if method == 'uveci':
+        shiftarr = print("not implemented")
+    elif method == 'pix':
+        shiftarr = gen_shift_loop_pix(soff=kwargs['soff'], nbr=kwargs['nbr'])
+    elif method == 'array':
+        shiftarr = gen_shift_npfunc(soff=kwargs['soff'], nbr=kwargs['nbr'])
+    else:
+        shiftarr = gen_shift_uvec(uvec=kwargs['uvec'], nbr=kwargs['nbr'])
+
+    return shiftarr
 
 
-def gen_shift_loop(soff, pix):
+def gen_shift_uvec(uvec=[[1, 0], [0, 1]], nbr=[2, 3]):
+    """Calculates coordinates for an equally spaced array around a center. Use with e.g. shiftby_list to generate a shifted set of images.
+    For now, only useable for a 2D-shift array. Still, unit-vectors (uvec) can be of arbitrary dimensionality.
+
+    Parameters
+    ----------
+    uvec : list
+        list of N nD-unit-vectors, by default [[1, 0], [0, 1]]
+    nbr : list
+        number of shifts per unit-vector direction, by default [2, 3]
+
+    Returns
+    -------
+    shiftarr : array of shifts
+        calculated array spacing
+
+    Example
+    -------
+    Tries to always return a centered shiftlist, hence it should be expected that
+    >>> mipy.gen_shift_loop_uvec([[1,0],[1/2,1]],[3,3])
+    array([[-1.5, -1. ],[-1. ,  0. ],[-0.5,  1. ],
+       [-0.5, -1. ],[ 0. ,  0. ],[ 0.5,  1. ],
+       [ 0.5, -1. ],[ 1. ,  0. ],[ 1.5,  1. ]])
+
+    >>> mipy.gen_shift_loop_uvec([[1,0],[1/2,1]],[1,1])
+    array([[0., 0.]])
+
+    >>> mipy.gen_shift_loop_uvec([[1,0],[1/2,1]],[0,3])
+    array([], shape=(0, 2), dtype=float64)
+
+    Compare results for rectangular grid: 
+    >>> np.allclose(mipy.gen_shift_loop_pix([1,1],[2,3]),mipy.gen_shift_loop_uvec(uvec=[[1, 0], [0, 1]], nbr=[2, 3]))
+    True
+    """
+    # sanity
+    if type(uvec) is not np.ndarray:
+        uvec = np.array(uvec)
+    if type(nbr) is not np.ndarray:
+        nbr = np.array(nbr)
+
+    # allocate storage and assure centered shifting
+    shiftarr = np.zeros(list(nbr)+[len(uvec[0]), ])
+    nbrs = -np.array(nbr/2.0, dtype='int8')
+
+    # loop over shift dimensions
+    for m in range(nbr.size):
+        # generate shift-distance
+        shifth = np.reshape(
+            np.array(nbrs[m]+np.arange(nbr[m])), [nbr[m], 1])*uvec[m]
+
+        # add right dimensionality for broadcasting
+        shifth = add_multi_newaxis(shifth, [0, ]*m+[-2, ]*(nbr.size-1-m))
+
+        # add to global shift with correct dimensionality
+        shiftarr += shifth
+
+    # reshape to 1D-shiftlist
+    shiftarr = np.reshape(
+        shiftarr, [np.prod(shiftarr.shape[:-1]), shiftarr.shape[-1]])
+
+    return shiftarr
+
+
+def gen_shift_loop_pix(soff, nbr):
     """Calculates coordinates for an equally spaced rect-2D-array. Use with e.g. shiftby_list to generate a shifted set of images.
-
-    TODO:
-        1) generalize for different dimensions (e.g. give unit-cell and generate pattern)
-        2) generalize for nD-input
 
     Parameters
     ----------
     soff : list
         offset between pixel-array (2D)
-    pix : list
+    nbr : list
         number of pixels per direction (2D)
 
     Returns
@@ -390,20 +529,52 @@ def gen_shift_loop(soff, pix):
     Example
     -------
     Tries to always return a centered shiftlist, hence it should be expected that
-    >>> gen_shift_loop([2,3],[1,1])
-    gen_shift_loop([2,3],[1,1])
-    >>> gen_shift_loop([2,3],[1,3])
+    >>> mipy.gen_shift_loop_pix([2,3],[1,1])
+    array([[0., 0.]])
+    >>> mipy.gen_shift_loop_pix([2,3],[1,3])
     array([[ 0, -3],[ 0,  0],[ 0,  3]])
-    >>> gen_shift_loop([2,3],[0,3])
+    >>> mipy.gen_shift_loop_pix([2,3],[0,3])
     array([], dtype=float64)
-
     """
-    shiftarr = np.ones([pix[0]*pix[1], 2])
-    xo = -int(pix[1]/2.0)
-    yo = -int(pix[0]/2.0)
-    for jj in range(pix[0]):
-        for kk in range(pix[1]):
-            shiftarr[jj*pix[1]+kk] = [soff[0]*(yo+jj), soff[1]*(xo+kk)]
+    shiftarr = np.ones([nbr[0]*nbr[1], 2])
+    xo = -int(nbr[1]/2.0)
+    yo = -int(nbr[0]/2.0)
+    for jj in range(nbr[0]):
+        for kk in range(nbr[1]):
+            shiftarr[jj*nbr[1]+kk] = [soff[0]*(yo+jj), soff[1]*(xo+kk)]
+    return shiftarr
+
+
+def gen_shift_npfunc(soff, pix):
+    """Calculates coordinates for an equally spaced rect-2D-array. Use with e.g. shiftby_list to generate a shifted set of images.
+
+    Parameters
+    ----------
+    soff : list
+        offset between pixel-array (2D)
+    nbr : list
+        number of pixels per direction (2D)
+
+    Returns
+    -------
+    shiftarr : array of shifts
+        calculated array spacing
+
+    Example
+    -------
+    Tries to always return a centered shiftlist, hence it should be expected that
+    >>> mipy.gen_shift_npfunc([2,3],[1,1])
+    array([[0., 0.]])
+    >>> mipy.gen_shift_npfunc([2,3],[1,3])
+    array([[ 0, -3],[ 0,  0],[ 0,  3]])
+    >>> mipy.gen_shift_npfunc([2,3],[0,3])
+    array([], dtype=float64)
+    """
+    a = np.repeat(
+        np.arange(-int(pix[0]/2.0), int(pix[0]/2.0)+1)[np.newaxis, :], pix[1], 0).flatten()
+    b = np.repeat(
+        np.arange(-int(pix[1]/2.0), int(pix[1]/2.0)+1)[:, np.newaxis], pix[0], 1).flatten()
+    shiftarr = [[soff[0]*m, soff[1]*n] for m, n in zip(b, a)]
     return shiftarr
 # %%
 # ------------------------------------------------------------------

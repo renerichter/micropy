@@ -108,34 +108,39 @@ def otf_get_mask(otf, mode='rft', eps=1e-5, bool_mask=False, closing=None):
     # calculate mask
     my_mask = (np.abs(otf[center_pinhole]) > eps)*1
 
-    # close using the cosen structuring element 
+    # close using the cosen structuring element
     if closing is not None:
-        
+
         # create closing
         if type(closing) == int:
-            closing = ([np.ones((2, 2)), np.ones((2, 2)), nip.rr([3,3]) <= 1,nip.rr([5,5]) <= 2, nip.rr([7,7]) <= 3][closing])*1
-        
+            closing = ([np.ones((2, 2)), np.ones((2, 2)), nip.rr(
+                [3, 3]) <= 1, nip.rr([5, 5]) <= 2, nip.rr([7, 7]) <= 3][closing])*1
+
         # fill mask -> only 2D operation
         if my_mask.ndim > 2:
             mms = my_mask.shape
-            my_mask = np.reshape(my_mask,(int(np.prod(mms[:-2])),mms[-2],mms[-1]))
+            my_mask = np.reshape(
+                my_mask, (int(np.prod(mms[:-2])), mms[-2], mms[-1]))
             my_mask_filled = np.copy(my_mask)
             for m in range(my_mask.shape[0]):
-                my_mask_filled[m] = binary_closing(my_mask[m], structure=closing).astype(np.int)
-            my_mask_filled = np.reshape(my_mask_filled,mms)
-            my_mask = np.reshape(my_mask,mms)
+                my_mask_filled[m] = binary_closing(
+                    my_mask[m], structure=closing).astype(np.int)
+            my_mask_filled = np.reshape(my_mask_filled, mms)
+            my_mask = np.reshape(my_mask, mms)
         else:
-            my_mask_filled = binary_closing(my_mask, structure=closing).astype(np.int)
-    else: 
+            my_mask_filled = binary_closing(
+                my_mask, structure=closing).astype(np.int)
+    else:
         my_mask_filled = my_mask
 
     # old mode???? WHAT IS HAPPENING HERE???
     if mode == 'old':
         zoff = otf.shape[1]//2  # z-offset
         proj_mask = my_mask_filled[zoff:].sum(axis=0)
-    else: 
-        zoff = np.zeros(otf.shape[-2:],dtype=int)
-        proj_mask = my_mask_filled.sum(axis=0) if mode == 'rft' else nip.catE((int(my_mask_filled.shape[0]/2.0)-my_mask_filled[:int(my_mask_filled.shape[0]/2.0)].sum(axis=0), my_mask_filled.sum(axis=0)))
+    else:
+        zoff = np.zeros(otf.shape[-2:], dtype=int)
+        proj_mask = my_mask_filled.sum(axis=0) if mode == 'rft' else nip.catE(
+            (int(my_mask_filled.shape[0]/2.0)-my_mask_filled[:int(my_mask_filled.shape[0]/2.0)].sum(axis=0), my_mask_filled.sum(axis=0)))
 
     if bool_mask:
         my_mask_filled = np.array(my_mask_filled, dtype=bool)
@@ -189,7 +194,7 @@ def pinv_unmix(a, rcond=1e-15, svdnum=None, eps_reg=0, use_own=False):
     """
     # use original pinv?
     if not use_own:
-        res = np.linalg.pinv(a=a,rcond=rcond)
+        res = np.linalg.pinv(a=a, rcond=rcond)
 
     else:
         a = a.conjugate()
@@ -197,24 +202,26 @@ def pinv_unmix(a, rcond=1e-15, svdnum=None, eps_reg=0, use_own=False):
 
         # discard small singular values; regularize singular-values if wanted -> note: eps_reg is 0 on default
         if svdnum == None:
-            cutoff = np.array(rcond)[..., np.newaxis] * np.amax(s, axis=-1, keepdims=True)
+            cutoff = np.array(rcond)[..., np.newaxis] * \
+                np.amax(s, axis=-1, keepdims=True)
             large = s > cutoff
-            
+
             # Tikhonov regularization analogue to idea 1/(OTF+eps) where eps becomes dominant when OTF<eps, especially reduces to 1/eps when OTF<<eps
-            s =  np.divide(s, s*s+eps_reg, where=large, out=s) if eps_reg else np.divide(1, s, where=large, out=s)   
-            s[~large] = 0 
+            s = np.divide(s, s*s+eps_reg, where=large,
+                          out=s) if eps_reg else np.divide(1, s, where=large, out=s)
+            s[~large] = 0
         else:
             cutoff = s[:svdnum+1] if svdnum < len(s) else s
             cutoff = cutoff/(cutoff*cutoff+eps_reg) if eps_reg else 1/cutoff
-            
-            s = np.zeros(s.shape)
-            s[:len(cutoff)]=cutoff
 
-        res = np.matmul(np.transpose(vt), np.multiply(s[..., np.newaxis], np.transpose(u)))   
+            s = np.zeros(s.shape)
+            s[:len(cutoff)] = cutoff
+
+        res = np.matmul(np.transpose(vt), np.multiply(
+            s[..., np.newaxis], np.transpose(u)))
 
     # done?
     return res
-
 
 
 def unmix_matrix(otf, mode='rft', eps_mask=5e-4, eps_reg=1e-3, svdlim=1e-8, svdnum=None, hermitian=False, use_own=False, closing=None):
@@ -242,7 +249,8 @@ def unmix_matrix(otf, mode='rft', eps_mask=5e-4, eps_reg=1e-3, svdlim=1e-8, svdn
         np.zeros(otf.shape, dtype=np.complex_), [1, 0, 2, 3])
 
     # calculate mask
-    _, my_mask, proj_mask, zoff, _ = otf_get_mask(otf, mode='rft', eps=eps_mask, bool_mask=False, closing=closing)
+    _, my_mask, proj_mask, zoff, _ = otf_get_mask(
+        otf, mode='rft', eps=eps_mask, bool_mask=False, closing=closing)
 
     # loop over all kx,ky
     for kk in range(otf_unmix.shape[-2]):
@@ -315,13 +323,13 @@ def unmix_recover_thickslice(unmixer, im, unmixer_full=None):
     '''
     # the real thing
     im_unmix = nip.image(np.einsum('ijkl,jkl->ikl', unmixer, im))
-    
+
     # only for backward-compatibility of reconstructed full-PSF
     if unmixer_full is not None:
         im_unmix_full = nip.image(
             np.einsum('ijkl,jkl->ikl', unmixer_full, im))
         im_unmix = [im_unmix, im_unmix_full]
-    
+
     # done?
     return im_unmix
 
@@ -389,24 +397,28 @@ def ismR_genShiftmap(im, mask, pincenter, shift_method='nearest'):
     =====
     :shift_map:          shift-map for all pinhole-pixels
     '''
-    shift_map = np.array([[[0,0],]*mask.shape[1] for m in range(mask.shape[0])])
+    shift_map = np.array([[[0, 0], ]*mask.shape[1]
+                          for m in range(mask.shape[0])])
     if shift_method == 'nearest':
 
         # checks for nearest only if dimension is bigger than 0
         if mask.shape[1] > 1:
-            xshift, _, _, _ = findshift(im[pincenter[0], pincenter[1]+1], im[pincenter[0], pincenter[1]], 100) 
+            xshift, _, _, _ = findshift(
+                im[pincenter[0], pincenter[1]+1], im[pincenter[0], pincenter[1]], 100)
         else:
             xshift = np.zeros(2)
         if mask.shape[0] > 1:
-            yshift, _, _, _ = findshift(im[pincenter[0]+1, pincenter[1]], im[pincenter[0], pincenter[1]], 100)  
-        else: 
-            yshift= np.zeros(2)
+            yshift, _, _, _ = findshift(
+                im[pincenter[0]+1, pincenter[1]], im[pincenter[0], pincenter[1]], 100)
+        else:
+            yshift = np.zeros(2)
 
         # build map per pinhole
         for k in range(mask.shape[0]):
             for l in range(mask.shape[1]):
-                shift_map[k][l] = (k-pincenter[0])*yshift + (l-pincenter[1])*xshift
-    
+                shift_map[k][l] = (k-pincenter[0])*yshift + \
+                    (l-pincenter[1])*xshift
+
     elif shift_method == 'mask':
         for k in range(mask.shape[0]):
             for l in range(mask.shape[1]):
@@ -517,8 +529,42 @@ def ismR_widefield(im, detaxes):
     return np.sum(im, axis=detaxes)
 
 
-def ismR_confocal(im, axes=0, pinsize=None, pinshape='circle', pincenter=None, store_masked=False):
+# get distances
+def vec2dist(avec, center, metric):
+    paa
+
+
+def ismR_confocal(im, detpos=None, pinsize=0, pinmetric=None, pincenter=None):
     '''
+
+    '''
+    # sanity
+    if pincenter == None:
+        pincenter, detproj = pinhole_getcenter(im, method='max')
+
+    # closed pinhole case only selects central pinhole
+    if pinsize[0] == 0 and len(pinsize) == 1:
+        imconfs = np.squeeze(im[pincenter[0], pincenter[1], :, :])
+
+    else:
+        shift_mask = ismR_shiftmask2D(
+            im, pinsize=pinsize, mask_shape=mask_shape, pincenter=pincenter, pinshape=pinshape)
+
+        # do confocal summing
+        imconf = im * shift_mask[:, :, np.newaxis, np.newaxis]
+        imconfs = np.sum(imconf, axis=(0, 1))
+
+        # stack mask Confocal and result if intended
+        if store_masked == True:
+            imconfs = [imconf, imconfs]
+
+    return imconfs
+
+
+def ismR_confocal_deprecated(im, pinsize=None, pinshape='circle', pincenter=None, store_masked=False):
+    '''
+    **!!THIS FUNCTION IS DEPRECATED!!**
+
     Confocal reconstruction of ISM-data. For now: only implemented for 2D-pinhole/detector plane (assumed as (0,1) position).
 
     TODO: 
@@ -568,10 +614,11 @@ def ismR_confocal(im, axes=0, pinsize=None, pinshape='circle', pincenter=None, s
 
     return imconfs
 
-def ism_recon(im,method='wf',**kwargs):
+
+def ism_recon(im, method='wf', **kwargs):
     '''
     General ISM-reconstruction wrapper. Takes care of necesary preprocessing for the different techniques. 
-    
+
     :PARAM:
     =======
     :im:            (IMAGE)     Input image; assume nD for now, but structure should be like(pinholeDim=pd) [pd,...(n-3)-extraDim...,Y,X]
@@ -580,23 +627,27 @@ def ism_recon(im,method='wf',**kwargs):
                                 'conf':     confocal reconstruction
                                 'shepp':    sheppardSUM
                                 'wAVG':     weighted averaging
-    
+
     '''
     # sanity check on kwargs to find the necessary pinhole parameters
-    pincenterFIND = 'sum' if kwargs.get('pincenterFIND') is None else kwargs.get('pincenterFIND')
-    pinsize = im.shape[0] if kwargs.get('pinsize') is None else kwargs.get('pinsize')
-    pinshape = 'circ' if kwargs.get('pinshape') is None else kwargs.get('pinshape')
-    pindim = kwargs.get('pindim') 
+    pincenterFIND = 'sum' if kwargs.get(
+        'pincenterFIND') is None else kwargs.get('pincenterFIND')
+    pinsize = im.shape[0] if kwargs.get(
+        'pinsize') is None else kwargs.get('pinsize')
+    pinshape = 'circ' if kwargs.get(
+        'pinshape') is None else kwargs.get('pinshape')
+    pindim = kwargs.get('pindim')
 
-    if kwargs.get('pincenter') is None: 
-        pincenter, im_detproj = pinhole_getcenter(im,method=pincenterFIND)
+    if kwargs.get('pincenter') is None:
+        pincenter, im_detproj = pinhole_getcenter(im, method=pincenterFIND)
 
-    if kwargs.get('pinmask') is None: 
+    if kwargs.get('pinmask') is None:
         pass
 
     # get pinhole center
     if pincenter == [] or pincenter is None:
-        pincenter, mask_shift, mask_shape = pinhole_getcenter(im, pincenterFIND)
+        pincenter, mask_shift, mask_shape = pinhole_getcenter(
+            im, pincenterFIND)
 
     # get pinhole mask
     if pinsize == [] or pincenter is None:
@@ -604,25 +655,25 @@ def ism_recon(im,method='wf',**kwargs):
     else:
         # test whether circular pinhole
         pinsize = pinsize*2 if len(pinsize) == 1 else pinsize
-        pinshape='circ' if  pinsize[-1] == pinsize[-2] else 'rect'
+        pinshape = 'circ' if pinsize[-1] == pinsize[-2] else 'rect'
 
         # generate pinhole
         if pinshape == 'rect':
-            mask_x = (abs(nip.xx(pindim,placement='center')) <= pinsize[-1]//2)*1
-            mask_y = (abs(nip.yy(pindim,placement='center')) <= pinsize[-2]//2)*1
+            mask_x = (abs(nip.xx(pindim, placement='center'))
+                      <= pinsize[-1]//2)*1
+            mask_y = (abs(nip.yy(pindim, placement='center'))
+                      <= pinsize[-2]//2)*1
             mask = mask_x + mask_y
             mask[mask < (np.max(mask_x) + np.max(mask_y))] = 0
-        else: 
-            mask = (nip.rr(pindim,placement='center') <= pinsize[-1]//2)*1
+        else:
+            mask = (nip.rr(pindim, placement='center') <= pinsize[-1]//2)*1
 
     # call routines
 
-    # done? 
-
-        
+    # done?
 
 
-def ismR_sheppardSUM(im, shift_map=[], shift_method='nearest', pincenter=None, pinsize=None, pindim=None,pinshape=None):
+def ismR_sheppardSUM(im, shift_map=[], shift_method='nearest', pincenter=None, pinsize=None, pindim=None, pinshape=None):
     '''
     Calculates sheppardSUM on image (for arbitrary detector arrangement), meaning: 
     1) find center of pinhole for all scans using max-image-peak (on center should have brightest signal) if not particularly given 
@@ -654,10 +705,6 @@ def ismR_sheppardSUM(im, shift_map=[], shift_method='nearest', pincenter=None, p
     '''
     # start clean and straight
 
-
-
-
-
     # find shift-list -> Note: 'nearest' is standard
     if shift_map == []:
         shift_map, figS, axS = ismR_genShiftmap(
@@ -672,7 +719,8 @@ def ismR_sheppardSUM(im, shift_map=[], shift_method='nearest', pincenter=None, p
     # return created results
     return ismR, shift_map, mask, pincenter
 
-def ismR_weightedAveraging(imfl,otfl,noise_norm=True,wmode='leave',fmode='fft',fshape=None,closing=2,suppcomp=False):
+
+def ismR_weightedAveraging(imfl, otfl, noise_norm=True, wmode='leave', fmode='fft', fshape=None, closing=2, suppcomp=False):
     '''
     Weighted Averaging for multi-view reconstruction. List implementation so that it can be applied to multiple Data-sets. Needs list of PSFs (list) for different images (=views). 
     Note, make sure that:  
@@ -703,13 +751,13 @@ def ismR_weightedAveraging(imfl,otfl,noise_norm=True,wmode='leave',fmode='fft',f
 
     '''
     # parameter
-    dims = list(range(1,otfl.ndim,1))
-    validmask,_,_,_,_ = otf_get_mask(otfl, mode='rft', eps=1e-5,bool_mask=True,closing=closing)
-    
+    dims = list(range(1, otfl.ndim, 1))
+    validmask, _, _, _, _ = otf_get_mask(
+        otfl, mode='rft', eps=1e-5, bool_mask=True, closing=closing)
 
     # In approximation of Poisson-Noise the Variance in Fourier-Space is the sum of the Mean-Values in Real-Space -> hence: MidVal(OTF); norm-OTF by sigma**2 = normalizing OTF to 1 and hence each PSF to individual sum=1
-    sigma2_otfl = midVallist(otfl,dims,keepdims=True).real
-    weights = otfl / sigma2_otfl  
+    sigma2_otfl = midVallist(otfl, dims, keepdims=True).real
+    weights = otfl / sigma2_otfl
     #weightsn[~validmask] = 0
 
     # norm max of OTF to 1 = norm sumPSF to 1;
@@ -720,42 +768,45 @@ def ismR_weightedAveraging(imfl,otfl,noise_norm=True,wmode='leave',fmode='fft',f
         weights = np.conj(weights)
     elif wmode == 'abs':
         weights = np.abs(weights)
-    else: 
+    else:
         pass
     #weights = otfl / sigma2_imfl
     weightsn = nip.image(np.copy(weights))
-    weightsn[~np.repeat(validmask[np.newaxis],repeats=otfl.shape[0],axis=-otfl.ndim)] = 0
-    # 1/OTF might strongly diverge outside OTF-support -> put Mask 
-    eps=0.01
-    wsum = np.array(weightsn[0])    
-    wsum = np.divide(np.ones(weightsn[0].shape,dtype=weightsn.dtype),np.sum(weightsn+eps,axis=0),where=validmask,out=wsum)
+    weightsn[~np.repeat(validmask[np.newaxis],
+                        repeats=otfl.shape[0], axis=-otfl.ndim)] = 0
+    # 1/OTF might strongly diverge outside OTF-support -> put Mask
+    eps = 0.01
+    wsum = np.array(weightsn[0])
+    wsum = np.divide(np.ones(weightsn[0].shape, dtype=weightsn.dtype), np.sum(
+        weightsn+eps, axis=0), where=validmask, out=wsum)
     #wsum = 1.0/np.sum(weightsn+eps,axis=0)
-    #wsum[~validmask]=0
+    # wsum[~validmask]=0
 
     # apply weights
-    ismWA = wsum * np.sum(imfl * weightsn,axis=0)
+    ismWA = wsum * np.sum(imfl * weightsn, axis=0)
 
     # noise normalize
     if noise_norm:
         # noise-normalize, set zero outside of OTF-support
-        sigman = np.array(weightsn[0])    
-        sigman = np.divide(np.ones(weightsn[0].shape,dtype=weightsn.dtype),np.sqrt(np.sum(weightsn * weights,axis=0)),where=validmask,out=wsum)
-        ismWAN = np.sum(imfl * weightsn,axis=0) * sigman
+        sigman = np.array(weightsn[0])
+        sigman = np.divide(np.ones(weightsn[0].shape, dtype=weightsn.dtype), np.sqrt(
+            np.sum(weightsn * weights, axis=0)), where=validmask, out=wsum)
+        ismWAN = np.sum(imfl * weightsn, axis=0) * sigman
 
         # get Poisson-noise for Frequencies > k_cutoff right
         ismWANh = np.real(nip.ift(ismWAN))
-        ismWANh = nip.poisson(ismWANh - ismWANh.min(),NPhot=None)
+        ismWANh = nip.poisson(ismWANh - ismWANh.min(), NPhot=None)
         ismWAN = ismWAN + nip.ft(ismWANh)*(1-validmask)
         ismWAN = nip.ift(ismWAN).real
 
     # return in real-space
     ismWA = nip.ift(ismWA).real
 
-    # print 
+    # print
     if suppcomp:
         import matplotlib.pyplot as plt
         a = plt.figure()
-        plt.plot(x,y,)
+        plt.plot(x, y,)
 
     # done?
     return ismWA, ismWAN
