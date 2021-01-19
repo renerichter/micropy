@@ -294,6 +294,9 @@ def calculatePSF_ism(psfex, psfdet, psfdet_array=None, shifts=None, shift_offset
     # final (confocal) PSF per pixel via PSFex*PSFdet
     psf_eff = psfex[np.newaxis] * psfdet_array
 
+    # assure PSF is proper == sum to 1
+    psf_eff /= np.sum(psf_eff, keepdims=True)
+
     # get OTF
     otf_eff = rftnd(psf_eff, raxis=faxes[0], faxes=faxes[1:]
                     ) if fmodel == 'rft' else nip.ft(psf_eff, axes=faxes)

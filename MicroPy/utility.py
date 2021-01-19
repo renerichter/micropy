@@ -1,6 +1,7 @@
 # %% imports
 import numpy as np
 import NanoImagingPack as nip
+from deprecated import deprecated
 # mipy imports
 from .functions import gaussian1D
 from .numbers import generate_combinations
@@ -213,17 +214,17 @@ def findshift(im1, im2, prec=100, printout=False):
     return shift, error, diffphase, tend
 
 
-def shiftby_list(psf, shifts=None, shift_offset=[1, 1], shift_method='uvec', shift_axes=[-2, -1], nbr_det=[3, 3], retreal=True):
+def shiftby_list(psf, shifts=None, shift_offset=[1, 1], shift_method='uvec', shift_axes=[-2, -1], nbr_det=[3, 3], retreal=True, listaxis=None):
     """Shifts an image by a list of shift-vectors.
     If shifts not given, calculates an equally spaced rect-2D-array for nbr_det (array) of  with shift_offset spacing in pixels between them.
-    If shifts given, uses the shape (nbr_det) to calculate the distances between detectors. 
+    If shifts given, uses the shape (nbr_det) to calculate the distances between detectors.
     The shifts are applied from the right, hence if e.g. a list of 2D-shift-vectors is provided they are applied to [-2,-1].
 
     Parameters
     ----------
     psf : image
         3D-(Detection)PSF
-    shifts : list, optional
+    shifts : np.ndarray, optional
         shifts to be applied, by default []
     shift_axes : list, optional
         Axes to be used for applying the shift (and hence the Fourier-Transform)
@@ -235,6 +236,8 @@ def shiftby_list(psf, shifts=None, shift_offset=[1, 1], shift_method='uvec', shi
         see gen_shift function for more info, by default 'uvec'
     retreal : bool, optional
         whether result should be real or complex, by default True
+    listaxis: int, optional
+        list-axis -> if given, uses existing image dimension and does not create a now axis for listing, by default None
 
 
     Returns
@@ -244,13 +247,16 @@ def shiftby_list(psf, shifts=None, shift_offset=[1, 1], shift_method='uvec', shi
 
     Example
     -------
-    Shift by a given list directly. 
+    Shift by a given list directly.
     >>> mipy.shiftby_list(nip.readim(),shifts=[[1,1],[2,2],[5,5]])
 
-    Generate shifts from a unit-cell with non-orthogonal axes in standard cartesian space. 
+    Generate shifts from a unit-cell with non-orthogonal axes in standard cartesian space.
     >>> mipy.shiftby_list(nip.readim(),shift_offset=[[1,0.5],[0.3,2]], shift_method='uvec', nbr_det=[2, 3])
 
     """
+    # parameters
+    asta = 0 if listaxis is not None else 1
+
     # sanity - calculate shifts if not provided
     if shifts is None:
         # sanity
@@ -281,16 +287,18 @@ def shiftby_list(psf, shifts=None, shift_offset=[1, 1], shift_method='uvec', shi
     dimdiff = psf.ndim - len(shifts[0])
 
     # pre-allocate for speed-up
-    phase_ramp_list = np.ones((len(shifts),)+psf.shape, dtype=np.complex_)
-
+    prl_shape = (len(shifts),)+psf.shape if listaxis is None else psf.shape
+    phase_ramp_list = np.ones(prl_shape, dtype=np.complex_)
     # calculate shifts
     for m in shift_axes:
-        phase_ramp_list *= np.exp(-1j*2*np.pi * add_multi_newaxis(shifts[:, m-dimdiff], [-1, ]
-                                                                  * psf.ndim) * r1d(psf.shape, m, psf.pixelsize))
+        eshifts = add_multi_newaxis(
+            shifts[:, m-dimdiff], [-1, ] * (psf.ndim-1+asta))
+        phase_ramp_list *= np.exp(-1j*2*np.pi * eshifts *
+                                  r1d(psf.shape, m, psf.pixelsize, add_stackaxis=asta))
 
     # apply shifts in FT-space and transform back
     psf_res = nip.ift(nip.ft(psf, axes=shift_axes) *
-                      phase_ramp_list, axes=shift_axes+1)
+                      phase_ramp_list, axes=shift_axes+asta)
 
     if retreal:
         psf_res = psf_res.real
@@ -302,15 +310,19 @@ def shiftby_list(psf, shifts=None, shift_offset=[1, 1], shift_method='uvec', shi
     return psf_res, shifts
 
 
-def r1d(im_shape, ramp_dim, pixelsize):
+def r1d(im_shape, ramp_dim, pixelsize, add_stackaxis=1):
     """directly adds another dimension (=psf.ndim + 1) to fit with stacking dimension for pinhole
 
     Parameters
     ----------
     im_shape : list
-        Shape of the image that a ramp shall be created for 
+        Shape of the image that a ramp shall be created for
     ramp_dim : int
         ramp dimension
+    pixelsize : list
+        physical pixel-size
+    add_stackaxis : int, optional
+        number of axes to be added at 0-position for stacking, by default 1
 
     Returns
     -------
@@ -325,7 +337,7 @@ def r1d(im_shape, ramp_dim, pixelsize):
     ramped = add_multi_newaxis(nip.ramp1D(im_shape[ramp_dim], ramp_dim=ramp_dim, placement='center',
                                           freq='ftfreq', pixelsize=pixelsize), [-1, ]*(len(im_shape)-1-ramp_dim))
     dimdiff = len(im_shape) - ramped.ndim
-    return add_multi_newaxis(ramped, [0, ]*(dimdiff+1))
+    return add_multi_newaxis(ramped, [0, ]*(dimdiff+add_stackaxis))
 
 
 def find_shiftperiod(shift_stack, thresh=0.25):
@@ -333,7 +345,7 @@ def find_shiftperiod(shift_stack, thresh=0.25):
     Finds the shift-period for an input-stack.
 
     TODO:
-    1) fix for small stacks. 
+    1) fix for small stacks.
     2) find soft thresholds instead of arbitrarily chosen value.
 
     :PARAMS:
@@ -350,10 +362,11 @@ def find_shiftperiod(shift_stack, thresh=0.25):
     :EXAMPLE:
     ========
     c = mipy.shiftby_list(nip.readim(),shift_offset=[3.3,5.6],nbr_det=[1,10])
-    c = np.reshape(np.transpose(nip.repmat(c,replicationFactors=[7,1,1,1]),[1,0,2,3]),[70,c.shape[-1],c.shape[-2]])
+    c = np.reshape(np.transpose(nip.repmat(c,replicationFactors=[7,1,1,1]),[
+                   1,0,2,3]),[70,c.shape[-1],c.shape[-2]])
     shifts = mipy.image_getshift(c,c[0])
     pmean,pmedian, period_lengths = find_shiftperiod(shifts,thresh=0.05)
-    print("pmean={}\npmedian={}\nperiod_lengths={}".format(pmean,pmedian,period_lengths))     
+    print("pmean={}\npmedian={}\nperiod_lengths={}".format(pmean,pmedian,period_lengths))
     '''
     periods = []
     bias = 0
@@ -409,8 +422,8 @@ def gen_shift(method='uvec', **kwargs):
 
     See Also
     --------
-    For input parameters check into the method that you want to use. 
-    gen_shift_uvec : generates shifts for arbitrary unit-vectors 
+    For input parameters check into the method that you want to use.
+    gen_shift_uvec : generates shifts for arbitrary unit-vectors
     gen_shift_uveci : generates shifts for arbitrary unit-vectors with different spacings between orders
     gen_shift_loop_pix : generates shifts for rectangular unit-vector [[1,0],[0,1]] array
     gen_shift_npfunc : generates shifts for rectangular unit-vector [[1,0],[0,1]] array
@@ -478,7 +491,7 @@ def gen_shift_uvec(uvec=[[1, 0], [0, 1]], nbr=[2, 3]):
     >>> mipy.gen_shift_loop_uvec([[1,0],[1/2,1]],[0,3])
     array([], shape=(0, 2), dtype=float64)
 
-    Compare results for rectangular grid: 
+    Compare results for rectangular grid:
     >>> np.allclose(mipy.gen_shift_loop_pix([1,1],[2,3]),mipy.gen_shift_loop_uvec(uvec=[[1, 0], [0, 1]], nbr=[2, 3]))
     True
     """
@@ -592,7 +605,7 @@ def pinhole_getcenter(im, method='sum', saxis=None):
     method : str, optional
         method used to calculate center position, implemented: 'sum', 'max', 'min', by default 'sum'
     saxis : tuple, optional
-        Axis to be used for searching for the center pinhole, by default None  
+        Axis to be used for searching for the center pinhole, by default None
 
     Returns
     -------
@@ -666,9 +679,9 @@ def pinhole_shift(pinhole, pincenter):
 
 def transpose_arbitrary(imstack, idx_startpos=[-2, -1], idx_endpos=[0, 1], direction='forward'):
     '''
-    Exchange-based successive array transposition to exchange given start_pos with according endpos. 
+    Exchange-based successive array transposition to exchange given start_pos with according endpos.
 
-    EXAMPLE: 
+    EXAMPLE:
     =======
     a = np.reshape(np.arange(2*3*4*5*6),[2,3,4,5,6])
     b = transpose_arbitrary(a,[-2,-1],[0,1],direction='forward')
@@ -886,20 +899,34 @@ def create_value_on_dimpos(dims_total, axes=[-2, -1], scaling=[0.5, 0.5]):
     return res
 
 
-def midVallist(iml, dims, method=1, keepdims=False):
-    '''
-    Gets middle-value or list of Middle-values according to volume (dimensions) provided by dims.
-    Note:
-        -> keepdims implemented, but numpy seems to ignore it... :(
+def midVallist(iml, dims, method='iter', keepdims=False):
+    """Gets Value (or list, according to volume (dimensions) provided by dims) of central pixel.
 
-    TODO:
-        1) catch User-errors
-        2) implement slice-method
+    Parameters
+    ----------
+    iml : image
+        nD-image
+    dims : list
+        final shape
+    method : int, optional
+        method to be used for finding central pixel, by default 'iter'
+            'iter': iteratively scans through all dimensions
+            'once': use subslicing in one-step for all dimensions -> **NOT IMPLEMENTED YET**
+    keepdims : bool, optional
+        [description], by default False
+
+    Returns
+    -------
+    [type]
+        [description]
+    """
+    '''
+    
+    Note:
 
     :PARAM:
     =======
-    :iml:           (NDARRAY) nD-image
-    :dims:          (LIST) of dimensions
+    :iml:           
 
     :OUT:
     =====
@@ -922,14 +949,13 @@ def midVallist(iml, dims, method=1, keepdims=False):
     imlsc = np.array(iml.shape)//2
 
     # get centers
-    if method == 1:
+    if method == 'once':
+        print('Method==once not implemented yet.')
+    else:
         midl = iml
         for dim in dimss:
             midl = midl.take(indices=imlsc[dim], axis=dim)
             orish[dim] = 1
-    else:
-        # nip.slice()
-        pass
 
     if keepdims == True:
         midl = np.reshape(midl, orish)
@@ -964,24 +990,30 @@ def subtract_from_max(im):
     return im
 
 
-def ismR_generateRings(det_geo=[0, 0], ring=0, aslist=True):
-    '''
-    Generates binary mask for selection of rings for deconvolution. Assumes 2D detector distribution geometry.
-    '''
-    sel = np.zeros(det_geo)
-    selc = np.array(sel.shape)//2
+def mask_from_dist(detdist, radius_outer, radius_inner=0.0):
+    """Generates 1D-representation of a mask within Lp-distance representation. Use in conjunction with 'mipy.lp_norm' (to calculate distance of detectors (detdist)).
 
-    if ring == 0:
-        sel[selc[0], selc[1]] = 1
-    else:
-        sel[selc[-2]-ring:selc[-2]+ring+1, selc[-1]-ring:selc[-1]+ring+1] = 1
-        sel[selc[-2]-ring+1:selc[-2]+ring, selc[-1]-ring+1:selc[-1]+ring] = 0
-    sel = np.array(sel, dtype=bool)
+    Parameters
+    ----------
+    detdist : list
+        distances of detector elements w.r.t. to a central pixel
+    radius_outer : float
+        size of outer radius
+    radius_inner : float, optional
+        size of inner radius, by default 0 (=smallest)
 
-    if aslist == True:
-        sel = np.reshape(sel, np.prod(sel.shape))
+    Returns
+    -------
+    sel_mask : bool-list
+        selection mask
 
-    return sel
+    See Also
+    --------
+    mipy.lp_norm, mipy.pinhole_getcenter
+    """
+    # select
+    sel_mask = (detdist >= radius_inner) * (detdist <= radius_outer)
+    return sel_mask
 
 
 # %% -----------------------------------------------------
@@ -1077,7 +1109,8 @@ def getPoints(im, viewer=None, compare=False):
 
     :EXAMPLE:
     =========
-    picklist = mipy.getPoints([nip.readim(),nip.readim()],viewer=None,compare=True)
+    picklist = mipy.getPoints(
+        [nip.readim(),nip.readim()],viewer=None,compare=True)
     print(picklist)
     '''
 
@@ -1122,9 +1155,34 @@ def find_extrema_1D(im, visres=True):
 
 def visualize_extrema_1D(flatim, localmax, value, output_shape):
     '''
-    Calculates and Visualizes extrema from Scipy-signal (1D) toolbox. 
+    Calculates and Visualizes extrema from Scipy-signal (1D) toolbox.
     '''
     b = np.zeros(flatim.shape)
     for m in localmax[0]:
         b[m] = 10
     return b.reshape(output_shape)
+
+# %% ---------------------------------------------------------------
+# ---                         DEPRECATED                         ---
+# ------------------------------------------------------------------
+
+
+@deprecated(version='0.1.3', reason='General Change of ISM-interface lead to rather use distances instead of rectangular geometry to allow for arbitrary shapes. See recon_generateRings for more.')
+def ismR_generateRings(det_geo=[0, 0], ring=0, aslist=True):
+    '''
+    Generates binary mask for selection of rings for deconvolution. Assumes 2D detector distribution geometry.
+    '''
+    sel = np.zeros(det_geo)
+    selc = np.array(sel.shape)//2
+
+    if ring == 0:
+        sel[selc[0], selc[1]] = 1
+    else:
+        sel[selc[-2]-ring:selc[-2]+ring+1, selc[-1]-ring:selc[-1]+ring+1] = 1
+        sel[selc[-2]-ring+1:selc[-2]+ring, selc[-1]-ring+1:selc[-1]+ring] = 0
+    sel = np.array(sel, dtype=bool)
+
+    if aslist == True:
+        sel = np.reshape(sel, np.prod(sel.shape))
+
+    return sel
