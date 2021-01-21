@@ -10,7 +10,7 @@ from deprecated import deprecated
 
 # mipy imports
 from .transformations import irft3dz
-from .utility import findshift, midVallist, pinhole_shift, pinhole_getcenter, add_multi_newaxis, shiftby_list
+from .utility import findshift, midVallist, pinhole_shift, pinhole_getcenter, add_multi_newaxis, shiftby_list, subslice_arbitrary
 from .inout import stack2tiles
 
 
@@ -382,7 +382,7 @@ def ismR_shiftmask2D(im, pinsize, mask_shape, pincenter, pinshape):
     return shiftmask
 
 
-def recon_genShiftmap(im, pincenter, nbr_det=None, pinmask=None, shift_method='nearest', printmap=False):
+def recon_genShiftmap(im, pincenter, nbr_det=None, pinmask=None, shift_method='nearest', shiftval_theory=None, roi=None, printmap=False):
     """Generates Shiftmap for ISM SheppardSUM-reconstruction. 
     Assumes shape: [Pinhole-Dimension , M] where M stands for arbitrary mD-image.
     Fills shift_map from right-most dimension to left, hence errors could be evoked in case of only shifts along dim=[1,2] applied, but array has spatial dim=[1,2,3]. Hence shifts will be applied along [2,3] with their respective period factors. 
@@ -402,6 +402,11 @@ def recon_genShiftmap(im, pincenter, nbr_det=None, pinmask=None, shift_method='n
             'nearest': compare center pinhole together with 1 pix-below and 1 pix-to-the-right pinhole; assumes rect detector-grid for now and needs nbr_det
             'mask': all pinholes that reside within mask ; needs pinmask
             'complete': calculate shifts for all detectors 
+            'theory': generates shifts from shiftval_theory provided
+    shiftval_theory: list, optional
+        if shift_method 'theory' is active, generates shiftmap from these factors. In pixel-dimensions und unit-vector notation,  hence eg [[-0.5,0],[0,-0.5]] generates "back-shift" for pixel-reassignments by half the distance to the pincenter, by default None
+    roi : list, optional
+        subslice of image (spatial coordinates) to be used for shift-finding -> see subslice_arbitrary for more info, by default None
     printmap : bool, optional
         print shift-vectors as quiver map, by default False
 
@@ -417,13 +422,16 @@ def recon_genShiftmap(im, pincenter, nbr_det=None, pinmask=None, shift_method='n
 
     See Also
     --------
-    recon_sheppardSUM
+    recon_sheppardSUM, subslice_arbitrary
 
     TODO
     ----
     1) fix dimensionality problem of factors generation (eg by taking in a 'shift_axis' parameter)
     """
-    if shift_method == 'nearest':
+    if roi is not None:
+        im = subslice_arbitrary(im, roi)
+
+    if shift_method in ['nearest', 'theory']:
         # convert pincenter to det-space
         pcu = np.unravel_index(pincenter, nbr_det)
 
@@ -433,29 +441,30 @@ def recon_genShiftmap(im, pincenter, nbr_det=None, pinmask=None, shift_method='n
         for m in range(len(nbr_det)):
 
             # calculate shift, but be aware to not leave the array
-            period = int(np.prod(np.array(nbr_det[(m+1):])))
-            shifth, _, _, _ = findshift(im[pincenter],
-                                        im[np.mod(pincenter+period, im.shape[0])],  100)
+            if shift_method == 'nearest':
+                period = int(np.prod(np.array(nbr_det[(m+1):])))
+                shifth, _, _, _ = findshift(im[pincenter],
+                                            im[np.mod(pincenter+period, im.shape[0])],  100)
+            else:
+                shifth = shiftval_theory[m]
             shiftvec.append(shifth)
 
-            # create offsets
-            nbrh = nbr_det[m]
-            nbr_det[m] = 1
-            factors.append(
-                np.repeat(np.arange(nbrh) - pcu[m], np.prod(nbr_det)))
-            nbr_det[m] = nbrh
+            # create factors
+            factors.append(nip.ramp(nbr_det, ramp_dim=m,
+                                    placement='corner').flatten()-pcu[m])
+
+        # generate shiftvec -> eg [eZ,eY,eX] where eZ=[eZ1,eZ2,eZ3]
         shiftvec = np.array(shiftvec)
         factors = np.array(factors).T
 
-        # sanity for arbitrary dimensionality -> find non-shifted dimensions and add to factors
-
+        # sanity for arbitrary dimensionality -> find non-shifted dimensions and add to factors --> need to check logic again
         shiftfree_dim = list(
             np.where(np.sum(abs(shiftvec), axis=0) == 0)[0][::-1])
         if len(shiftfree_dim) >= 1:
-            factors = add_multi_newaxis(factors,)
+            factors = add_multi_newaxis(factors, shiftfree_dim)
 
         # generate shifts for whole array (elementwise-multiplication)
-        shift_map = np.sum(shiftvec * factors, axis=1)
+        shift_map = np.matmul(factors, shiftvec)
 
     elif shift_method == 'mask':
         imh = im[pinmask]
@@ -633,9 +642,7 @@ def recon_confocal(im, detdist, pinsize=0, pincenter=None, pinmask=None):
         pinmask = detdist <= pinsize
 
     # calculate confocal image
-    im_conf = np.squeeze(im[pinmask])
-    if np.sum(pinmask) > 1:
-        im_conf = np.sum(im[pinmask], axis=0)
+    im_conf = np.squeeze(np.sum(im[pinmask], axis=0))
 
     # done?
     return im_conf, pinmask
@@ -704,7 +711,7 @@ def ism_recon(im, method='wf', **kwargs):
     return pinsize
 
 
-def recon_sheppardSUM(im, nbr_det, pincenter, shift_method='nearest', shift_map=[], pinmask=None):
+def recon_sheppardSUM(im, nbr_det, pincenter, shift_method='nearest', shift_map=[], shift_roi=None, shiftval_theory=None, pinmask=None, pinfo=False):
     """Calculates sheppardSUM on image (for arbitrary detector arrangement). The 0th-Dimension is assumed as detector-dimension and hence allows for arbitrary, but flattened detector geometries.
 
     The algorithm does: 
@@ -725,8 +732,13 @@ def recon_sheppardSUM(im, nbr_det, pincenter, shift_method='nearest', shift_map=
         Method to be used to find the shifts between the single detector and the center pixel -> see recon_genShiftmap, by default 'nearest'
     shift_map : list, optional
         list for shifts to be applied on channels -> needs to have same length as im.shape[0], by default []
+    shiftval_theory : list, optional
+        if shift_method 'theory' is active, generates shiftmap from these factors, eg [[0.5,0],[0,0.5]] --> see recon_genShiftmap, by default None
     pinmask : bool-list, optional
         selection/shape of pinholes to be used for calculation, by default None
+    pinfo : bool, optional
+        print info, by default False
+
 
     Returns
     -------
@@ -746,13 +758,18 @@ def recon_sheppardSUM(im, nbr_det, pincenter, shift_method='nearest', shift_map=
     # find shift-list -> Note: 'nearest' is standard
     if shift_map == []:
         shift_map, figS, axS = recon_genShiftmap(
-            im=im, pincenter=pincenter, nbr_det=nbr_det, pinmask=pinmask, shift_method=shift_method)
+            im=im, pincenter=pincenter, nbr_det=nbr_det, pinmask=pinmask, shift_method=shift_method, shiftval_theory=shiftval_theory, roi=shift_roi)
 
     # apply shifts
     ims = recon_sheppardShift(im, shift_map, method='parallel', use_copy=True)
 
     # different summing methods
     imshepp = recon_sheppardSUMming(im=ims, pinmask=pinmask)
+
+    # info for check of energy conservation
+    if pinfo:
+        print(
+            f"SUM(im)={np.sum(im)}\nim.shape={im.shape}\nSUM(imshifted)-SUM(im)={np.sum(ims)-np.sum(im)}\nSUM(imshepp)-SUM(im[pinmask])={np.sum(imshepp)-np.sum(im[pinmask])}\nShift-Operations={np.sum(pinmask)}")
 
     # return created results
     return imshepp, shift_map, pinmask, pincenter

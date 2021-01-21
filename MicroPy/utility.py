@@ -253,6 +253,9 @@ def shiftby_list(psf, shifts=None, shift_offset=[1, 1], shift_method='uvec', shi
     Generate shifts from a unit-cell with non-orthogonal axes in standard cartesian space.
     >>> mipy.shiftby_list(nip.readim(),shift_offset=[[1,0.5],[0.3,2]], shift_method='uvec', nbr_det=[2, 3])
 
+    See Also
+    --------
+    gen_shift,
     """
     # parameters
     asta = 0 if listaxis is not None else 1
@@ -603,7 +606,7 @@ def pinhole_getcenter(im, method='sum', saxis=None):
     im : image
         input image (at least 4dim)
     method : str, optional
-        method used to calculate center position, implemented: 'sum', 'max', 'min', by default 'sum'
+        method used to calculate center position, implemented: 'sum', 'mean', 'max', 'min'. If too many images are checked, mean of abs of image is better than sum, by default 'sum'
     saxis : tuple, optional
         Axis to be used for searching for the center pinhole, by default None
 
@@ -628,6 +631,8 @@ def pinhole_getcenter(im, method='sum', saxis=None):
     # project scan into detector plane
     if method == 'sum':
         im_detproj = np.sum(im, axis=saxis)
+    elif method == 'mean':
+        im_detproj = np.mean(im, axis=saxis)
     elif method == 'max':
         im_detproj = np.max(im, axis=saxis)
     elif method == 'min':
@@ -711,6 +716,46 @@ def transpose_arbitrary(imstack, idx_startpos=[-2, -1], idx_endpos=[0, 1], direc
         im = np.swapaxes(im, axis1=start, axis2=idx_endpos[k])
 
     # done?
+    return im
+
+
+def subslice_arbitrary(im, roi):
+    """Select arbitrary subslice.
+    For now: creates a copy of the input object. 
+
+    Parameters
+    ----------
+    im : image
+        N dimensional image
+    roi : array
+        list to be used for subslicing. Shape has to be of the kind: 
+        [dim,start,stop] per dimension, see example
+
+    Returns
+    -------
+    subsl : image
+        subsliced image
+
+    Example
+    -------
+    >>> im = np.reshape(np.ones([2*3*4*5]),[2,3,4,5])
+    >>> roi = [[1,1,3],[2,0,3],[3,0,3]]
+    >>> a = selectROI(im,roi)
+    >>> print(f"im={im.shape}\na={a.shape}")
+    im=(2, 3, 4, 5)
+    a=(2, 2, 3, 3)
+
+    See Also
+    --------
+    transpose_arbitrary
+    """
+    #roi = [dim,start,stop]
+    for _, roipos in enumerate(roi):
+        im = transpose_arbitrary(
+            im, idx_startpos=roipos[0], idx_endpos=0, direction='forward')
+        im = im[roipos[1]:roipos[2]]
+        im = transpose_arbitrary(
+            im, idx_startpos=roipos[0], idx_endpos=0, direction='backward')
     return im
 
 

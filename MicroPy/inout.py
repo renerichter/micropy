@@ -6,6 +6,7 @@ from datetime import datetime
 import NanoImagingPack as nip
 import numpy as np
 import matplotlib.pyplot as plt
+from tifffile import imread as tifimread
 # mipy imports
 
 # %% -------------------------------------------
@@ -80,7 +81,8 @@ def logger_switch_output(str_message, logger=False):
         print(str_message)
 # %%
 # -----------------------------------------------
-#                      LOAD
+#                      STORAGE
+# -----------------------------------------------
 
 
 def get_filelist(load_path='.', fn_proto='jpg'):
@@ -344,20 +346,114 @@ def load_SPE(fname):
     return nip.image(img)
 
 
-def load_osakaScan2D(im_path, imd=[128, 128], overscan=[1, 1.25], detd=[16, 16], reader=2):
-    '''
-    Takes Scan-overhead into account. As SPE-is not working right now, assumes TIF-stacks.
-    '''
-    from tifffile import imread as tifimread
+def osaka_load_2Dscan(im_path, imd=[128, 128], overscan=[1, 1.25], nbr_det=[16, 16], reader=2):
+    """Takes Scan-overhead into account. As SPE-is not working right now, assumes TIF-stacks.
+
+    Parameters
+    ----------
+    im_path : str
+        path of image to be loaded
+    imd : list, optional
+        image dimensions of scan, by default [128,128]
+    overscan : list, optional
+        scanning overhead per axis, by default [1,1.25]
+    nbr_det : list, optional
+        number of detectors per dimension used for scanning, by default [16,16]
+    reader : int, optional
+        readin method to be used, by default 2
+            1: nip.readim
+            2: tifffile.imread
+
+    Returns
+    -------
+    im : image
+        read in 2D-image with 1 pinhole dimension reduced to 1, shape [N,M,L] with M,L = scan directions
+
+    See Also
+    --------
+    convert2matlab_Osaka
+    """
+    # which reader to use?
     if reader == 1:
         im = np.squeeze(nip.readim(im_path))
     else:
         im = nip.image(tifimread(im_path))
-    imshape = [imd[0]*overscan[0], int(imd[1]*overscan[1]), detd[0], detd[1]]
-    im = np.transpose(np.reshape(im, imshape), [2, 3, 0, 1])
-    im = im[:, :, :, :imd[1]]
+
+    # take overscan into account and throw out
+    imshape = [imd[0]*overscan[0],
+               int(imd[1]*overscan[1]), nbr_det[0]*nbr_det[1]]
+    im = np.reshape(im, imshape)[:imd[0], :imd[1]]
+
+    # reshape properly
+    im = np.transpose(im, [2, 0, 1])
+
+    # done?
     return im
 
+
+def osaka_convert2matlab(fd, imd=[128, 128], overscan=[1, 1.25], nbr_det=[16, 16], reader=2):
+    """Load 2D-overscan OSAKA-Data and save into 1D-list to be read by MATLAB for PSF estimation. 
+
+    Parameters
+    ----------
+    fd : dict
+        Dictionary of files (and paths) to be loaded
+    imd : list, optional
+        image dimensions of scan, by default [128,128]
+    overscan : list, optional
+        scanning overhead per axis -> see load_osakaScan2D, by default [1,1.25]
+    nbr_det : list, optional
+        number of detectors per dimension used for scanning -> see load_osakaScan2D, by default [16,16]
+    reader : int, optional
+        readin method to be used -> see load_osakaScan2D, by default 2    
+
+    Raises
+    ------
+    ValueError
+        Loaded and stored data are not the same -> error with output  
+
+    Example
+    -------
+    >>> load_path = os.getcwd()
+    >>> save_path = os.getcwd()
+    >>> beads = {'low': os.path.join(load_path,'beads_SAX_low_10um_128_200_EM1_metamorph.tif'), \
+    'high': os.path.join(load_path,'beads_SAX_high_10um_128_200_EM1_metamorph.tif')}
+    >>> mipy.convert2matlab_Osaka(beads,save_path,imd=[128,128])
+
+    See Also
+    --------
+    load_osakaScan2D, load_SPE
+
+    TODO
+    ----
+    1) add physical data to store directly into files from experiment
+    """
+    # traverse dictionary
+    for m in fd:
+        # parameter
+        load_name = fd[m]
+        save_name = fd[m][:-4] + '_forMATLAB.tif'
+
+        # load and reshape data to list
+        dat = load_osakaScan2D(
+            load_name, imd=imd, overscan=overscan, nbr_det=nbr_det, reader=reader)
+        dat = np.reshape(dat, (np.prod(dat.shape[:2]),) + dat.shape[2:])
+
+        # put in row for easier processing
+        nip.imsave(dat, load_name[:-4] + '_forMATLAB.tif', form='tif',
+                   rescale=False, truncate=False, Floating=True)
+
+        # readin again
+        if reader == 2:
+            dat2 = tifimread(save_name)
+        else:
+            dat2 = nip.readim(save_name)
+
+        # compare datasets
+        if not np.allclose(dat, dat2):
+            raise ValueError('Stored and loaded data are not the same.')
+    # done?
+    return 'done'
 
 # %% ------------------------------------------------------
 # ---            Directory&Filestructure                ---
@@ -365,7 +461,7 @@ def load_osakaScan2D(im_path, imd=[128, 128], overscan=[1, 1.25], detd=[16, 16],
 #
 
 
-def rename_files(file_dir, extension='jpg',version=1):
+def rename_files(file_dir, extension='jpg', version=1):
     '''
     Renames numbered stack and inserts 0s so that readin it in works better.
     Leaves out image #9. Why?
@@ -383,37 +479,41 @@ def rename_files(file_dir, extension='jpg',version=1):
 
     # sorts the string-list ascending by length
     if len(file_list):
-        file_list.sort(key=len)  
+        file_list.sort(key=len)
         index_max_nbr = len(file_list)
-        file_max_length = len(file_list[-1])  
+        file_max_length = len(file_list[-1])
 
         # do renaming
         if not len(file_list[0]) == file_max_length:
             for myc in range(0, index_max_nbr-1):
                 file_len = len(file_list[myc])
                 if(file_len < file_max_length):
-                    #if version == 0:  # for older measurements structure was 'yyyy-mm-dd_techique_nbr_TECH_NIQUE.jpg'
+                    # if version == 0:  # for older measurements structure was 'yyyy-mm-dd_techique_nbr_TECH_NIQUE.jpg'
                     #    pos_help = re.search('_[0-9]+_', file_list[myc])
-                    #elif version == 1:  # for new structure, e.g '2019-07-12_Custom_7114.jpg'
+                    # elif version == 1:  # for new structure, e.g '2019-07-12_Custom_7114.jpg'
                     #    pos_help = re.search('_[0-9]+.', file_list[myc])
-                    #elif version == 2:  # for new structure, e.g '20190815-TYPE-Technique--00001.jpg'
+                    # elif version == 2:  # for new structure, e.g '20190815-TYPE-Technique--00001.jpg'
                     #    pos_help = re.search('--[0-9]+.', file_list[myc])
-                    #else:  # for new structure, e.g '20190815-TYPE-Technique-00001.jpg'
+                    # else:  # for new structure, e.g '20190815-TYPE-Technique-00001.jpg'
                     #    pos_help = re.search('-[0-9]+.', file_list[myc])
                     try:
-                        pos_help = re.search('(_|--|-)[0-9]+(.|_)', file_list[myc])
+                        pos_help = re.search(
+                            '(_|--|-)[0-9]+(.|_)', file_list[myc])
                         string_help = str(0)*(file_max_length-file_len)
                         offset = pos_help.start()+pos_help.lastindex-1
-                        os.rename(file_dir + file_list[myc], file_dir + file_list[myc][0:offset] + string_help + file_list[myc][offset:])
-                    except Exception as e: 
-                        print("Input file myc={}, hence: {} has wrong formatting. Exception: -->{}<-- raised. ".format(myc,file_list[myc],e))
-                        
+                        os.rename(file_dir + file_list[myc], file_dir + file_list[myc]
+                                  [0:offset] + string_help + file_list[myc][offset:])
+                    except Exception as e:
+                        print(
+                            "Input file myc={}, hence: {} has wrong formatting. Exception: -->{}<-- raised. ".format(myc, file_list[myc], e))
+
             brename = True
         tdelta = time.time()-tstart
         print('Renaming took: {0}s.'.format(tdelta))
 
-    else: 
-        print('No file with extension >{}< found in directory {}.'.format(extension,file_dir))
+    else:
+        print('No file with extension >{}< found in directory {}.'.format(
+            extension, file_dir))
         tdelta = 0
         brename = False
 
@@ -550,11 +650,12 @@ def stack2plot(x, ystack, refs=None, title=None, xlabel=None, ylabel=None, color
     return fig1
 
 
-def plot_save(ppointer, save_name, save_format='png',dpi=300):
+def plot_save(ppointer, save_name, save_format='png', dpi=300):
     '''
     Just an easy wrapper.
     '''
-    ppointer.savefig(save_name + f".{save_format}", dpi=dpi, bbox_inches='tight',format=save_format)
+    ppointer.savefig(save_name + f".{save_format}",
+                     dpi=dpi, bbox_inches='tight', format=save_format)
 
 
 # %% ------------------------------------------------------
@@ -601,8 +702,6 @@ def stack2tiles(im, tileshape=None):
 # ---                        Time                      ---
 # ---------------------------------------------------------
 #
-
-
 def format_time(tsec):
     '''
     Simple time formatter.
