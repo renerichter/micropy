@@ -379,7 +379,7 @@ def calculatePSF(obj, psf_params=None, method='brightfield', amplitude=False, **
         # calculate PSF and return
         psf, psfex, psfdet, pinhole = calculatePSF_confocal(
             obj=obj, psf_params=psf_params, psfp=psfp, **kwargs)
-        psf_res = [psf, psfex, psfdet, pinhole]
+        return psf, psfex, psfdet, pinhole
 
     elif method == '2photon':
         pass
@@ -400,9 +400,9 @@ def calculatePSF(obj, psf_params=None, method='brightfield', amplitude=False, **
                 obj=obj, psf_params=psf_params, method='confocal', amplitude=amplitude, psfex=psfex, psfdet=psfdet)
 
         # calculate resulting ISM-PSF
-        psf_eff, otf_eff, psfdet_array = calculatePSF_ism(
+        psf_eff, otf_eff, psfdet_array, shifts = calculatePSF_ism(
             psfex=psfex, psfdet=psfdet, psfdet_array=psfdet_array, shift_offset=shift_offset, nbr_det=nbr_det, fmodel=fmodel, pinhole=pinhole)
-        psf_res = [psf_eff, otf_eff, psfex, psfdet_array]
+        return psf_eff, otf_eff, psfex, psfdet_array
 
     elif method == 'sax':
         # fish entries from input-list
@@ -424,7 +424,7 @@ def calculatePSF(obj, psf_params=None, method='brightfield', amplitude=False, **
         # calculate total (confocal) PSF
         psf, psfex_sat, psfdet, pinhole = calculatePSF(
             obj=obj, psf_params=psf_params, method='confocal', amplitude=amplitude, psfex=psfex_sat, psfdet=psfdet)
-        psf_res = [psf, psfex, psfex_sat, psfdet, pinhole]
+        return psf, psfex, psfex_sat, psfdet, pinhole
 
     elif method == 'dsax':
         # fish entries from input-list
@@ -456,7 +456,7 @@ def calculatePSF(obj, psf_params=None, method='brightfield', amplitude=False, **
         #psfdetl = nip.image(np.array(psfdetl))
 
         # done?
-        psf_res = [psf_satl, psfex_satl, psfdetl, pinhole]
+        return psf_satl, psfex_satl, psfdetl, pinhole
 
     elif method == 'dsaxISM':
         # calculate DSAX-ISM PSF for amount of orders (with different excitation factors)
@@ -482,7 +482,7 @@ def calculatePSF(obj, psf_params=None, method='brightfield', amplitude=False, **
             otf_effl.append(otf_eff)
 
         # done?
-        psf_res = [psf_effl, otf_effl, psfex_satl, psfdetl, psfdet_array]
+        return psf_effl, otf_effl, psfex_satl, psfdetl, psfdet_array
 
     elif method == 'SIM':
         pass
@@ -490,9 +490,6 @@ def calculatePSF(obj, psf_params=None, method='brightfield', amplitude=False, **
         pass
     else:
         raise ValueError('Method not implemented yet.')
-
-    # done?
-    return psf_res
 
 
 def generate_pinhole(psf, psf_params, pshape='circular', pedge='hard'):
