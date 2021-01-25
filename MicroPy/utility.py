@@ -181,26 +181,88 @@ def image_getshift(im, im_ref, prec=100):
     return shift
 
 
+def findshift_stack(im1, imstack, prec=100, printout=False):
+    """Wrapper for findshift-routine  for stacks. Assumes 0th-dimension to be stack dimension. 
+
+    Parameters
+    ----------
+    im1 : image
+        Reference Image
+    imstack : image
+        stack of Shifted images
+    prec : int, optional
+        precision to be used. Eg 100 means two decimals sub-colon-precision, by default 100
+    printout : bool, optional
+        whether to print out results, by default False
+
+    Returns
+    -------
+    shifts : list
+        calculated shifts
+    errors : list
+        calculated errors
+    diffphases : list
+        phase-differences
+    tends : list
+        time needed for processing per calculation
+
+    See Also
+    --------
+    findshift, image_getshift
+
+    TODO
+    ----
+    1) parallelize to speed-up heavily without too much extra-RAM-usage
+
+    """
+    shifts = []
+    errors = []
+    diffphases = []
+    tends = []
+    for m in range(imstack.shape[0]):
+        shift, error, diffphase, tend = findshift(
+            im1=im1, im2=imstack[m], prec=prec, printout=printout)
+        shifts.append(shift)
+        errors.append(error)
+        diffphases.append(diffphase)
+        tends.append(tend)
+
+    return shifts, errors, diffphases, tends
+
+
 def findshift(im1, im2, prec=100, printout=False):
-    '''
+    """
     Just a wrapper for the Skimage function using sub-pixel shifts, but with nice info-printout.
     link: https://scikit-image.org/docs/dev/auto_examples/transform/plot_register_translation.html
 
-    Check "image_getshift" to use for a stack or with a reference.
+    Parameters
+    ----------
+    im1 : image
+        Reference Image
+    im2 : image
+        Shifted image
+    prec : int, optional
+        precision to be used. Eg 100 means two decimals sub-colon-precision, by default 100
+    printout : bool, optional
+        whether to print out results, by default False
 
-    :param:
-    =======
-    :im1: reference image
-    :im2: shifted image
-    :prec: upsample-factor = number of digits used for sub-pix-precision (for sub-sampling)
+    Returns
+    -------
+    shift : list
+        calculated shift-vector
+    error : list
+        translation invariant normalized RMS error between images
+    diffphase : list
+        global phase between images -> should be 0
+    tend : list
+        time needed for processing
 
-    :out:
-    =====
-    :shift: calculated shift-vector
-    :error: translation invariant normalized RMS error between images
-    :diffphase: global phase between images -> should be 0
-    :tend: time needed for processing
-    '''
+    See Also
+    --------
+    findshift_stack : simple enhancement for stacked images to a reference
+    image_getshift : more complex version for stack-comparison
+
+    """
     from time import time
     from skimage.feature import register_translation
     tstart = time()
