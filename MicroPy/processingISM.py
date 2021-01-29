@@ -834,6 +834,7 @@ def recon_weightedAveraging(imfl, otfl, pincenter, noise_norm=True, wmode='conj'
     dims = list(range(1, otfl.ndim, 1))
     validmask, _, _, _, _ = otf_get_mask(
         otfl, center_pinhole=pincenter, mode='rft', eps=1e-5, bool_mask=True, closing=closing)
+    ismWAN = []
 
     # In approximation of Poisson-Noise the Variance in Fourier-Space is the sum of the Mean-Values in Real-Space -> hence: MidVal(OTF); norm-OTF by sigma**2 = normalizing OTF to 1 and hence each PSF to individual sum=1
     sigma2_otfl = midVallist(otfl, dims, keepdims=True).real

@@ -229,15 +229,15 @@ def calculatePSF_sax(psfex, k_fluo):
     return psf
 
 
-def calculatePSF_ism(psfex, psfdet, psfdet_array=None, shifts=None, shift_offset=[2, 3], shift_axes=[-2, -1], shift_method='uvec', nbr_det=[3, 5], fmodel='rft', faxes=[-2, -1], pinhole=None):
+def calculatePSF_ism(psfex, psfdet=None, psfdet_array=None, shifts=None, shift_offset=[2, 3], shift_axes=[-2, -1], shift_method='uvec', nbr_det=[3, 5], fmodel='rft', faxes=[-2, -1], pinhole=None, do_norm=True):
     """ Generates the incoherent intensity ISM-PSF. Takes system excitation and emission PSF and assumes spatial invariance under translation on the detector. 
 
     Parameters
     ----------
     psfex : image
         excitation PSF
-    psfdet : image
-        detection PSF
+    psfdet : image, optional
+        detection PSF; if 'psfdet_array' is provided, than psfdet is not needed
     psfdet_array : list, optional
         1D-list of detection PSFs = detector. Generated from parameters if not given, by default None
     shifts : list, optional
@@ -265,6 +265,8 @@ def calculatePSF_ism(psfex, psfdet, psfdet_array=None, shifts=None, shift_offset
         1D list of effective OTFs per pinhole
     psfdet_array : list
         1D list of effective PSFs per pinhole
+    shifts : list
+        1D list of shifts to new detector positions
 
     Example:
     --------
@@ -295,7 +297,8 @@ def calculatePSF_ism(psfex, psfdet, psfdet_array=None, shifts=None, shift_offset
     psf_eff = psfex[np.newaxis] * psfdet_array
 
     # assure PSF is proper == sum to 1
-    psf_eff /= np.sum(psf_eff, keepdims=True)
+    if do_norm:
+        psf_eff /= np.sum(psf_eff, keepdims=True)
 
     # get OTF
     otf_eff = rftnd(psf_eff, raxis=faxes[0], faxes=faxes[1:]
