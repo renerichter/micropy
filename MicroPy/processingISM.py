@@ -839,10 +839,7 @@ def recon_weightedAveraging(imfl, otfl, pincenter, noise_norm=True, wmode='conj'
     # In approximation of Poisson-Noise the Variance in Fourier-Space is the sum of the Mean-Values in Real-Space -> hence: MidVal(OTF); norm-OTF by sigma**2 = normalizing OTF to 1 and hence each PSF to individual sum=1
     sigma2_otfl = midVallist(otfl, dims, keepdims=True).real
     weights = otfl / sigma2_otfl
-    #weightsn[~validmask] = 0
 
-    # norm max of OTF to 1 = norm sumPSF to 1;
-    #sigma2_imfl = mipy.midVallist(imfl,dims,keepdims=True).real
     if wmode == 'real':
         weights = weights.real
     elif wmode == 'imag':
@@ -860,7 +857,7 @@ def recon_weightedAveraging(imfl, otfl, pincenter, noise_norm=True, wmode='conj'
                         repeats=otfl.shape[0], axis=-otfl.ndim)] = 0
 
     # 1/OTF might strongly diverge outside OTF-support -> put Mask
-    eps = 0.01
+    eps = np.max(weightsn[0]*1e-03)
     wsum = np.array(weightsn[0])
     wsum = np.divide(np.ones(weightsn[0].shape, dtype=weightsn.dtype), np.sum(
         weightsn+eps, axis=0), where=validmask, out=wsum)
@@ -872,7 +869,24 @@ def recon_weightedAveraging(imfl, otfl, pincenter, noise_norm=True, wmode='conj'
 
     # noise normalize
     if noise_norm:
+        # noise normalize
+        sigma_nn = np.sqrt(np.sum(weightsn * weightsn * sigma2_otfl,axis=0))
+        ismWAN = np.zeros(ismWA.shape,dtype=ismWA.dtype)
+        ismWAN = np.divide(ismWA, sigma_nn, where=validmask, out=ismWAN)
+
+        
+        # get poisson noise for freqencies outside of support
+        im_waR = np.real(nip.ift(ismWAN))
+        im_waR /= np.var(im_waR, keepdims=True)
+        im_waFT = nip.ft2d(im_waR)*(1-validmask)
+
+        # noise-normalize
+
+
+        # theoretical PSF
+
         # noise-normalize, set zero outside of OTF-support
+
         sigman = np.array(weightsn[0])
         sigman = np.divide(np.ones(weightsn[0].shape, dtype=weightsn.dtype), np.sqrt(
             np.sum(weightsn * weights, axis=0)), where=validmask, out=wsum)
@@ -883,6 +897,7 @@ def recon_weightedAveraging(imfl, otfl, pincenter, noise_norm=True, wmode='conj'
         ismWANh = nip.poisson(ismWANh - ismWANh.min(), NPhot=None)
         ismWAN = ismWAN + nip.ft(ismWANh)*(1-validmask)
         ismWAN = nip.ift(ismWAN).real
+        # psfWAN =
 
     # return in real-space
     ismWA = nip.ift(ismWA).real
