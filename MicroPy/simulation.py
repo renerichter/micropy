@@ -229,7 +229,7 @@ def calculatePSF_sax(psfex, k_fluo):
     return psf
 
 
-def calculatePSF_ism(psfex, psfdet=None, psfdet_array=None, shifts=None, shift_offset=[2, 3], shift_axes=[-2, -1], shift_method='uvec', nbr_det=[3, 5], fmodel='rft', faxes=[-2, -1], pinhole=None, do_norm=True):
+def calculatePSF_ism(psfex, psfdet=None, psfdet_array=None, shifts=None, shift_offset=[[2, 0], [0, 3]], shift_axes=[-2, -1], shift_method='uvec', nbr_det=[3, 5], fmodel='rft', faxes=[-2, -1], pinhole=None, do_norm=True):
     """ Generates the incoherent intensity ISM-PSF. Takes system excitation and emission PSF and assumes spatial invariance under translation on the detector. 
 
     Parameters

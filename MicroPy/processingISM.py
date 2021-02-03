@@ -775,7 +775,7 @@ def recon_sheppardSUM(im, nbr_det, pincenter, shift_method='nearest', shift_map=
     return imshepp, shift_map, pinmask, pincenter
 
 
-def recon_weightedAveraging(imfl, otfl, pincenter, noise_norm=True, wmode='conj', fmode='fft', fshape=None, closing=2, suppcomp=False):
+def recon_weightedAveraging(imfl, otfl, pincenter, noise_norm=True, wmode='conj', fmode='fft', fshape=None, closing=2, suppcomp=False, eps=1e-4):
     """Weighted Averaging for multi-view reconstruction. List implementation so that it can be applied to multiple Data-sets. Needs list of PSFs (list) for different images (=views). 
     Note, make sure that:  
         -> applied FT is the same in both cases
@@ -809,6 +809,8 @@ def recon_weightedAveraging(imfl, otfl, pincenter, noise_norm=True, wmode='conj'
         Closing to be used for closed OTF-support -> see otf_get_mask for more infos, by default 2
     suppcomp : bool, optional
         gives back an image with the comparison of the noise-level vs support size, by default False
+    eps : float, optional
+        relative intensity used to calculate OTF support
 
     Returns
     -------
@@ -833,7 +835,7 @@ def recon_weightedAveraging(imfl, otfl, pincenter, noise_norm=True, wmode='conj'
     # parameter
     dims = list(range(1, otfl.ndim, 1))
     validmask, _, _, _, _ = otf_get_mask(
-        otfl, center_pinhole=pincenter, mode='rft', eps=1e-5, bool_mask=True, closing=closing)
+        otfl, center_pinhole=pincenter, mode='rft', eps=eps, bool_mask=True, closing=closing)
     ismWAN = []
 
     # In approximation of Poisson-Noise the Variance in Fourier-Space is the sum of the Mean-Values in Real-Space -> hence: MidVal(OTF); norm-OTF by sigma**2 = normalizing OTF to 1 and hence each PSF to individual sum=1
@@ -857,10 +859,10 @@ def recon_weightedAveraging(imfl, otfl, pincenter, noise_norm=True, wmode='conj'
                         repeats=otfl.shape[0], axis=-otfl.ndim)] = 0
 
     # 1/OTF might strongly diverge outside OTF-support -> put Mask
-    eps = np.max(weightsn[0]*1e-03)
+    aeps = np.max(weightsn[0]*eps)
     wsum = np.array(weightsn[0])
     wsum = np.divide(np.ones(weightsn[0].shape, dtype=weightsn.dtype), np.sum(
-        weightsn+eps, axis=0), where=validmask, out=wsum)
+        weightsn+aeps, axis=0), where=validmask, out=wsum)
     #wsum = 1.0/np.sum(weightsn+eps,axis=0)
     # wsum[~validmask]=0
 
@@ -870,34 +872,15 @@ def recon_weightedAveraging(imfl, otfl, pincenter, noise_norm=True, wmode='conj'
     # noise normalize
     if noise_norm:
         # noise normalize
-        sigma_nn = np.sqrt(np.sum(weightsn * weightsn * sigma2_otfl,axis=0))
-        ismWAN = np.zeros(ismWA.shape,dtype=ismWA.dtype)
-        ismWAN = np.divide(ismWA, sigma_nn, where=validmask, out=ismWAN)
-
-        
+        sigma_nn = np.sqrt(np.sum(weightsn * weightsn * sigma2_otfl, axis=0))
+        ismWAN = np.ones(ismWA.shape, dtype=ismWA.dtype)
+        ismWAN = np.divide(ismWA, sigma_nn + np.max(sigma_nn)*eps, where=validmask, out=ismWAN)
+        #nip.v5(nip.catE(ismWA, ismWAN))
         # get poisson noise for freqencies outside of support
-        im_waR = np.real(nip.ift(ismWAN))
-        im_waR /= np.var(im_waR, keepdims=True)
-        im_waFT = nip.ft2d(im_waR)*(1-validmask)
-
-        # noise-normalize
-
-
-        # theoretical PSF
-
-        # noise-normalize, set zero outside of OTF-support
-
-        sigman = np.array(weightsn[0])
-        sigman = np.divide(np.ones(weightsn[0].shape, dtype=weightsn.dtype), np.sqrt(
-            np.sum(weightsn * weights, axis=0)), where=validmask, out=wsum)
-        ismWAN = np.sum(imfl * weightsn, axis=0) * sigman
-
-        # get Poisson-noise for Frequencies > k_cutoff right
-        ismWANh = np.real(nip.ift(ismWAN))
-        ismWANh = nip.poisson(ismWANh - ismWANh.min(), NPhot=None)
-        ismWAN = ismWAN + nip.ft(ismWANh)*(1-validmask)
+        #im_waR = np.real(nip.ift(ismWAN))
+        #im_waR /= np.var(im_waR, keepdims=True)
+        #im_waFT = nip.ft2d(im_waR)*(1-validmask)
         ismWAN = nip.ift(ismWAN).real
-        # psfWAN =
 
     # return in real-space
     ismWA = nip.ift(ismWA).real
