@@ -198,3 +198,99 @@ def fwrap(f, n, T, a):
     wraps the period onto a function.
     '''
     return a*f(2*np.pi*n/T)
+
+
+# %%
+# ------------------------------------------------------------------
+#                     COORDINATE-TRANSFORMATIONS
+# ------------------------------------------------------------------
+
+
+def polar2cartesian(outcoords, inputshape, origin, **kwargs):
+    """Function to convert incoming [x,y]-coordinate pair to according polar [ρ,φ]-coordinate pair. 
+    Can serve as u_func or for arrays of arbitrary length: 
+
+    Directly copied from: https://stackoverflow.com/a/2418537
+
+    Parameters
+    ----------
+    outcoords : tuple
+        coordinates (x,y) to be used for calculation 
+    inputshape : tuple
+        shape of input-image -> assumes [ρ,φ] order
+    origin : list
+        offset points for the origin of the processing
+
+    Returns
+    -------
+    (r,phi) : tuple
+        resulting coordinates
+
+    See Also
+    --------
+    polar2cartesian
+
+    TODO: 
+    -----
+    1) fix rotation and offset
+    2) not closing the circle, eg
+    >>> a = np.zeros([90,360])
+    >>> a[45,:] = 1
+    >>> b = geometric_transform(a, polar2cartesian, order=0, output_shape=(
+    a.shape[0] * 2, a.shape[0] * 2), extra_keywords={'inputshape': a.shape, 'origin': (a.shape[0], a.shape[0])})
+    >>> print(b[45,90] - b[135,90]) # problem!
+    """
+    xindex, yindex = outcoords
+    x0, y0 = origin
+    x = xindex - x0
+    y = yindex - y0
+
+    r = np.sqrt(x*x + y*y)
+    phi = np.arctan2(y, x)
+    phi_index = np.round((phi + np.pi) * inputshape[1] / (2 * np.pi))
+
+    return (r, phi_index)
+
+
+def cartesian2polar(outcoords, origin, outshape, printout=False, **kwargs):
+    """Inverse function to polar2cartesian.
+
+    Parameters
+    ----------
+    outcoords : tuple
+        coordinates (x,y) to be used for calculation 
+    origin : tuple
+        offset points for the origin of the processing
+    outshape : tuple
+        shape of output-image -> assumes [y,x] order
+
+    Returns
+    -------
+    (r,phi) : tuple
+        resulting coordinates
+
+    See Also
+    --------
+    polar2cartesian
+
+    TODO: 
+    -----
+    1) fix such that it works with scipy.ndimage.geometric_transform
+    >>> asize = [90,90]
+    >>> a = ((nip.rr(asize) < 45)*(nip.rr(asize) >=44))*1
+    >>> b = geometric_transform(a, cart2polar, order=0, output_shape=outs_, extra_keywords={
+                               'outshape': (asize[1]//2,360), 'origin': (0, 0)})
+    """
+    r, f = outcoords
+    r0, f0 = origin
+
+    # subtract offset
+    r = r + r0
+    f = f + f0
+
+    x = r*np.cos(f/outshape[1]*2*np.pi)
+    y = r*np.sin(f/outshape[1]*2*np.pi)
+    if printout:
+        print(
+            f"r={np.round(r,2)}, f={np.round(f,2)}, x={np.round(x,2)}, y={np.round(y,2)}")
+    return (x, y)

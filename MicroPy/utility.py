@@ -654,6 +654,78 @@ def gen_shift_npfunc(soff, pix):
         np.arange(-int(pix[1]/2.0), int(pix[1]/2.0)+1)[:, np.newaxis], pix[0], 1).flatten()
     shiftarr = [[soff[0]*m, soff[1]*n] for m, n in zip(b, a)]
     return shiftarr
+
+
+def center_of_mass(im, com_axes=(-2, -1), im_axes=(-2, -1), placement='corner'):
+    """Calculates the center of mass for multiple directions.
+
+    Parameters
+    ----------
+    im : image (ndarray)
+        input image
+    com_axes : tuple, optional
+        Directions of center-of-mass calculations , by default (-2,-1)
+    im_axes : tuple, optional
+        axes that mark the image dimensions eg (-2,-1) if image is of shape [pinhole,channel,y,x], by default (-2, -1)
+    placement : str, optional
+        whether to calculate distances to central pixel of the roi or to the corner -> for options see nip.ramp, by default 'corner'
+
+    Returns
+    -------
+    com1D : list
+        Positions of center-of-mass along direction 'com_axis'
+
+    Example
+    -------
+    >>> obj = nip.readim('orka')
+    >>> com = center_of_mass(im, com_axes=(-2,-1), im_axes=(-2, -1), placement='corner')
+
+    See Also
+    --------
+    center_of_mass_1D
+    """
+    res = []
+    for m, comd in enumerate(com_axes):
+        com1D = center_of_mass_1D(im, com_axis=comd, im_axes=im_axes, placement=placement)
+        res.append(com1D)
+    res = np.array(res)
+
+    # done?
+    return res
+
+
+def center_of_mass_1D(im, com_axis=0, im_axes=(-2, -1), placement='corner'):
+    """Calculates the center-of-mass in 1 dimension. 
+
+    Parameters
+    ----------
+    im : image (ndarray)
+        input image
+    com_axis : int, optional
+        Direction of center-of-mass calculation , by default 0
+    im_axes : tuple, optional
+        axes that mark the image dimensions eg (-2,-1) if image is of shape [pinhole,channel,y,x], by default (-2, -1)
+    placement : str, optional
+        whether to calculate distances to central pixel of the roi or to the corner -> for options see nip.ramp, by default 'corner'
+
+    Returns
+    -------
+    com1D : float
+        Position of center-of-mass along direction 'com_axis'
+
+    Example
+    -------
+    >>> obj = nip.readim('orka')
+    >>> center_of_mass_x = center_of_mass_1D(im, com_axis=0, im_axes=(-2, -1), placement='corner')
+    """
+    coords = nip.ramp(im.shape, ramp_dim=com_axis, placement=placement)
+    density = np.sum(im, axis=im_axes)
+    mass = np.sum(coords*im, axis=im_axes)
+    com1D = mass / density
+
+    # done?
+    return com1D
+
 # %%
 # ------------------------------------------------------------------
 #                       PINHOLE-MANIPULATIONS
@@ -1024,26 +1096,18 @@ def midVallist(iml, dims, method='iter', keepdims=False):
 
     Returns
     -------
-    [type]
-        [description]
+    midl : list
+        found central values 
+
+    Example
+    -------
+    >>> print(mipy.midVallist(nip.readim('orka'),dims=(1,)))
+
+    See Also
+    --------
+    get_center
+
     """
-    '''
-    
-    Note:
-
-    :PARAM:
-    =======
-    :iml:           
-
-    :OUT:
-    =====
-    :midl:          (LIST) of midVals
-
-    :EXAMPLE:
-    ========
-    midl = mipy.midVallist(nip.readim(),dims=(1,))
-
-    '''
     # get parameters
     orish = list(iml.shape)
     imds = len(orish)
@@ -1121,6 +1185,101 @@ def mask_from_dist(detdist, radius_outer, radius_inner=0.0):
     # select
     sel_mask = (detdist >= radius_inner) * (detdist <= radius_outer)
     return sel_mask
+
+
+def get_center(obj):
+    """Get center position of image.
+
+    Parameters
+    ----------
+    obj : image (ndarray)
+        input image
+
+    Returns
+    -------
+    center : ndarray
+        center-position
+
+    Example
+    -------
+    >>> nip.readim('orka')
+    >>> print(mipy.get_center(obj))
+
+    See Also
+    --------
+    midVallist
+    """
+    return np.array(obj.shape)//2
+
+
+def set_val_atpos(obj, val, pos):
+    """Sets Value of an array at a particular position.
+    Note: the function diretly works on the input object and hence does not need any output.
+
+    Parameters
+    ----------
+    obj : image (ndarray)
+        input image
+    val : float/...
+        value to be set
+    pos : list
+        position to be set
+
+    Example
+    -------
+    >>> a = np.reshape(np.arange(12),[3,4])
+    >>> b = np.copy(a)
+    >>> mipy.set_val_atpos(a,100,[2,2])
+    >>> print(b-a)
+    """
+    posn = np.ravel_multi_index(pos, obj.shape)
+    obj.flat[posn] = val
+
+# %% -----------------------------------------------------
+# ----              VIEWER INTERACTION
+# --------------------------------------------------------
+
+
+def get_coords_from_markers(im, viewer=None, cdim=2):
+    """Get coordinates from clicks in an image.
+    Inspired by: nip.findTransformFromMarkers
+
+    Parameters
+    ----------
+    im : image
+        Image for selection
+    viewer : nip.v5 object, optional
+        viewer reference if image is already opened, by default None
+    cdim : int, optional
+        dimensions to be extracted from the selection -> on default the last two dimensions are extracted, by default 2
+
+    Returns
+    -------
+    markers
+        list of selections 
+    viewer
+        [description]
+
+    Example
+    -------
+    >>> obj = nip.readim('orka')
+    >>> viewer = nip.v5(obj)
+    >>> markers, _ = get_coords_from_markers(obj, viewer=viewer, cdim=2)
+
+    Note
+    ----
+    See also 
+    """
+
+    if viewer is None:
+        viewer = nip.v5(im)
+        input('Please position markers (press "m") in alternating elements (toggle with "e") or simply alternating positions.\nUse "0" or "9" to step through markers and "M" to delete a marker.\n "A" and "a" to Zoom.\nTo turn off the automatic maximum search for marker positioning use the menu "n".')
+
+    if viewer is not None:
+        markers = viewer.getMarkers()
+        markers = np.array(markers)[:, -cdim:]
+
+    return markers, viewer
 
 
 # %% -----------------------------------------------------

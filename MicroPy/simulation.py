@@ -3,8 +3,8 @@ All data generating functions will be found in here.
 '''
 # mipy imports
 from .basicTools import sanityCheck_structure
-from .transformations import irft3dz, rft3dz, rftnd
-from .utility import shiftby_list, add_multi_newaxis
+from .transformations import irft3dz, rft3dz, rftnd, polar2cartesian
+from .utility import shiftby_list, add_multi_newaxis, set_val_atpos, get_center
 
 # external imports
 import copy
@@ -152,6 +152,146 @@ def generate_testobj(test_object=3, mypath=''):
         im = nip.readim('obj3d')[::2, :, :]
 
     return im
+
+
+def generate_spokes_target(imsize=[128, 128], nbr_spokes=14, method='cart'):
+    """Generate spokes target. 
+    Interestingly, method "polar" is rather imprecise and shifted. 
+
+    Parameters
+    ----------
+    imsize : list, optional
+        Size of resulting image, by default [128,128]
+    nbr_spokes : int, optional
+        Number of Spokes generated., by default 14
+    method : str, optional
+        Method to be used for calculation, by default 'cart'
+            'polar' : generate spokes in polar coordinates and apply coordinate transform
+            'cart' : calculate directly in cartesian coordinates
+
+    Returns
+    -------
+    spokes_cart : image
+        Image of Spokes Target in cartesian coordinates.
+
+    Example
+    -------
+    >>> spokes_cart = generate_spokes_target(imsize=[128, 128], nbr_spokes=14, method='cart')
+    >>> spokes_polar = generate_spokes_target(imsize=[64, 64], nbr_spokes=14, method='polar')
+    >>> nip.v5(nip.catE(spokes_cart, np.rot90(spokes_polar, k=1)))
+
+    See Also
+    -------
+    generate_tilted_stripes, polar2cartesian, scipy.ndimage.geometric_transform
+    """
+    # via coordinate transformations
+    if method == 'polar':
+        phi = nip.xx(imsize, placement='corner')/imsize[-1]*2*np.pi*nbr_spokes
+        spokes_polar = (np.sin(phi) > 0)*1
+        spokes_cart = geometric_transform(spokes_polar, polar2cartesian, order=0, output_shape=(
+            imsize[0] * 2, imsize[0] * 2), extra_keywords={'inputshape': imsize, 'origin': (imsize[0], imsize[0])})
+    else:
+        spokes_cart = (nip.image(np.sin(nip.phiphi(imsize)*nbr_spokes)) > 0)*1
+
+    # done?
+    return spokes_cart
+
+
+def generate_tilted_stripes(imsize=[128, 128], offset=0.7, repfac=12):
+    """Generates an array of tilted stripes (=stripes of increasing/decreasing period per row).
+
+    Parameters
+    ----------
+    imsize : list, optional
+        size of image, by default [128, 128]
+    offset : float, optional
+        period-size offset to start with in y-direction, by default 0.7
+    repfac : int, optional
+        periods for x-direction, by default 12
+
+    Returns
+    -------
+    siny : image
+        generated stripe pattern
+
+    Example
+    -------
+    >>> nip.v5(mipy.generate_tilted_stripes())
+
+    See Also
+    --------
+    generate_spokes_target
+
+    TODO
+    ----
+    1) fix for straight rather than curved increased stripes
+    """
+    # generate arrays
+    x = nip.xx(imsize)
+    y = nip.yy(imsize)
+
+    # calculate periodical structure
+    siny = np.sin(((y/y.shape[-2]+offset)*x/x.shape[-1])*2*np.pi*repfac)
+
+    # done?
+    return siny
+
+
+def generate_obj_beads(imsize=[128, 128], srange=[4, 7], amount=20, nphot=None):
+    """Generate some beads with random size and positions (given restrictions).
+    For now: limited to unitary σ-size for all image dimensions. 
+
+    Parameters
+    ----------
+    imsize : list, optional
+        size of the final image, by default [128,128]
+    srange : list, optional
+        limits for lower and upper boundary of σ(Gauss) that will be used for bead-calculation, by default [4,7]
+    amount : int, optional
+        number of beads to be calculated -> note: collision detection not included and hence beads can stack!, by default 20
+    nphot : int, optional
+        if given, poisson-noise will be added with 'nphot' as maximum λ, by default None
+
+    Returns
+    -------
+    obj : image (ndarray)
+        generated Bead-image
+
+    Example
+    -------
+    >>> obj = generate_obj_beads(nphot=10)
+    >>> nip.v5(obj)
+
+    See Also
+    --------
+    generate_testobj, generate_pinhole, ismR_generateRings
+    """
+
+    # sanity
+    imsize = np.array(imsize)
+
+    # prepare array
+    obj = np.zeros(imsize)
+    bead = np.copy(obj)
+
+    set_val_atpos(bead, 10, get_center(bead))
+
+    # create beads and move
+    for m in range(amount):
+        bead_shift = np.random.rand(len(imsize))*(imsize-1) - imsize//2
+        bead_sigma = float(srange[0] +
+                           np.random.rand(1)*(srange[1]-srange[0]))
+        beadh = nip.gaussian_filter(bead, bead_sigma)
+        obj += nip.shift(beadh, bead_shift, axes=np.arange(len(bead_shift)))
+
+    # normalize to max-photon
+    if nphot is not None:
+        obj -= obj.min(keepdims=True)
+        obj = (obj / np.max(obj)) * nphot
+        obj = nip.poisson(obj)
+
+    # Done?
+    return obj
 
 
 def ismR_defaultIMG(obj, psf, NPhot=None, use2D=True):
