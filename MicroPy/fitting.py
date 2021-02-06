@@ -26,7 +26,7 @@ def extract_PSFlist(im, ref=None, markers=None, list_dim=0, im_axes=(-2, -1), be
     im : list
         List of images (ndarray)
     ref : image (ndarray), optional
-        reference image to be used for finding marker positions, by default None
+        reference image to be used for finding marker positions (eg mean image along stack-dimension), by default None
     markers : list, optional
         see 'extract_multiPSF', by default None
     list_dim : int, optional
@@ -65,13 +65,18 @@ def extract_PSFlist(im, ref=None, markers=None, list_dim=0, im_axes=(-2, -1), be
     paras = []
 
     # loop through all list-entries
-    for m, img in im:
+    for m in range(im.shape[list_dim]):
         gaussfit, residuum, beads, para, markers = extract_multiPSF(
-            im, markers=markers, im_axes=(-2, -1), bead_roi=[16, 16], compare=False)
+            im[m], markers=markers, im_axes=im_axes, bead_roi=bead_roi, compare=False)
         gaussfits.append(gaussfit)
         residuums.append(residuum)
         beadls.append(beads)
         paras.append(para)
+
+    # convert to image
+    gaussfits = nip.image(np.array(gaussfits))
+    residuums = nip.image(np.array(residuums))
+    beadls = nip.image(np.array(beadls))
 
     # done?
     return gaussfits, residuums, beadls, paras, markers
@@ -137,9 +142,9 @@ def extract_multiPSF(im, markers=None, im_axes=(-2, -1), bead_roi=[16, 16], comp
     com = center_of_mass(beads, com_axes=im_axes, im_axes=im_axes, placement='corner')
     com_mean = np.mean(com, axis=-1, keepdims=True)
     com_dist = lp_norm(com-com_mean, p=2, normaxis=(-2,))
-    print(f"l2-distances={com}")
+    # print(f"l2-distances={com}")
     bead_ref = np.argmin(com_dist)
-    print(f"referenceBead={bead_ref}")
+    # print(f"referenceBead={bead_ref}")
 
     # correlate and find respective centers
     for m, bead in enumerate(beads):
@@ -167,7 +172,7 @@ def extract_multiPSF(im, markers=None, im_axes=(-2, -1), bead_roi=[16, 16], comp
         FWHM_x = 2*(para[3] * np.sqrt(-np.log(0.5)*2))
         FWHM_y = 2*(para[4] * np.sqrt(-np.log(0.5)*2))
         para = np.array(list(para).append([FWHM_x, FWHM_y]))
-        print(f"FWHMx={FWHM_x}\nFWHMy={FWHM_y}")
+        # print(f"FWHMx={FWHM_x}\nFWHMy={FWHM_y}")
 
     if compare:
         compare_beads = nip.cat((beads, bead_sum, gaussfit, residuum), axis=0, destdims=3)
