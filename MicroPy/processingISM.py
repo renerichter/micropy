@@ -10,7 +10,7 @@ from deprecated import deprecated
 
 # mipy imports
 from .transformations import irft3dz
-from .utility import findshift, midVallist, pinhole_shift, pinhole_getcenter, add_multi_newaxis, shiftby_list, subslice_arbitrary
+from .utility import findshift, midVallist, pinhole_shift, pinhole_getcenter, add_multi_newaxis, shiftby_list, subslice_arbitrary, mask_from_dist
 from .inout import stack2tiles
 
 
@@ -639,7 +639,7 @@ def recon_confocal(im, detdist, pinsize=0, pincenter=None, pinmask=None):
 
     # get pinmask
     if pinmask is None:
-        pinmask = detdist <= pinsize
+        pinmask = mask_from_dist(detdist=detdist, radius_outer=pinsize, radius_inner=0.0)
 
     # calculate confocal image
     im_conf = np.squeeze(np.sum(im[pinmask], axis=0))

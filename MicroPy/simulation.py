@@ -411,7 +411,7 @@ def calculatePSF_ism(psfex, psfdet=None, psfdet_array=None, shifts=None, shift_o
     Example:
     --------
     >>> psfex = nip.psf2d()
-    >>> psf_eff, otf_eff, psfdet_array = mipy.calculatePSF_ism(psfex, psfex)
+    >>> psf_eff, otf_eff, psfdet_array, shifts = mipy.calculatePSF_ism(psfex, psfex)
 
     TODO: 
     -----

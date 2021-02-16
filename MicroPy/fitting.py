@@ -66,7 +66,7 @@ def extract_PSFlist(im, ref=None, markers=None, list_dim=0, im_axes=(-2, -1), be
 
     # loop through all list-entries
     for m in range(im.shape[list_dim]):
-        gaussfit, residuum, beads, para, markers = extract_multiPSF(
+        gaussfit, residuum, beads, para, markers, _ = extract_multiPSF(
             im[m], markers=markers, im_axes=im_axes, bead_roi=bead_roi, compare=False)
         gaussfits.append(gaussfit)
         residuums.append(residuum)
@@ -112,6 +112,8 @@ def extract_multiPSF(im, markers=None, im_axes=(-2, -1), bead_roi=[16, 16], comp
         Gauss-fit parameters, shape: (amplitude, center_x, center_y, sigma_x, sigma_y, rotation, offset); only for 2D: additionally [FWHM_x,FWHM_y] are appended on the list
     markers : list
         Center Positions of selected beads used for PSF calculation
+    bead_comp : list
+        reference to viewers that display bead-comparison if compare==True, by default []
 
     Example
     -------
@@ -157,8 +159,9 @@ def extract_multiPSF(im, markers=None, im_axes=(-2, -1), bead_roi=[16, 16], comp
     bead_sum = np.mean(beads, axis=0)
 
     # shift mean to center
-    bead_sum_com = np.mean(center_of_mass(bead_sum, com_axes=im_axes,
-                                          im_axes=im_axes, placement='corner'), axis=-1, keepdims=True)
+    #bead_sum_com = np.mean(center_of_mass(bead_sum, com_axes=im_axes,im_axes=im_axes, placement='corner'), axis=-1, keepdims=True)
+    bead_sum_com = center_of_mass(bead_sum, com_axes=im_axes, im_axes=im_axes, placement='corner')
+
     beadf = nip.shift(bead_sum, roi_center-bead_sum_com, axes=im_axes, dampOutside=False)
 
     # fit 2D-Gauss -> para =(amplitude, center_x, center_y, sigma_x, sigma_y, rotation, offset)
@@ -171,13 +174,17 @@ def extract_multiPSF(im, markers=None, im_axes=(-2, -1), bead_roi=[16, 16], comp
     if len(im_axes) == 2:
         FWHM_x = 2*(para[3] * np.sqrt(-np.log(0.5)*2))
         FWHM_y = 2*(para[4] * np.sqrt(-np.log(0.5)*2))
-        para = np.array(list(para).append([FWHM_x, FWHM_y]))
+        para = list(para)
+        para.append([FWHM_x, FWHM_y])
+        para = np.array(para)
         # print(f"FWHMx={FWHM_x}\nFWHMy={FWHM_y}")
 
+    bead_comp = []
     if compare:
-        compare_beads = nip.cat((beads, bead_sum, gaussfit, residuum), axis=0, destdims=3)
-        nip.v5(stack2tiles(compare_beads))
-        nip.v5(compare_beads[:, np.newaxis])
+        compare_beads = nip.cat((beads, beadf, gaussfit, residuum), axis=0, destdims=3)
+        v1 = nip.v5(stack2tiles(compare_beads))
+        v2 = nip.v5(compare_beads[:, np.newaxis])
+        bead_comp = [v1, v2]
 
     # done?
-    return gaussfit, residuum, beads, para, markers
+    return gaussfit, residuum, beads, para, markers, bead_comp

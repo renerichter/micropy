@@ -526,16 +526,18 @@ def gen_shift(method='uvec', **kwargs):
     return shiftarr
 
 
-def gen_shift_uvec(uvec=[[1, 0], [0, 1]], nbr=[2, 3]):
-    """Calculates coordinates for an equally spaced array around a center. Use with e.g. shiftby_list to generate a shifted set of images.
+def gen_shift_uvec(uvec=[[1, 0], [0, 1]], nbr=[2, 3], center=None):
+    """Calculates coordinates for an equally spaced array around a center (standard=image center). Use with e.g. shiftby_list to generate a shifted set of images.
     For now, only useable for a 2D-shift array. Still, unit-vectors (uvec) can be of arbitrary dimensionality.
 
     Parameters
     ----------
     uvec : list
         list of N nD-unit-vectors, by default [[1, 0], [0, 1]]
-    nbr : list
+    nbr : array
         number of shifts per unit-vector direction, by default [2, 3]
+    center: array
+        central pixel, by default None
 
     Returns
     -------
@@ -565,16 +567,17 @@ def gen_shift_uvec(uvec=[[1, 0], [0, 1]], nbr=[2, 3]):
         uvec = np.array(uvec)
     if type(nbr) is not np.ndarray:
         nbr = np.array(nbr)
+    if center is None:
+        center = nbr/2.0
 
     # allocate storage and assure centered shifting
     shiftarr = np.zeros(list(nbr)+[len(uvec[0]), ])
-    nbrs = -np.array(nbr/2.0, dtype='int8')
 
     # loop over shift dimensions
     for m in range(nbr.size):
         # generate shift-distance
         shifth = np.reshape(
-            np.array(nbrs[m]+np.arange(nbr[m])), [nbr[m], 1])*uvec[m]
+            np.array(np.arange(nbr[m])-center[m]), [nbr[m], 1])*uvec[m]
 
         # add right dimensionality for broadcasting
         shifth = add_multi_newaxis(shifth, [0, ]*m+[-2, ]*(nbr.size-1-m))
@@ -684,6 +687,12 @@ def center_of_mass(im, com_axes=(-2, -1), im_axes=(-2, -1), placement='corner'):
     --------
     center_of_mass_1D
     """
+    # sanity
+    if not type(com_axes) == tuple:
+        com_axes = tuple(com_axes)
+    if not type(im_axes) == tuple:
+        com_axes = tuple(im_axes)
+
     res = []
     for m, comd in enumerate(com_axes):
         com1D = center_of_mass_1D(im, com_axis=comd, im_axes=im_axes, placement=placement)
@@ -732,8 +741,8 @@ def center_of_mass_1D(im, com_axis=0, im_axes=(-2, -1), placement='corner'):
 # ------------------------------------------------------------------
 
 
-def pinhole_getcenter(im, method='sum', saxis=None):
-    """Uses argmax to find pinhole center assuming axis=(0,1)=pinhole_axes and axis=(-2,-1)=sample-axis. Calculates shift-mask.
+def pinhole_getcenter(im, method='sum', saxis=None, posfind='argmax', gauss_sigma=None):
+    """Uses argmax to find pinhole center assuming axis=(0,1)=pinhole_axes and saxis=(-2,-1)=sample-axis. Calculates shift-mask.
 
     Parameters
     ----------
@@ -743,11 +752,17 @@ def pinhole_getcenter(im, method='sum', saxis=None):
         method used to calculate center position, implemented: 'sum', 'mean', 'max', 'min'. If too many images are checked, mean of abs of image is better than sum, by default 'sum'
     saxis : tuple, optional
         Axis to be used for searching for the center pinhole, by default None
+    posfind : str, optional
+        method to find maximum position, by default argmax
+            'argmax': uses np.argmax
+            'com': uses center_of_mass
+    gauss_sigma : list, optional
+        sigma of gauss per dimension -> if given, nD-Gauss is applied before maximum finding, by default None
 
     Returns
     -------
     pinhc : list
-        coordinates of pinhole-center
+        coordinates of pinhole-center in left-over dimensional shape
     smask : list
         shift-coordinates necessary to be used with nip.extract() to shift image center to new center position
     maskshape : list
@@ -774,8 +789,18 @@ def pinhole_getcenter(im, method='sum', saxis=None):
     else:
         raise ValueError("Chosen method not implemented")
 
+    # smoothen
+    im_detprojm = im_detproj
+    if gauss_sigma is not None:
+        im_detprojm = nip.gaussf(im_detproj, gauss_sigma)
+
     # find center via maximum-point
-    pincenter = np.argmax(im_detproj)
+    if posfind == 'argmax':
+        pincenter = np.argmax(im_detprojm)
+        pincenter = np.unravel_index(pincenter, im_detproj.shape)
+    else:
+        imdim = tuple(np.arange(im_detproj.ndim))
+        pincenter = center_of_mass(im_detprojm, com_axes=imdim, im_axes=imdim)
 
     # done?
     return pincenter, im_detproj
@@ -1433,7 +1458,7 @@ def visualize_extrema_1D(flatim, localmax, value, output_shape):
 # ------------------------------------------------------------------
 
 
-@deprecated(version='0.1.3', reason='General Change of ISM-interface lead to rather use distances instead of rectangular geometry to allow for arbitrary shapes. See recon_generateRings for more.')
+@deprecated(version='0.1.3', reason='General Change of ISM-interface lead to rather use distances instead of rectangular geometry to allow for arbitrary shapes. See mask_from_dist for more.')
 def ismR_generateRings(det_geo=[0, 0], ring=0, aslist=True):
     '''
     Generates binary mask for selection of rings for deconvolution. Assumes 2D detector distribution geometry.
