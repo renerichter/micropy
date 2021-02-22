@@ -544,7 +544,7 @@ def recon_sheppardShift(im, shift_map, method='parallel', use_copy=False):
     return imshifted
 
 
-def recon_sheppardSUMming(im, pinmask=None):
+def recon_sheppardSUMming(im, pinmask=None, sum_method='normal'):
     """Does the actual summing operation for the sheppard sum routine. 
 
     Parameters
@@ -553,11 +553,17 @@ def recon_sheppardSUMming(im, pinmask=None):
         pre-(sheppard) shifted image
     pinmask : bool-list, optional
         mask to be used for summing operation, by default None
+    sum_method : str, optional
+        method to be used for sheppard summing, by default 'normal'
+            'normal': sum without any weighting
+            'invvar': inverse variance weighted summing
 
     Returns
     -------
     imshepp: image
         sheppard shifted imag
+    weights : image
+        weights used for summing
 
     See Also
     --------
@@ -566,12 +572,23 @@ def recon_sheppardSUMming(im, pinmask=None):
     # sum over all pinholes if different pinmask not provided
     if pinmask is None:
         pinmask = [True, ]*im.shape[0]
+    weights = []
 
-    # sum
-    imshepp = np.sum(im[pinmask], axis=0)
+    # su
+    if sum_method == 'invvar':
+        imvar = np.var(im[pinmask], axis=tuple(np.arange(im.ndim-1)+1), keepdims=True)
+        eps = 1e-5
+        eps = (1+1j)*eps if imvar.dtype == np.complex else eps
+        weights = 1 / (imvar+eps)
+        weights /= np.sum(weights)
+        # print(np.sum(weights))
+        # nip.v5(weights)
+        imshepp = np.sum(im[pinmask] * weights, axis=0)
+    else:
+        imshepp = np.sum(im[pinmask], axis=0)
 
     # done?
-    return imshepp
+    return imshepp, weights
 
 
 def recon_widefield(im, detaxes):
@@ -711,7 +728,7 @@ def ism_recon(im, method='wf', **kwargs):
     return pinsize
 
 
-def recon_sheppardSUM(im, nbr_det, pincenter, shift_method='nearest', shift_map=[], shift_roi=None, shiftval_theory=None, pinmask=None, pinfo=False):
+def recon_sheppardSUM(im, nbr_det, pincenter, shift_method='nearest', shift_map=[], shift_roi=None, shiftval_theory=None, pinmask=None, pinfo=False, sum_method='normal'):
     """Calculates sheppardSUM on image (for arbitrary detector arrangement). The 0th-Dimension is assumed as detector-dimension and hence allows for arbitrary, but flattened detector geometries.
 
     The algorithm does: 
@@ -738,7 +755,10 @@ def recon_sheppardSUM(im, nbr_det, pincenter, shift_method='nearest', shift_map=
         selection/shape of pinholes to be used for calculation, by default None
     pinfo : bool, optional
         print info, by default False
-
+    sum_method : str, optional
+        method to be used for sheppard summing, by default 'normal'
+            'normal': sum without any weighting
+            'invvar': inverse variance weighted summing
 
     Returns
     -------
@@ -750,6 +770,8 @@ def recon_sheppardSUM(im, nbr_det, pincenter, shift_method='nearest', shift_map=
         list of bools (=elements of 0th-dim) which where used
     pincenter : int
         position of center-point of mask/pinhole in 0th-dim
+    weights : image
+        weights used for summing (empty, if sum_method=='normal')
 
     See Also
     --------
@@ -764,7 +786,7 @@ def recon_sheppardSUM(im, nbr_det, pincenter, shift_method='nearest', shift_map=
     ims = recon_sheppardShift(im, shift_map, method='parallel', use_copy=True)
 
     # different summing methods
-    imshepp = recon_sheppardSUMming(im=ims, pinmask=pinmask)
+    imshepp, weights = recon_sheppardSUMming(im=ims, pinmask=pinmask, sum_method=sum_method)
 
     # info for check of energy conservation
     if pinfo:
@@ -772,10 +794,42 @@ def recon_sheppardSUM(im, nbr_det, pincenter, shift_method='nearest', shift_map=
             f"SUM(im)={np.sum(im)}\nim.shape={im.shape}\nSUM(imshifted)-SUM(im)={np.sum(ims)-np.sum(im)}\nSUM(imshepp)-SUM(im[pinmask])={np.sum(imshepp)-np.sum(im[pinmask])}\nShift-Operations={np.sum(pinmask)}")
 
     # return created results
-    return imshepp, shift_map, pinmask, pincenter
+    return imshepp, shift_map, pinmask, pincenter, weights
 
 
-def recon_weightedAveraging(imfl, otfl, pincenter, noise_norm=True, wmode='conj', fmode='fft', fshape=None, closing=2, suppcomp=False, eps=1e-4):
+def recon_weightedAveraging_testmodes(**kwargs):
+    """Wrapper to test all options of weighted Averaging routine. 
+
+    Returns
+    -------
+    ismWAl, weightsnl, ismWANl: lists
+        concatenated lists of output of recon_weightedAveraging
+
+    See Also
+    --------
+    recon_weightedAveraging
+    """
+    # Sanity
+    if 'wmode' in kwargs:
+        del kwargs['wmode']
+
+    # preparation
+    wmodes = ['real', 'imag', 'conj', 'abs', 'leave']
+    ismWAl, weightsnl, ismWANl = [], [], []
+
+    # loop over entries
+    for m, wmode in enumerate(wmodes):
+        ismWA, weightsn, ismWAN = recon_weightedAveraging(wmode=wmode, **kwargs)
+        ismWAl.append(ismWA), weightsnl.append(weightsn), ismWANl.append(ismWAN)
+
+    ismWAl = np.squeeze(nip.image(np.array(ismWAl)[:, np.newaxis]))
+    ismWANl = np.squeeze(nip.image(np.array(ismWANl)[:, np.newaxis]))
+
+    # done?
+    return ismWAl, weightsnl, ismWANl
+
+
+def recon_weightedAveraging(imfl, otfl, pincenter, noise_norm=True, wmode='conj', fmode='fft', fshape=None, closing=2, suppcomp=False, mask_eps=1e-4, div_eps=1e-5):
     """Weighted Averaging for multi-view reconstruction. List implementation so that it can be applied to multiple Data-sets. Needs list of PSFs (list) for different images (=views). 
     Note, make sure that:  
         -> applied FT is the same in both cases
@@ -809,8 +863,10 @@ def recon_weightedAveraging(imfl, otfl, pincenter, noise_norm=True, wmode='conj'
         Closing to be used for closed OTF-support -> see otf_get_mask for more infos, by default 2
     suppcomp : bool, optional
         gives back an image with the comparison of the noise-level vs support size, by default False
-    eps : float, optional
+    mask_eps : float, optional
         relative intensity used to calculate OTF support
+    div_eps : float, optional
+        relative value to add to weightsn to avoid division by zero, by default 1e-5
 
     Returns
     -------
@@ -835,7 +891,7 @@ def recon_weightedAveraging(imfl, otfl, pincenter, noise_norm=True, wmode='conj'
     # parameter
     dims = list(range(1, otfl.ndim, 1))
     validmask, _, _, _, _ = otf_get_mask(
-        otfl, center_pinhole=pincenter, mode='rft', eps=eps, bool_mask=True, closing=closing)
+        otfl, center_pinhole=pincenter, mode='fmode', eps=mask_eps, bool_mask=True, closing=closing)
     ismWAN = []
 
     # In approximation of Poisson-Noise the Variance in Fourier-Space is the sum of the Mean-Values in Real-Space -> hence: MidVal(OTF); norm-OTF by sigma**2 = normalizing OTF to 1 and hence each PSF to individual sum=1
@@ -855,14 +911,14 @@ def recon_weightedAveraging(imfl, otfl, pincenter, noise_norm=True, wmode='conj'
 
     # set weights outside of support to 0
     weightsn = nip.image(np.copy(weights))
-    weightsn[~np.repeat(validmask[np.newaxis],
-                        repeats=otfl.shape[0], axis=-otfl.ndim)] = 0
+    weightsn[~nip.extract(validmask[np.newaxis], weightsn.shape)] = 0
 
     # 1/OTF might strongly diverge outside OTF-support -> put Mask
-    aeps = np.max(weightsn[0]*eps)
-    wsum = np.array(weightsn[0])
+    aeps = np.max(weightsn*div_eps)
+    aeps = aeps * (1+1j) if weights.dtype == np.complex else aeps
+    wsum = np.ones(weightsn[0].shape, dtype=weights.dtype)
     wsum = np.divide(np.ones(weightsn[0].shape, dtype=weightsn.dtype), np.sum(
-        weightsn+aeps, axis=0), where=validmask, out=wsum)
+        weightsn, axis=0) + aeps, where=validmask, out=wsum)
     #wsum = 1.0/np.sum(weightsn+eps,axis=0)
     # wsum[~validmask]=0
 

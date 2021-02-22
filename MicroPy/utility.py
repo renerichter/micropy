@@ -1001,6 +1001,38 @@ def norm_back(imstack, normstack, normtype):
     return imstack_changed
 
 
+def normNoff(im, dims=(), method='max', offset=None, direct=True):
+    """Subtracts offset and normalizes by calling normto. Read description of normto for further parameter info.
+
+    Parameters
+    ----------
+    offset : Float or image, optional
+        Offset to be used for normalization, by default None
+
+    Returns
+    -------
+    im : image
+        normalized image
+
+    See Also
+    --------
+    normto
+    """
+
+    # subtract offset
+    offset = np.min(im, axis=tuple(dims), keepdims=True) if offset is None else offset
+    if direct:
+        im -= offset
+    else:
+        im = im - offset
+
+    # normalize
+    im = normto(im, dims=dims, method=method, direct=direct)
+
+    # done?
+    return im
+
+
 def normto(im, dims=(), method='max', direct=True):
     '''
     Norms input image to chosen method. Default: max and using u_func (=in-place normalization).

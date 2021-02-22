@@ -3,7 +3,7 @@ All data generating functions will be found in here.
 '''
 # mipy imports
 from .basicTools import sanityCheck_structure
-from .transformations import irft3dz, rft3dz, rftnd, polar2cartesian
+from .transformations import irft3dz, rft3dz, rftnd, polar2cartesian, lp_norm
 from .utility import shiftby_list, add_multi_newaxis, set_val_atpos, get_center
 
 # external imports
@@ -317,6 +317,68 @@ def ismR_defaultIMG(obj, psf, NPhot=None, use2D=True):
     im_ism_ft = nip.ft2d(im_ism_sel) if use2D else nip.ft3d(im_ism_sel)
 
     return im_ism_sel, im_ism_ft, objc
+
+
+def ism_simpleSIM(imsize=[128, 128], pixelsize=[40, 40], det_nbr=[7, 7], det_uvec=[[1, 0], [0, 1]], NPHOT=1000):
+    """Simplified version to simulate a full set of images to test ISM-processing. Based on Spokes Target. 
+
+    Parameters
+    ----------
+    imsize : list, optional
+        image size, by default [128, 128]
+    pixelsize : list, optional
+        pixel-dimensions (for PSF calculation), by default [40, 40]
+    det_nbr : list, optional
+        detector shape, by default [7, 7]
+    det_uvec : list, optional
+        unit-vetcors of detectors, by default [[1, 0], [0, 1]]
+    NPHOT : int, optional
+        Photons to be used for additional noise, by default 1000
+
+    Returns
+    -------
+    imn : image
+        noisy image
+    im : image
+        noise-free image
+    obj : image
+        object
+    psf_eff : image
+        ism psf
+    otf_eff : image
+        ism otf
+    psfdet_array : image
+        ism detection PSF
+    psfex : image
+        ism excitation PSF
+    shifts : list
+        shifts to different detectors
+    det_dist : list
+        detector-distances = l2-norm on shifts of different detectors
+    psf_para : struct
+        parameters used for calculation of psfex
+    imc : list
+        center positions of image dimensions
+
+    See Also
+    --------
+    generate_spokes_target, calculatePSF_ism, lp_norm, get_center, nip.PSF_PARAMS, nip.convolve, nip.poisson
+    """
+    imsize = np.array(imsize)
+    obj = generate_spokes_target(imsize=[128, 128], nbr_spokes=14, method='cart')
+    obj.pixelsize = pixelsize
+    psf_para = nip.PSF_PARAMS()
+    psf_para.na = 1.2
+    psfex = np.squeeze(nip.psf(obj))
+    psf_eff, otf_eff, psfdet_array, shifts = calculatePSF_ism(psfex, psfdet=psfex, shift_offset=det_uvec, shift_axes=[
+                                                              -2, -1], shift_method='uvec', nbr_det=det_nbr, fmodel='fft', faxes=[-2, -1])
+    det_dist = lp_norm(shifts, p=2, normaxis=(-1,))
+    im = nip.convolve(obj, psf_eff)
+    im *= NPHOT / np.max(im)
+    imc = get_center(im)
+    imn = nip.poisson(im).astype('float32')
+
+    return imn, im, obj, psf_eff, otf_eff, psfdet_array, psfex, shifts, det_dist, psf_para, imc
 # %%
 # ------------------------------------------------------------------
 #                       PSF-generators
