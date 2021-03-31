@@ -579,7 +579,7 @@ def paths_from_dict(path_dict):
 #
 
 
-def print_stack2subplot(imstack, plt_raster=[4, 4], plt_format=[8, 6], title=None, titlestack=None, colorbar=True, axislabel=False):
+def print_stack2subplot(imstack, plt_raster=[4, 4], plt_format=[8, 6], title=None, titlestack=None, colorbar=True, axislabel=False, laytight=True):
     '''
     Plots an 3D-Image-stack as set of subplots
     Based on this: https://stackoverflow.com/a/46616645
@@ -588,7 +588,7 @@ def print_stack2subplot(imstack, plt_raster=[4, 4], plt_format=[8, 6], title=Non
         imstack_len = len(imstack)
     # needs NanoImagingPack imported as nip
     elif type(imstack) == nip.image or type(imstack) == np.array:
-        imstack_len = imstack.ndim-2
+        imstack_len = imstack.shape[0]
     else:
         raise TypeError("Unexpected Data-type.")
     if not(imstack_len > 0):
@@ -622,8 +622,16 @@ def print_stack2subplot(imstack, plt_raster=[4, 4], plt_format=[8, 6], title=Non
                 "Row:"+str(m // plt_raster[1])+", Col:"+str(m % plt_raster[1]))
         if m >= imstack_len-1:
             break
+    # delete empty axes
+    while m+1 < (plt_raster[0]*plt_raster[1]):
+        m += 1
+        fig.delaxes(ax.flatten()[m])
+    # add topic
     if title:
         fig.suptitle(title)
+    # fix layout
+    if laytight:
+        plt.tight_layout()
     return fig
 
 
