@@ -369,8 +369,10 @@ def shiftby_list(psf, shifts=None, shift_offset=[1, 1], shift_method='uvec', shi
         psf_res = psf_res.real
 
     # correct pixelsizes
-    psf_res.pixelsize[1:] = psf.pixelsize if not psf_res.pixelsize[1:
-                                                                   ] == psf.pixelsize else psf_res.pixelsize[1:]
+    if hasattr(psf_res, 'pixelsize'):
+        if psf_res.pixelsize is not None:
+            psf_res.pixelsize[1:] = psf.pixelsize if not psf_res.pixelsize[1:
+                                                                           ] == psf.pixelsize else psf_res.pixelsize[1:]
 
     return psf_res, shifts
 
