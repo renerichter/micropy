@@ -51,9 +51,35 @@ def PSF_SIM_PARA(para):
 # ------------------------------------------------------------------
 
 def generate_testobj(test_object=3, mypath=''):
-    '''
-    Generates a 3D testobject depending on choice.
-    '''
+    """Generates a 3D testobject depending on choice.
+
+    Parameters
+    ----------
+    test_object : int, optional
+        Test object to be used, by default 3
+            0: 3D-stack -> chromo3D.ics
+            1: 3D-stack -> 15-sliced image with 3 (rotated) versions of default nip-image in slice 3,7,9
+            2: 3D-stack -> set of different cropped regions from default nip-image (15 slices)
+            3: 3D-stack -> different combinations, but roughly as 2
+            4-6: 3D-stack -> different positions of 1 slice-image (spokes-target)
+            else: 3D-stack -> nip-image 3D-object
+    mypath : str, optional
+        path to be used to load 'images/chromo3D.ics', by default ''
+
+    Returns
+    -------
+        im : image
+        Created sample image
+
+    Example
+    -------
+    >>> im = generate_testobj(test_object=3, mypath='')
+
+    See Also
+    --------
+    generate_spokes_target
+
+    """
     if test_object == 0:
         im = nip.readim(mypath + 'images/chromo3d.ics')
     elif test_object == 1:
@@ -134,17 +160,18 @@ def generate_testobj(test_object=3, mypath=''):
         im = im / immax[:, np.newaxis, np.newaxis]*np.iinfo('uint8').max
         im[im < 0] = 0
     elif test_object == 4:
-        a = nip.readim()[160:340, 285:465]
+        # a = nip.readim()[160:340, 285:465]
+        a = generate_spokes_target().astype(np.float32)
         im = nip.image(np.zeros([16, a.shape[0], a.shape[1]]))
         imc = int(np.floor(im.shape[0]/2.0))
         im[imc] = a
     elif test_object == 5:
-        a = nip.readim()[160:340, 285:465]
+        a = generate_spokes_target().astype(np.float32)
         im = nip.image(np.zeros([16, a.shape[0], a.shape[1]]))
         imc = int(np.floor(im.shape[0]/2.0))
         im[imc+1] = a
     elif test_object == 6:
-        a = nip.readim()[160:340, 285:465]
+        a = generate_spokes_target().astype(np.float32)
         im = nip.image(np.zeros([16, a.shape[0], a.shape[1]]))
         imc = int(np.floor(im.shape[0]/2.0))
         im[imc-2] = a
@@ -155,8 +182,8 @@ def generate_testobj(test_object=3, mypath=''):
 
 
 def generate_spokes_target(imsize=[128, 128], nbr_spokes=14, method='cart'):
-    """Generate spokes target. 
-    Interestingly, method "polar" is rather imprecise and shifted. 
+    """Generate spokes target.
+    Interestingly, method "polar" is rather imprecise and shifted.
 
     Parameters
     ----------
@@ -194,7 +221,7 @@ def generate_spokes_target(imsize=[128, 128], nbr_spokes=14, method='cart'):
         spokes_cart = (nip.image(np.sin(nip.phiphi(imsize)*nbr_spokes)) > 0)*1
 
     # done?
-    return spokes_cart
+    return spokes_cart.astype(np.float32)
 
 
 def generate_tilted_stripes(imsize=[128, 128], offset=0.7, repfac=12):
@@ -239,7 +266,7 @@ def generate_tilted_stripes(imsize=[128, 128], offset=0.7, repfac=12):
 
 def generate_obj_beads(imsize=[128, 128], srange=[4, 7], amount=20, nphot=None):
     """Generate some beads with random size and positions (given restrictions).
-    For now: limited to unitary σ-size for all image dimensions. 
+    For now: limited to unitary σ-size for all image dimensions.
 
     Parameters
     ----------
@@ -319,8 +346,8 @@ def ismR_defaultIMG(obj, psf, NPhot=None, use2D=True):
     return im_ism_sel, im_ism_ft, objc
 
 
-def ism_simpleSIM(imsize=[128, 128], pixelsize=[40, 40], det_nbr=[7, 7], det_uvec=[[1, 0], [0, 1]], NPHOT=1000):
-    """Simplified version to simulate a full set of images to test ISM-processing. Based on Spokes Target. 
+def ism_simpleSIM(imsize=[128, 128], pixelsize=[40, 40], det_nbr=[7, 7], det_uvec=[[1, 0], [0, 1]], NPHOT=1000, sim2D=True, fmodel='fft'):
+    """Simplified version to simulate a full set of images to test ISM-processing. Based on Spokes Target.
 
     Parameters
     ----------
@@ -334,6 +361,12 @@ def ism_simpleSIM(imsize=[128, 128], pixelsize=[40, 40], det_nbr=[7, 7], det_uve
         unit-vetcors of detectors, by default [[1, 0], [0, 1]]
     NPHOT : int, optional
         Photons to be used for additional noise, by default 1000
+    sim2D: bool, optional
+        whether 2D or 3D simulation shall be done, by default True
+    fmodel : str, optional
+        Fourier-Trafo to be used, by default 'fft'
+            'fft': uses fft
+            'rft': uses rft
 
     Returns
     -------
@@ -360,21 +393,35 @@ def ism_simpleSIM(imsize=[128, 128], pixelsize=[40, 40], det_nbr=[7, 7], det_uve
     imc : list
         center positions of image dimensions
 
+    Example
+    -------
+    >>> imn, im, obj, psf_eff, otf_eff, psfdet_array, psfex, shifts, det_dist, psf_para, imc = mipy.ism_simpleSIM(imsize=[128, 128], pixelsize=[40, 40], det_nbr=[7, 7], det_uvec=[[1, 0], [0, 1]], NPHOT=1000,sim2D=True)
+
+    >> imn, _, obj, psf_eff, _, _, _, _, _, _, _ = mipy.ism_simpleSIM(det_nbr=[3,3],sim2D=False)
+
     See Also
     --------
     generate_spokes_target, calculatePSF_ism, lp_norm, get_center, nip.PSF_PARAMS, nip.convolve, nip.poisson
     """
     imsize = np.array(imsize)
-    obj = generate_spokes_target(imsize=[128, 128], nbr_spokes=14, method='cart')
+    if sim2D:
+        obj = generate_spokes_target(imsize=tuple(imsize[-2:]), nbr_spokes=14, method='cart')
+        faxes = [-2, -1]
+    else:
+        if len(pixelsize) < 3:
+            pixelsize = [120, ] + pixelsize
+        obj = generate_testobj(6)
+        faxes = [-3, -2, -1]
     obj.pixelsize = pixelsize
     psf_para = nip.PSF_PARAMS()
     psf_para.na = 1.2
     psfex = np.squeeze(nip.psf(obj))
     psf_eff, otf_eff, psfdet_array, shifts = calculatePSF_ism(psfex, psfdet=psfex, shift_offset=det_uvec, shift_axes=[
-                                                              -2, -1], shift_method='uvec', nbr_det=det_nbr, fmodel='fft', faxes=[-2, -1])
+                                                              -2, -1], shift_method='uvec', nbr_det=det_nbr, fmodel=fmodel, faxes=faxes)
     det_dist = lp_norm(shifts, p=2, normaxis=(-1,))
     im = nip.convolve(obj, psf_eff)
-    im *= NPHOT / np.max(im)
+    im /= np.max(im)
+    im *= NPHOT
     imc = get_center(im)
     imn = nip.poisson(im).astype('float32')
 
@@ -387,7 +434,7 @@ def ism_simpleSIM(imsize=[128, 128], pixelsize=[40, 40], det_nbr=[7, 7], det_uve
 
 def calculatePSF_confocal(obj, psf_params, psfp=False, psfex=None, psfdet=None, pinhole=None, **kwargs):
     '''
-    Calculates confocal PSF. 
+    Calculates confocal PSF.
     See calculatePSF for explanation on parameters
     '''
 
@@ -422,7 +469,7 @@ def calculatePSF_confocal(obj, psf_params, psfp=False, psfex=None, psfdet=None, 
 
 def calculatePSF_sax(psfex, k_fluo):
     '''
-    Calculates Saturated excitation PSF from given saturation parameter k_fluo. 
+    Calculates Saturated excitation PSF from given saturation parameter k_fluo.
     Assumes PSFex to be normalized to one. (from: Heintzmann, R. Saturated patterned excitation microscopy with two-dimensional excitation patterns. Micron 34, 283–291 (2003).)
     '''
     psf = k_fluo * psfex / (k_fluo+psfex)
@@ -432,7 +479,7 @@ def calculatePSF_sax(psfex, k_fluo):
 
 
 def calculatePSF_ism(psfex, psfdet=None, psfdet_array=None, shifts=None, shift_offset=[[2, 0], [0, 3]], shift_axes=[-2, -1], shift_method='uvec', nbr_det=[3, 5], fmodel='rft', faxes=[-2, -1], pinhole=None, do_norm=True):
-    """ Generates the incoherent intensity ISM-PSF. Takes system excitation and emission PSF and assumes spatial invariance under translation on the detector. 
+    """ Generates the incoherent intensity ISM-PSF. Takes system excitation and emission PSF and assumes spatial invariance under translation on the detector.
 
     Parameters
     ----------
@@ -443,7 +490,7 @@ def calculatePSF_ism(psfex, psfdet=None, psfdet_array=None, shifts=None, shift_o
     psfdet_array : list, optional
         1D-list of detection PSFs = detector. Generated from parameters if not given, by default None
     shifts : list, optional
-        1D-list of sorted shifts (from biggest negative to biggest positive) to be applied. If not given, shifts (and hence rectangular detector) will be generated. by default None 
+        1D-list of sorted shifts (from biggest negative to biggest positive) to be applied. If not given, shifts (and hence rectangular detector) will be generated. by default None
     shift_offset : list, optional
         distance in pixels between detector elements, by default [2,2]
     shift_axes : list, optional
@@ -475,10 +522,10 @@ def calculatePSF_ism(psfex, psfdet=None, psfdet_array=None, shifts=None, shift_o
     >>> psfex = nip.psf2d()
     >>> psf_eff, otf_eff, psfdet_array, shifts = mipy.calculatePSF_ism(psfex, psfex)
 
-    TODO: 
+    TODO:
     -----
-    1) Add shape- and size of pixel. 
-    2) Add collection efficiency. 
+    1) Add shape- and size of pixel.
+    2) Add collection efficiency.
     """
     # calculate PSF_array for each detector pixel
     # -> normalize array as whole detector can at max detect one of arriving one photon
@@ -503,8 +550,9 @@ def calculatePSF_ism(psfex, psfdet=None, psfdet_array=None, shifts=None, shift_o
         psf_eff /= np.sum(psf_eff, keepdims=True)
 
     # get OTF
-    otf_eff = rftnd(psf_eff, raxis=faxes[0], faxes=faxes[1:]
-                    ) if fmodel == 'rft' else nip.ft(psf_eff, axes=faxes)
+    otf_eff = nip.rft(psf_eff, axes=tuple(
+        faxes[1:]+[faxes[0], ]), norm='ortho',shift_before=True,shift_after=True) if fmodel == 'rft' else nip.ft(psf_eff, axes=faxes)
+    # otf_eff = rftnd(psf_eff, raxis=faxes[0], faxes=faxes[1:]) if fmodel == 'rft' else nip.ft(psf_eff, axes = faxes)
 
     # done?
     return psf_eff, otf_eff, psfdet_array, shifts
@@ -512,14 +560,14 @@ def calculatePSF_ism(psfex, psfdet=None, psfdet_array=None, shifts=None, shift_o
 
 def calculatePSF(obj, psf_params=None, method='brightfield', amplitude=False, **kwargs):
     '''
-    Calculates different PSFs according to the selected method. 
+    Calculates different PSFs according to the selected method.
 
     TODO: 1) fix dsax + dsaxISM structure and idea
 
     :PARAMS:
     ========
     :im:            (IMAGE) object-image to provide shape and pixel-size
-    :psf_params:    (LIST) of STRUCTS from nip.PSF_PARAMS-type -> contains all necessary simulation parameters 
+    :psf_params:    (LIST) of STRUCTS from nip.PSF_PARAMS-type -> contains all necessary simulation parameters
     :method:        (STRING) method to be used. Options are:
                 'brightfield': standard PSF_em
                 'confocal': PSF_ex * CONV(PSF_em,Pinhole)
@@ -536,7 +584,7 @@ def calculatePSF(obj, psf_params=None, method='brightfield', amplitude=False, **
     :OUTPUT:
     ========
     :psf:       (IMAGE) calculated (a)psf
-    -> depending on option: 
+    -> depending on option:
                 'brightfield': psf
                 'confocal': [psf, psfex, psfdet, pinhole]
                 '2photon': to be done
@@ -656,9 +704,9 @@ def calculatePSF(obj, psf_params=None, method='brightfield', amplitude=False, **
             psf_satl.append(psft)
             psfex_satl.append(psfex_satt)
             psfdetl.append(psfdett)
-        #psf_satl = nip.image(np.array(psf_satl))
-        #psfex_satl = nip.image(np.array(psfex_satl))
-        #psfdetl = nip.image(np.array(psfdetl))
+        # psf_satl = nip.image(np.array(psf_satl))
+        # psfex_satl = nip.image(np.array(psfex_satl))
+        # psfdetl = nip.image(np.array(psfdetl))
 
         # done?
         return psf_satl, psfex_satl, psfdetl, pinhole
@@ -675,12 +723,12 @@ def calculatePSF(obj, psf_params=None, method='brightfield', amplitude=False, **
         psf_effl = []
         otf_effl = []
         psfdet_array = None
-        #pinhole_array = None
+        # pinhole_array = None
         for m in range(len(psfex_satl)):
             kwargs['psfex'] = psfex_satl[m]
             kwargs['psfdet'] = psfdetl[m]
             kwargs['psfdet_array'] = psfdet_array
-            #kwargs['pinhole_array'] = pinhole_array
+            # kwargs['pinhole_array'] = pinhole_array
             psf_eff, otf_eff, _, psfdet_array = calculatePSF(
                 obj, psf_params=psf_params, method='ism', amplitude=amplitude, **kwargs)
             psf_effl.append(psf_eff)

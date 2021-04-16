@@ -6,6 +6,7 @@ from datetime import datetime
 import NanoImagingPack as nip
 import numpy as np
 import matplotlib.pyplot as plt
+from mpl_toolkits.axes_grid1 import make_axes_locatable
 from tifffile import imread as tifimread
 # mipy imports
 
@@ -606,15 +607,18 @@ def print_stack2subplot(imstack, plt_raster=[4, 4], plt_format=[8, 6], title=Non
                          interpolation='none')  # alpha=0.25)
         # write row/col indices as axes' title for identification
         if colorbar:
-            if ax.ndim == 1:
-                fig.colorbar(ima, ax=ax[m])
-            elif ax.ndim == 2:
-                fig.colorbar(ima, ax=ax[m // plt_raster[1], m % plt_raster[1]])
-            else:
-                raise ValueError('Too many axes!')
+            divider = make_axes_locatable(axm)
+            colorbar_axes = divider.append_axes("right", size="10%", pad=0.1)
+            fig.colorbar(ima, cax=colorbar_axes)
+            # if ax.ndim == 1:
+            #    fig.colorbar(ima, ax=ax[m])
+            # elif ax.ndim == 2:
+            #    fig.colorbar(ima, ax=ax[m // plt_raster[1], m % plt_raster[1]])
+            # else:
+            #    raise ValueError('Too many axes!')
         if not axislabel:
-            axm.set_xlabel('PIX [a.u.]')
-            axm.set_ylabel('PIX [a.u.]')
+            axm.set_xlabel('[PIX] = a.u.')
+            axm.set_ylabel('[PIX] = a.u.')
         if not titlestack == None:
             axm.set_title(titlestack[m])
         else:

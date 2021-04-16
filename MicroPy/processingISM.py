@@ -223,7 +223,7 @@ def pinv_unmix(a, rcond=1e-15, svdnum=None, eps_reg=0, use_own=False):
     return res
 
 
-def unmix_matrix(otf, mode='rft', eps_mask=5e-4, eps_reg=1e-3, svdlim=1e-8, svdnum=None, hermitian=False, use_own=False, closing=None):
+def unmix_matrix(otf, mode='rft', eps_mask=5e-4, eps_reg=1e-3, svdlim=1e-8, svdnum=None, hermitian=False, use_own=False, closing=None, center_pinhole=None):
     '''
     Calculates the unmixing matrix. Assums pi-rotational-symmetry around origin (=conjugate), because PSF is real and only shifted laterally. No aberrations etc. Hence, only half of the OTF-support along z is calculated.
 
@@ -235,6 +235,9 @@ def unmix_matrix(otf, mode='rft', eps_mask=5e-4, eps_reg=1e-3, svdlim=1e-8, svdn
     :svdrel:    (FlOAT)     minimum relative size of the smallest SVD-value to the biggest for the matrix inversion (limits the non-empty SVD-matrix-size)
     :svdlim:    (INT)       maximum number of included singular values -> note: if svdlim is set, svdrel is ignored
     :hermitian: (BOOL)      input hermitian? (typically: False, because of (at least) numerical differences)
+    :use_own:   (BOOL)        whether to use own inversion-implementation
+    :closing:   (INT/ARRAY) closing mask (chosen by int) or shape (ARRAY) to be used
+    :center_pinhole: (INT)  position of central pinhole to be used for calculation of OTF-support  
 
     :OUT:
     ====
@@ -247,9 +250,12 @@ def unmix_matrix(otf, mode='rft', eps_mask=5e-4, eps_reg=1e-3, svdlim=1e-8, svdn
     otf_unmix = np.transpose(
         np.zeros(otf.shape, dtype=np.complex_), [1, 0, 2, 3])
 
+    if center_pinhole is None:
+        center_pinhole = otf.shape[0]//2
+
     # calculate mask
     _, my_mask, proj_mask, zoff, _ = otf_get_mask(
-        otf, mode='rft', eps=eps_mask, bool_mask=False, closing=closing)
+        otf, mode='rft', eps=eps_mask, bool_mask=False, closing=closing, center_pinhole=center_pinhole)
 
     # loop over all kx,ky
     for kk in range(otf_unmix.shape[-2]):
