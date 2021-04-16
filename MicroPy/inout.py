@@ -580,11 +580,12 @@ def paths_from_dict(path_dict):
 #
 
 
-def print_stack2subplot(imstack, plt_raster=[4, 4], plt_format=[8, 6], title=None, titlestack=None, colorbar=True, axislabel=False, laytight=True):
+def print_stack2subplot(imstack, plt_raster=[4, 4], plt_format=[8, 6], title=None, titlestack=True, colorbar=True, axislabel=True, laytight=True, nbrs=True, nbrs_color=[1, 1, 1], use_axis=True):
     '''
     Plots an 3D-Image-stack as set of subplots
     Based on this: https://stackoverflow.com/a/46616645
     '''
+    # sanity checks
     if type(imstack) == list:
         imstack_len = len(imstack)
     # needs NanoImagingPack imported as nip
@@ -598,6 +599,11 @@ def print_stack2subplot(imstack, plt_raster=[4, 4], plt_format=[8, 6], title=Non
     from datetime import datetime
     if title == None:
         title = datetime.now().strftime("%d.%m.%Y %H:%M:%S")
+
+    # parameter
+    x_offset = 3
+    y_offset = 21
+
     # create figure (fig), and array of axes (ax)
     fig, ax = plt.subplots(
         nrows=plt_raster[0], ncols=plt_raster[1], figsize=plt_format)
@@ -616,20 +622,43 @@ def print_stack2subplot(imstack, plt_raster=[4, 4], plt_format=[8, 6], title=Non
             #    fig.colorbar(ima, ax=ax[m // plt_raster[1], m % plt_raster[1]])
             # else:
             #    raise ValueError('Too many axes!')
-        if not axislabel:
+
+        if axislabel == True:
             axm.set_xlabel('[PIX] = a.u.')
             axm.set_ylabel('[PIX] = a.u.')
-        if not titlestack == None:
-            axm.set_title(titlestack[m])
+        elif axislabel == False:
+            pass
         else:
+            axm.set_xlabel(axislabel[0])
+            axm.set_ylabel(axislabel[1])
+
+        if titlestack == True:
             axm.set_title(
                 "Row:"+str(m // plt_raster[1])+", Col:"+str(m % plt_raster[1]))
+        elif titlestack == False:
+            pass
+        else:
+            axm.set_title(titlestack[m])
+
+        if nbrs:
+            xoff = int(x_offset/imstack[0].shape[-1]*imstack[m].shape[-1])
+            yoff = int(y_offset/imstack[0].shape[-2]*imstack[m].shape[-2])
+            axm.text(xoff, yoff, chr(97+m)+')',
+                     fontsize=2*plt.rcParams['font.size'], color=nbrs_color, fontname='Helvetica', weight='normal')
+
+        if not use_axis:
+            axm.axis('off')
+            # fig.axes.get_xaxis().set_visible(False)
+            # fig.axes.get_yaxis().set_visible(False)
+
         if m >= imstack_len-1:
             break
+
     # delete empty axes
     while m+1 < (plt_raster[0]*plt_raster[1]):
         m += 1
         fig.delaxes(ax.flatten()[m])
+
     # add topic
     if title:
         fig.suptitle(title)

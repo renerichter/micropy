@@ -105,7 +105,7 @@ def otf_get_mask(otf, center_pinhole, mode='rft', eps=1e-5, bool_mask=False, clo
     epsabs = center_max * eps
 
     # calculate mask
-    my_mask = (np.abs(otf[center_pinhole]) > epsabs)*1
+    my_mask = (np.abs(otf[center_pinhole]) > epsabs).astype(np.float32)
 
     # close using the chosen structuring element
     if closing is not None:
@@ -144,7 +144,6 @@ def otf_get_mask(otf, center_pinhole, mode='rft', eps=1e-5, bool_mask=False, clo
     if bool_mask:
         my_mask_filled = np.array(my_mask_filled, dtype=bool)
         my_mask = np.array(my_mask, dtype=bool)
-
     # done?
     return my_mask, my_mask_filled, proj_mask, zoff, center_pinhole
 
