@@ -256,12 +256,15 @@ def unmix_matrix(otf, mode='rft', eps_mask=5e-4, eps_reg=1e-3, svdlim=1e-8, svdn
     _, my_mask, proj_mask, zoff, _ = otf_get_mask(
         otf, mode='rft', eps=eps_mask, bool_mask=False, closing=closing, center_pinhole=center_pinhole)
 
+    proj_mask = proj_mask.astype(np.int8)
+
     # loop over all kx,ky
     for kk in range(otf_unmix.shape[-2]):
         for jj in range(otf_unmix.shape[-1]):
             if my_mask[:, kk, jj].any():
                 otf_unmix[zoff[kk, jj]:zoff[kk, jj]+proj_mask[kk, jj], :, kk, jj] = pinv_unmix(
-                    otf[:, zoff[kk, jj]:zoff[kk, jj]+proj_mask[kk, jj], kk, jj], rcond=svdlim, svdnum=svdnum, eps_reg=eps_reg, use_own=use_own)  # otf[:, zoff[kk, jj]:zoff[kk, jj]+proj_mask[kk, jj], kk, jj] #otf[:, :,90,90]
+                    otf[:, zoff[kk, jj]:zoff[kk, jj]+proj_mask[kk, jj], kk, jj], rcond=svdlim, svdnum=svdnum, eps_reg=eps_reg, use_own=use_own)
+                # otf[:, zoff[kk, jj]:zoff[kk, jj]+proj_mask[kk, jj], kk, jj] #otf[:, :,90,90]
     otf_unmix = nip.image(otf_unmix)
 
     # create full otf_unmix if necessary

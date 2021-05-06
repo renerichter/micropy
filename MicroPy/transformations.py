@@ -112,7 +112,7 @@ def irft3dz(im, s):
     =====
     Inverse Fourier-Transformed image.
     '''
-    return nip.irft(nip.ift(im, axes=(-2, -1)), shift_after=True, axes=-3, s=s)
+    return nip.irft(nip.ift(im, axes=(-2, -1)), shift_after=False, axes=-3, s=s)
 
 
 def dct2(im, forward=True, axes=[-2, -1]):

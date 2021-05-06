@@ -550,9 +550,9 @@ def calculatePSF_ism(psfex, psfdet=None, psfdet_array=None, shifts=None, shift_o
         psf_eff /= np.sum(psf_eff, keepdims=True)
 
     # get OTF
-    otf_eff = nip.rft(psf_eff, axes=tuple(
-        faxes[1:]+[faxes[0], ]), norm='ortho',shift_before=True,shift_after=True) if fmodel == 'rft' else nip.ft(psf_eff, axes=faxes)
-    # otf_eff = rftnd(psf_eff, raxis=faxes[0], faxes=faxes[1:]) if fmodel == 'rft' else nip.ft(psf_eff, axes = faxes)
+    #otf_eff = nip.rft(psf_eff, axes=tuple(faxes[1:]+[faxes[0], ]), norm='ortho',shift_before=True,shift_after=True) if fmodel == 'rft' else nip.ft(psf_eff, axes=faxes)
+    otf_eff = rftnd(psf_eff, raxis=faxes[0], faxes=faxes[1:]
+                    ) if fmodel == 'rft' else nip.ft(psf_eff, axes=faxes)
 
     # done?
     return psf_eff, otf_eff, psfdet_array, shifts
