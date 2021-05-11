@@ -859,6 +859,10 @@ def transpose_arbitrary(imstack, idx_startpos=[-2, -1], idx_endpos=[0, 1], direc
         idx_startpos = [idx_startpos, ]
     if type(idx_endpos) == int:
         idx_endpos = [idx_endpos, ]
+    if type(idx_startpos) is not list:
+        idx_startpos = list(idx_startpos)
+    if type(idx_endpos) is not list:
+        idx_endpos = list(idx_endpos)
 
     # assert correct dimensionality
     if not (len(idx_startpos) == len(idx_endpos)):

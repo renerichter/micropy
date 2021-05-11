@@ -1,10 +1,14 @@
-'''
-   ~~~~ Package description ~~~~
-    The Filters are build such that they assume to receive an nD-stack, but they only operate in a 2D-manner (meaning: interpreting the stack as a (n-2)D series of 2D-images). Further, they assume that the last two dimensions (-2,-1) are the image-dimensions. The others are just for stacking.
+"""
+---------------------------------------------------------------------------------------------------
 
+	@author René Lachmann
+	@email herr.rene.richter@gmail.com
+	@create date 2019-11-25 10:26:14
+	@modify date 2021-05-11 11:49:38
+	@desc The Filters are build such that they assume to receive an nD-stack, but they only operate in a 2D-manner (meaning: interpreting the stack as a (n-2)D series of 2D-images). Further, they assume that the last two dimensions (-2,-1) are the image-dimensions. The others are just for stacking.
 
-
-'''
+---------------------------------------------------------------------------------------------------
+"""
 
 # %%
 # -------------------------------------------------------------------------
@@ -15,11 +19,8 @@ __author__ = "René Lachmann"
 __copyright__ = "Copyright 2019"
 __credits__ = ["Jan Becker, Sebastian Unger, David McFadden"]
 __license__ = "MIT"
-__version__ = "0.2a"
+__version__ = "0.3a"
 __maintainer__ = "René Lachmann"
-__status__ = "Creation"
-__date__ = "25.11.2019"
-__last_update__ = "12.02.2020"
 
 # %%
 # -------------------------------------------------------------------------
@@ -31,6 +32,65 @@ import NanoImagingPack as nip
 
 from .utility import transpose_arbitrary, get_nbrpixel
 from .transformations import dct2, lp_norm
+
+# %%
+# -------------------------------------------------------------------------
+# Preprocessing Tools
+# -------------------------------------------------------------------------
+#
+
+
+def filter_prep_im(im, axes=(-2, -1), direction='forward', pad_shape=None, res=None):
+    """Simple image preparation used for image-filtering
+
+    Parameters
+    ----------
+    im : image
+        input image
+    axes : tuple, optional
+        axes to be used, by default (-2, -1)
+    direction : str, optional
+        direction of processing, by default 'forward'
+            'forward': transpose,count pix, pad
+            'backward': transpose-back,add image
+    pad_shape : tuple, optional
+        shape to be used for padding. If not None, padding is applied, by default None
+    res : image, optional
+        result to be changed in case of backward direction, by default None
+
+    Returns
+    -------
+    im, npix : image and float
+        in case of forward direction
+    res : list
+        in case of backward-direction
+
+    Raises
+    ------
+    ValueError
+        direction has to be chosen properly
+    """
+
+    # bring x,y-axes to the front of array for simple notation and count pixels; optionally add padding
+    if direction == 'forward':
+        im = transpose_arbitrary(im, idx_startpos=list(
+            axes), idx_endpos=[0, 1], direction=direction)
+        npix = float(np.prod(im.shape[:2]))
+        if pad_shape is not None:
+            if len(pad_shape) < im.ndim:
+                pad_shape = tuple(list(pad_shape) + list(((0, 0),)*(im.ndim-len(pad_shape))))
+            im = np.pad(im, pad_shape, mode='constant', constant_values=0)
+        return im, npix
+
+    # transform back and add transformed image to output
+    elif direction == 'backward':
+        im = transpose_arbitrary(im, idx_startpos=list(
+            axes), idx_endpos=[0, 1], direction='backward')
+        return [res, im]
+
+    else:
+        raise ValueError('Wrong direction used.')
+
 
 # %%
 # -------------------------------------------------------------------------
@@ -131,61 +191,159 @@ def cf_vollathF5_corr(im):
 #
 
 
-def diff_filters(im):
-    pass
-
-
-def diff_tenengrad(im):
+def diff_tenengrad(im, axes=(-2, -1), npix=None, **kwargs):
     '''
     Calculates Tenengrad-Sharpness Metric.
     '''
-    impix = 1.0 / np.sqrt(np.prod(im.shape))
     sh = diff_sobel_horizontal(im)
     sv = diff_sobel_vertical(im)
-    return impix * np.sum(sh*sh + sv*sv, axis=(-2, -1))
+    res = 1/npix * np.sum(sh*sh + sv*sv, axis=axes)
+
+    return res, [sh, sv]
 
 
-def diff_sobel_horizontal(im):
+def diff_sobel_horizontal(im, **kwargs):
     '''
     Calculates the horizontal sobel-filter.
     Filter-shape: [[-1 0 1],[ -2 0 2],[-1 0 1]] -> separabel:  np.outer(np.transpose([1,2,1]),[-1,0,1])
     '''
-    # use separability
-    im = transpose_arbitrary(
-        im, idx_startpos=[-2, -1], idx_endpos=[1, 0], direction='forward')
-
     x_res = im[:, 2:] - im[:, :-2]  # only acts on x
-    xy_res = x_res[:-2] + 2*x_res[1:-1] + x_res[2:]  # only uses the y-coords
+    im_filtered = x_res[:-2] + 2*x_res[1:-1] + x_res[2:]  # only uses the y-coords
 
-    # transpose back
-    xy_res = transpose_arbitrary(
-        xy_res, idx_startpos=[-2, -1], idx_endpos=[1, 0], direction='backward')
-    return xy_res
+    return im_filtered
 
 
-def diff_sobel_vertical(im):
+def diff_sobel_vertical(im, **kwargs):
     '''
     Calculates the vertical sobel-filter.
     Filter-shape: [[-1,-2,-1],[0,0,0],[1,2,1]] -> separabel:  np.outer(np.transpose([-1,0,1]),[1,2,1])
     '''
-    # use separability
-    im = transpose_arbitrary(
-        im, idx_startpos=[-2, -1], idx_endpos=[1, 0], direction='forward')
-
     x_res = im[:, :-2] + 2*im[:, 1:-1] + im[:, 2:]  # only x coords
-    xy_res = x_res[2:] - x_res[:-2]  # further on y coords
+    im_filtered = x_res[2:] - x_res[:-2]  # further on y coords
 
-    # transpose back
-    xy_res = transpose_arbitrary(
-        xy_res, idx_startpos=[-2, -1], idx_endpos=[1, 0], direction='backward')
-    return xy_res
+    return im_filtered
 
 
+def diff_brenners_measure(im, npix, axes=(-2, -1), pad_me=True, return_im=False):
+    """Calculates differential brenners measure.
+    """
+    # calculate measure
+    im_filtered = im[:-2]+im[2:]
+    res = np.sum(im_filtered, axis=(0, 1))/npix
+
+    # done?
+    return res, [im_filtered, ]
+
+
+def diff_absolute_laplacian(im, npix, axes=(-2, -1), return_im=False, **kwargs):
+    """Calculates Absolute Laplacian.
+    """
+    # calculate measure
+    im_filtered = abs(2*im[1:-1, 1:-1]-im[1:-1, :-1]-im[1:-1, 1:]) + \
+        abs(2*im[1:-1, 1:-1]-im[:-1, 1:-1]-im[1:, 1:-1])
+    res = np.sum(im_filtered)/npix
+
+    # done?
+    return im, [im_filtered, ]
+
+
+class filters():
+    """Class that links filters to functions and holds additional information on their necessary padding_shape etc.
+    """
+    # differential filters
+    tenengrad = diff_tenengrad
+    sobelh = diff_sobel_horizontal
+    sobelv = diff_sobel_vertical
+    brenner = diff_brenners_measure
+    abs_laplacian = diff_absolute_laplacian
+
+    # spectral filters
+
+    # correlative filters
+
+    # trafo filters
+
+    # padding selection
+    def get_padding(self, filter_chosen='tenengrad'):
+        if filter_chosen in ['abs_laplacian']:
+            pad_shape = ((1, 1), (1, 1))
+        else:
+            pad_shape = ((1, 1), (0, 0))
+
+        return pad_shape
+
+
+def diff_filters(im, filter='tenengrad', **kwargs):
+    """Interface to select filters of interest.
+
+    Parameters
+    ----------
+    im : image
+        input nD-image stack
+    filter : str, optional
+        see potential filter functions in "filters"-class, by default 'tenengrad'
+
+    Parameters
+    ----------
+    im : image
+        Input image
+    axes : tuple, optional
+        axes to be used for 2D-calculation, by default (-2, -1)
+    pad_shape : tuple, optional
+        if padding (and thereby keeping input-image dimension) shall be used, by default ((1,1),(0,0))
+    return_im : bool, optional
+        whether the filtered image shall be returned as well, by default False
+
+    Returns
+    -------
+    res: list 
+        res[0] calculated metric results
+        res[1] list of sub-images created for metric calculation
+
+    See Also
+    --------
+    filters, 
+    """
+    my_filters = filters()
+
+    # sanity
+    if not 'axes' in kwargs:
+        kwargs['axes'] = (-2, -1)
+    if not 'direction' in kwargs:
+        kwargs['direction'] = 'forward'
+    if not 'pad_shape' in kwargs:
+        kwargs['pad_shape'] = None
+    if not 'return_im' in kwargs:
+        kwargs['return_im'] = True
+    if not 'pad_shape' in kwargs:
+        kwargs['pad_shape'] = my_filters.get_padding(filter_chosen=filter)
+
+    # get function from filtername
+    filter_func = getattr(my_filters, filter)
+
+    # prepare image and put [y,x] to first dimensions
+    im, npix = filter_prep_im(im, kwargs)
+
+    # calculate measure; im_filtered given as list of images
+    res, im_filtered = filter_func(im, kwargs)
+
+    # if return wanted transpose and append
+    if kwargs['return_im']:
+        kwargs['direction'] = 'backward'
+        kwargs['res'] = res
+        for m in range(len(im_filtered)):
+            im_filtered[m] = filter_prep_im(
+                im_filtered[m], axes=(-2, -1), direction='backward', res=res)
+        res = [res, im_filtered]
+
+    # done?
+    return res
 #
 # -------------------------------------------------------------------------
 # Spectral Filters
 # -------------------------------------------------------------------------
 #
+
 
 def spf_dct_normalized_shannon_entropy(im, r0=100):
     '''
@@ -207,20 +365,19 @@ def spf_dct_normalized_shannon_entropy(im, r0=100):
 
 #
 # -------------------------------------------------------------------------
-# Staticstial Filters
+# Statistical Filters
 # -------------------------------------------------------------------------
 #
-def stf_basic(im, printout=False):
+def stf_basic(im, axes=(-2, -1), printout=False):
     '''
     Basic statistical sharpness metrics: MAX,MIN,MEAN,MEDIAN,VAR,NVAR. Reducing the whole dimensionality to 1 value.
     '''
     im_res = list()
-    use_axis = (-2, -1)
-    im_res.append(np.max(im, axis=use_axis))
-    im_res.append(np.min(im, axis=use_axis))
-    im_res.append(np.mean(im, axis=use_axis))
-    im_res.append(np.median(im, axis=use_axis))
-    im_res.append(np.var(im, axis=use_axis))
+    im_res.append(np.max(im, axis=axes))
+    im_res.append(np.min(im, axis=axes))
+    im_res.append(np.mean(im, axis=axes))
+    im_res.append(np.median(im, axis=axes))
+    im_res.append(np.var(im, axis=axes))
     im_res.append(im_res[4]/im_res[2]**2)  # normalized variance (NVAR)
     if printout == True:
         print("Basic analysis yields:\nMAX=\t{}\nMIN=\t{}\nMEAN=\t{}\nMEDIAN=\t{}\nVAR=\t{}\nNVAR=\t{}".format(
@@ -228,7 +385,7 @@ def stf_basic(im, printout=False):
     return np.array(im_res)
 
 
-def stf_kurtosis(im, switch_axis=False):
+def stf_kurtosis(im, switch_axis=False, axes=(-2, -1)):
     '''
     Forth moment ( https://en.wikipedia.org/wiki/Kurtosis ).
     Scipy-Kurtosis ->
@@ -240,11 +397,9 @@ def stf_kurtosis(im, switch_axis=False):
     # res.append(np.mean(np.abs(im-np.mean(im))**4) / np.mean(np.abs(im-np.mean(im))**2))
     # res_comp = kurtosis(im)
     if switch_axis:
-        use_axis = (0, 1)
-    else:
-        use_axis = (-2, -1)
-    res = np.mean((im-np.mean(im, axis=use_axis))**4) / \
-        np.var(im, axis=use_axis)**2
+        axes = (0, 1)
+    res = np.mean((im-np.mean(im, axis=axes))**4) / \
+        np.var(im, axis=axes)**2
     return res
 
 
@@ -301,11 +456,11 @@ def stf_lp_sparsity(im, p=2):
 
 def filter_pass(im, filter_size=(10,), mode='circle', kind='low', filter_out=True):
     '''
-    Does a fourier-based low-pass filtering of the desired shape. Filter-values: 0=no throughput, 1=max-throughput. 
-    For now only works on 2D-images. 
+    Does a fourier-based low-pass filtering of the desired shape. Filter-values: 0=no throughput, 1=max-throughput.
+    For now only works on 2D-images.
     :param:
     =======
-    :im:IMAGE:          Input image to wrok on. 
+    :im:IMAGE:          Input image to wrok on.
     :filter_size:LIST:  LIST of INT-sizes of the filter -> for circle it's e.g. just 1 value
     :mode:STRING:       Defines which lowpass_filtering shall be used -> 'Circle' (hard edges)
     '''
@@ -368,14 +523,14 @@ def image_sharpness(im, im_filters=['Tenengrad']):
 #
 def local_annealing_atom(im, pos, mode='value', value=0, patch_size=[3, 3], iter_anneal=False, iterations=1):
     '''
-    Local annealing of a given position. 
+    Local annealing of a given position.
     Function does inplace operation and hence technically no return has to be done!
 
     PARAMS
     =======
     :im:            (IMAGE) used image
     :pos:           (TUPLE) position that will be changed
-    :mode:          (STRING) useable modes 
+    :mode:          (STRING) useable modes
                         'value': overwrites with the given value at pos
                         'mean','max','min': calculates the respective value from the given patch_size around pos
     :value:         (FLOAT) value for overwriting
@@ -396,7 +551,8 @@ def local_annealing_atom(im, pos, mode='value', value=0, patch_size=[3, 3], iter
     b3 = local_annealing_atom(a.copy(),(3,4),mode='mean')
     b4 = local_annealing_atom(a.copy(),(3,4),mode='min')
     b5 = local_annealing_atom(a.copy(),(3,4),mode='mean',iter_anneal=True,iterations=3)
-    toshowB = nip.catE((mipy.normto(a),mipy.normto(b1),mipy.normto(b2),mipy.normto(b3),mipy.normto(b4),mipy.normto(b5)))
+    toshowB = nip.catE((mipy.normto(a),mipy.normto(b1),mipy.normto(b2),
+                       mipy.normto(b3),mipy.normto(b4),mipy.normto(b5)))
     nip.v5(mipy.stack2tiles(toshowB))
 
     '''
@@ -426,8 +582,8 @@ def local_annealing_atom(im, pos, mode='value', value=0, patch_size=[3, 3], iter
 
 def local_annealing(im, pos, mode='value', value=0, patch_size=[3, 3], iter_anneal=False, iterations=1):
     '''
-    Acts on list of positions. 
-    Note: acts on input image in-place and hence out-put should only be used/thought as renaming due to input-data being changed as well. 
+    Acts on list of positions.
+    Note: acts on input image in-place and hence out-put should only be used/thought as renaming due to input-data being changed as well.
 
     :PARAMS:
     ========
@@ -439,7 +595,8 @@ def local_annealing(im, pos, mode='value', value=0, patch_size=[3, 3], iter_anne
     =========
     a=nip.rr([7,7])
     a[1,2] = 100; a[3,4] = 100;
-    b6 = local_annealing(a.copy(),[(3,4),(1,2)],mode='mean',patch_size=[4,4],iter_anneal=True,iterations=3)
+    b6 = local_annealing(a.copy(),[(3,4),(1,2)],mode='mean',
+                         patch_size=[4,4],iter_anneal=True,iterations=3)
     toshowA = nip.catE((mipy.normto(a),mipy.normto(b6)))
     nip.v5(mipy.stack2tiles(toshowA))
 
