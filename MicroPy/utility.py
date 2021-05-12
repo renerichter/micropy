@@ -1,3 +1,16 @@
+"""
+---------------------------------------------------------------------------------------------------
+
+	@author René Lachmann
+	@email herr.rene.richter@gmail.com
+	@create date 2019 11:53:25
+	@modify date 2021-05-11 11:53:39
+	@desc Utility package
+
+---------------------------------------------------------------------------------------------------
+"""
+
+
 # %% imports
 import numpy as np
 import NanoImagingPack as nip

@@ -4,7 +4,7 @@
 	@author René Lachmann
 	@email herr.rene.richter@gmail.com
 	@create date 2019-11-25 10:26:14
-	@modify date 2021-05-11 11:49:38
+	@modify date 2021-05-11 18:16:03
 	@desc The Filters are build such that they assume to receive an nD-stack, but they only operate in a 2D-manner (meaning: interpreting the stack as a (n-2)D series of 2D-images). Further, they assume that the last two dimensions (-2,-1) are the image-dimensions. The others are just for stacking.
 
 ---------------------------------------------------------------------------------------------------
@@ -32,6 +32,7 @@ import NanoImagingPack as nip
 
 from .utility import transpose_arbitrary, get_nbrpixel
 from .transformations import dct2, lp_norm
+from .simulation import generate_spokes_target
 
 # %%
 # -------------------------------------------------------------------------
@@ -40,7 +41,7 @@ from .transformations import dct2, lp_norm
 #
 
 
-def filter_prep_im(im, axes=(-2, -1), direction='forward', pad_shape=None, res=None):
+def filter_prep_im(im, axes=(-2, -1), direction='forward', pad_shape=None, faxes=(0, 1),):
     """Simple image preparation used for image-filtering
 
     Parameters
@@ -48,15 +49,15 @@ def filter_prep_im(im, axes=(-2, -1), direction='forward', pad_shape=None, res=N
     im : image
         input image
     axes : tuple, optional
-        axes to be used, by default (-2, -1)
+        data-axes to be used, by default (-2, -1)
+    faxes : tuple, optional
+        assignment axes for data-axes for further usage, by default (0,1)
     direction : str, optional
         direction of processing, by default 'forward'
             'forward': transpose,count pix, pad
             'backward': transpose-back,add image
     pad_shape : tuple, optional
         shape to be used for padding. If not None, padding is applied, by default None
-    res : image, optional
-        result to be changed in case of backward direction, by default None
 
     Returns
     -------
@@ -74,7 +75,7 @@ def filter_prep_im(im, axes=(-2, -1), direction='forward', pad_shape=None, res=N
     # bring x,y-axes to the front of array for simple notation and count pixels; optionally add padding
     if direction == 'forward':
         im = transpose_arbitrary(im, idx_startpos=list(
-            axes), idx_endpos=[0, 1], direction=direction)
+            axes), idx_endpos=list(faxes), direction='forward')
         npix = float(np.prod(im.shape[:2]))
         if pad_shape is not None:
             if len(pad_shape) < im.ndim:
@@ -84,9 +85,7 @@ def filter_prep_im(im, axes=(-2, -1), direction='forward', pad_shape=None, res=N
 
     # transform back and add transformed image to output
     elif direction == 'backward':
-        im = transpose_arbitrary(im, idx_startpos=list(
-            axes), idx_endpos=[0, 1], direction='backward')
-        return [res, im]
+        return transpose_arbitrary(im, idx_startpos=list(axes), idx_endpos=list(faxes), direction='backward')
 
     else:
         raise ValueError('Wrong direction used.')
@@ -98,92 +97,69 @@ def filter_prep_im(im, axes=(-2, -1), direction='forward', pad_shape=None, res=N
 # -------------------------------------------------------------------------
 #
 
-
-def cf_vollathF4(im, im_out=True):
+@staticmethod
+def cf_vollathF4(im, faxes=(0, 1), **kwargs):
     '''
     Calculates the Vollath-F4 correllative Sharpness-metric.
     '''
-    # res = np.mean(im[:, :-1]*euler_forward_1d(im, dim=1, dx=0))
-    im_res = cf_vollathF4_corr(im)
-    res = np.mean(im_res, axis=(-2, -1))
-    if im_out:
-        return res, im_res
-    else:
-        return res
+    im_filtered = cf_vollathF4_corr(im)
+    res = np.mean(im_filtered, axis=faxes)
+
+    # done?
+    return res, [im_filtered, ]
 
 
 def cf_vollathF4_corr(im):
     '''
     Calculates the Vollath F4-correlation
     '''
-    im = transpose_arbitrary(
-        im, idx_startpos=[-2, -1], idx_endpos=[0, 1], direction='forward')
-    im_res = im[:, :-2]*(im[:, 1:-1]-im[:, 2:])
-    return transpose_arbitrary(im_res, idx_startpos=[-2, -1], idx_endpos=[0, 1], direction='forward')
+
+    im_res = im[:, 2:-2]*(im[:, 3:-1]-im[:, 4:])
+
+    return im_res
 
 
-def cf_vollathF4_symmetric(im, im_out=True):
+@staticmethod
+def cf_vollathF4_symmetric(im, faxes=(0, 1), **kwargs):
     '''
     Calculates the symmetric Vollath-F4 correllative Sharpness-metric.
     '''
-    impix = 1.0/get_nbrpixel(im, dim=[-2, -1])
-    im_res = cf_vollathF4_symmetric_corr(im, keep_size=True)
-    res = impix * (np.sum(np.abs(np.sum(im_res, axis=(-2, -1))), axis=0))
-    if im_out:
-        return res, im_res
-    else:
-        return res
+    im_res = cf_vollathF4_symmetric_corr(im)
+    res = np.sum(np.abs(np.mean(im_res, axis=faxes)), axis=0)
+
+    return res, im_res
 
 
-def cf_vollathF4_symmetric_corr(im, keep_size=True):
+def cf_vollathF4_symmetric_corr(im):
     '''
     Calculates the symmetric Vollath F4-correlation
     '''
-    im = transpose_arbitrary(
-        im, idx_startpos=[-2, -1], idx_endpos=[0, 1], direction='forward')
-    if keep_size == True:
-        imh = nip.extract(
-            im, [im.shape[0]+4, im.shape[1]+4] + list(im.shape[2:]))
-        im_res = np.repeat(im[np.newaxis, :], repeats=4, axis=0)
-        im_res[0] = (imh[:, :-2] * (imh[:, 1:-1] - imh[:, 2:]))[2:-2, 2:]
-        im_res[1] = (imh[:, 2:] * (imh[:, 1:-1] - imh[:, :-2]))[2:-2, :-2]
-        im_res[2] = (imh[:-2] * (imh[1:-1] - imh[2:]))[2:, 2:-2]
-        im_res[3] = (imh[2:] * (imh[1:-1] - imh[:-2]))[:-2, 2:-2]
-    else:
-        im_res = list()
-        im_res.append(im[:, :-2] * (im[:, 1:-1] - im[:, 2:]))
-        im_res.append(im[:, 2:] * (im[:, 1:-1] - im[:, :-2]))
-        im_res.append(im[:-2] * (im[1:-1] - im[2:]))
-        im_res.append(im[2:] * (im[1:-1] - im[:-2]))
-        im_res = nip.image(np.array(im_res))
+    # imh = nip.extract( im, [im.shape[0]+4, im.shape[1]+4] + list(im.shape[2:]))
 
-    # insertion of new dimension leads to shift in endpos, but not startpos
-    idx_endpos = [1, 2]
+    im_res = np.repeat(im[np.newaxis, 2:-2, 2:-2], repeats=4, axis=0)
+    im_res[0] = im[2:-2, 3:-1] - im[2:-2, 4:]
+    im_res[1] = im[2:-2, 1:-3] - im[2:-2, :-4]
+    im_res[2] = im[3:-1, 2:-2] - im[4:, 2:-2]
+    im_res[3] = im[1:-3, 2:-2] - im[:-4, 2:-2]
+    im_res *= im[np.newaxis, 2:-2, 2:-2]
 
-    return transpose_arbitrary(im_res, idx_startpos=[-2, -1], idx_endpos=idx_endpos, direction='backward')
+    return im_res
 
 
-def cf_vollathF5(im, im_out=True):
+@staticmethod
+def cf_vollathF5(im, faxes=(0, 1), **kwargs):
     '''
     Calculates the Vollath-F4 correllative Sharpness-metric.
     '''
     # res = np.mean(im[:, :-1]*euler_forward_1d(im, dim=1, dx=0))
-    impix = 1.0/np.prod(im.shape[-2:])
-    im_res = cf_vollathF5_corr(im)
-    res = impix*(np.sum(im_res, axis=(-2, -1)) - 1.0 /
-                 impix * np.sum(im_res, axis=(-2, -1))**2)
-    if im_out:
-        return res, im_res
-    else:
-        return res
 
+    im_mean = np.mean(im[:, 1:-1], axis=faxes)
+    im_mean *= im_mean
+    im_filtered = im[:, 1:-1]*im[:, 2:]
+    res = np.mean(im_filtered, axis=faxes) - im_mean
 
-def cf_vollathF5_corr(im):
-    '''
-    Calculates the Vollath F4-correlation
-    '''
-    im = transpose_arbitrary(im, idx_startpos=[-2, -1], idx_endpos=[0, 1])
-    return transpose_arbitrary(im[:-1, :]*im[1:, :], idx_startpos=[-2, -1], idx_endpos=[0, 1], direction='backward')
+    return res, [im_filtered, ]
+
 #
 # -------------------------------------------------------------------------
 # Differential Filters
@@ -191,18 +167,19 @@ def cf_vollathF5_corr(im):
 #
 
 
-def diff_tenengrad(im, axes=(-2, -1), npix=None, **kwargs):
+@ staticmethod
+def diff_tenengrad(im, faxes=(0, 1), **kwargs):
     '''
     Calculates Tenengrad-Sharpness Metric.
     '''
     sh = diff_sobel_horizontal(im)
     sv = diff_sobel_vertical(im)
-    res = 1/npix * np.sum(sh*sh + sv*sv, axis=axes)
+    res = np.mean(sh*sh + sv*sv, axis=faxes)
 
     return res, [sh, sv]
 
 
-def diff_sobel_horizontal(im, **kwargs):
+def diff_sobel_horizontal(im):
     '''
     Calculates the horizontal sobel-filter.
     Filter-shape: [[-1 0 1],[ -2 0 2],[-1 0 1]] -> separabel:  np.outer(np.transpose([1,2,1]),[-1,0,1])
@@ -213,7 +190,7 @@ def diff_sobel_horizontal(im, **kwargs):
     return im_filtered
 
 
-def diff_sobel_vertical(im, **kwargs):
+def diff_sobel_vertical(im):
     '''
     Calculates the vertical sobel-filter.
     Filter-shape: [[-1,-2,-1],[0,0,0],[1,2,1]] -> separabel:  np.outer(np.transpose([-1,0,1]),[1,2,1])
@@ -224,120 +201,61 @@ def diff_sobel_vertical(im, **kwargs):
     return im_filtered
 
 
-def diff_brenners_measure(im, npix, axes=(-2, -1), pad_me=True, return_im=False):
+@ staticmethod
+def diff_brenners_measure(im, faxes=(0, 1), **kwargs):
     """Calculates differential brenners measure.
     """
     # calculate measure
     im_filtered = im[:-2]+im[2:]
-    res = np.sum(im_filtered, axis=(0, 1))/npix
+    res = np.mean(im_filtered, axis=faxes)
 
     # done?
     return res, [im_filtered, ]
 
 
-def diff_absolute_laplacian(im, npix, axes=(-2, -1), return_im=False, **kwargs):
+@ staticmethod
+def diff_absolute_laplacian(im, faxes=(0, 1), **kwargs):
     """Calculates Absolute Laplacian.
     """
     # calculate measure
-    im_filtered = abs(2*im[1:-1, 1:-1]-im[1:-1, :-1]-im[1:-1, 1:]) + \
-        abs(2*im[1:-1, 1:-1]-im[:-1, 1:-1]-im[1:, 1:-1])
-    res = np.sum(im_filtered)/npix
+    im_filtered = abs(2*im[1:-1, 1:-1]-im[1:-1, :-2]-im[1:-1, 2:]) + \
+        abs(2*im[1:-1, 1:-1]-im[:-2, 1:-1]-im[2:, 1:-1])
+    res = np.mean(im_filtered, axis=faxes)
 
     # done?
-    return im, [im_filtered, ]
+    return res, [im_filtered, ]
 
 
-class filters():
-    """Class that links filters to functions and holds additional information on their necessary padding_shape etc.
+@ staticmethod
+def diff_squared_laplacian(im, faxes=(0, 1), **kwargs):
+    """Calculates Absolute Laplacian.
     """
-    # differential filters
-    tenengrad = diff_tenengrad
-    sobelh = diff_sobel_horizontal
-    sobelv = diff_sobel_vertical
-    brenner = diff_brenners_measure
-    abs_laplacian = diff_absolute_laplacian
+    # calculate measure
+    im_filtered = 8*im[1:-1, 1:-1]-im[1:-1, :-2]-im[1:-1, 2:] - im[:-2, 1:-1] - \
+        im[2:, 1:-1]-im[:-2, :-2]-im[2:, 2:]-im[:-2, 2:]-im[2:, :-2]
 
-    # spectral filters
+    im_filtered *= im_filtered
 
-    # correlative filters
-
-    # trafo filters
-
-    # padding selection
-    def get_padding(self, filter_chosen='tenengrad'):
-        if filter_chosen in ['abs_laplacian']:
-            pad_shape = ((1, 1), (1, 1))
-        else:
-            pad_shape = ((1, 1), (0, 0))
-
-        return pad_shape
-
-
-def diff_filters(im, filter='tenengrad', **kwargs):
-    """Interface to select filters of interest.
-
-    Parameters
-    ----------
-    im : image
-        input nD-image stack
-    filter : str, optional
-        see potential filter functions in "filters"-class, by default 'tenengrad'
-
-    Parameters
-    ----------
-    im : image
-        Input image
-    axes : tuple, optional
-        axes to be used for 2D-calculation, by default (-2, -1)
-    pad_shape : tuple, optional
-        if padding (and thereby keeping input-image dimension) shall be used, by default ((1,1),(0,0))
-    return_im : bool, optional
-        whether the filtered image shall be returned as well, by default False
-
-    Returns
-    -------
-    res: list 
-        res[0] calculated metric results
-        res[1] list of sub-images created for metric calculation
-
-    See Also
-    --------
-    filters, 
-    """
-    my_filters = filters()
-
-    # sanity
-    if not 'axes' in kwargs:
-        kwargs['axes'] = (-2, -1)
-    if not 'direction' in kwargs:
-        kwargs['direction'] = 'forward'
-    if not 'pad_shape' in kwargs:
-        kwargs['pad_shape'] = None
-    if not 'return_im' in kwargs:
-        kwargs['return_im'] = True
-    if not 'pad_shape' in kwargs:
-        kwargs['pad_shape'] = my_filters.get_padding(filter_chosen=filter)
-
-    # get function from filtername
-    filter_func = getattr(my_filters, filter)
-
-    # prepare image and put [y,x] to first dimensions
-    im, npix = filter_prep_im(im, kwargs)
-
-    # calculate measure; im_filtered given as list of images
-    res, im_filtered = filter_func(im, kwargs)
-
-    # if return wanted transpose and append
-    if kwargs['return_im']:
-        kwargs['direction'] = 'backward'
-        kwargs['res'] = res
-        for m in range(len(im_filtered)):
-            im_filtered[m] = filter_prep_im(
-                im_filtered[m], axes=(-2, -1), direction='backward', res=res)
-        res = [res, im_filtered]
+    res = np.mean(im_filtered, axis=faxes)
 
     # done?
-    return res
+    return res, [im_filtered, ]
+
+
+@ staticmethod
+def diff_total_variation(im, faxes=(0, 1), **kwargs):
+    """Calculates Absolute Laplacian.
+    """
+    # calculate measure
+    tv1 = im[1:-1, 2:]-im[1:-1, :-2]
+    tv2 = im[2:, 1:-1]-im[:-2, 1:-1]
+    im_filtered = np.sqrt(tv1*tv1 + tv2*tv2)
+
+    res = np.mean(im_filtered, axis=faxes)
+
+    # done?
+    return res, [im_filtered, ]
+
 #
 # -------------------------------------------------------------------------
 # Spectral Filters
@@ -441,18 +359,140 @@ def stf_histogram_entropy(im, bins=256, im_out=True):
         return res
 
 
-def stf_lp_sparsity(im, p=2):
-    '''
-    Measures the LP-sparsity having p=2 as default to ensure higher response for sparse images = sharp images.
-    '''
-    return np.prod(im.shape)**(p-1.0/p)*lp_norm(im, p=1.0/p)/lp_norm(im, p=p)
+# %%
+# --------------------------------------------------------
+#               FILTER-INTERFACE
+# --------------------------------------------------------
+#
 
+
+class filters():
+    """Class that links filters to functions and holds additional information on their necessary padding_shape etc.
+    """
+    # differential filters
+    tenengrad = diff_tenengrad
+    brenner = diff_brenners_measure
+    abs_laplacian = diff_absolute_laplacian
+    squared_laplacian = diff_squared_laplacian
+    total_variation = diff_total_variation
+
+    # spectral filters
+
+    # correlative filters
+    vollath_f4 = cf_vollathF4
+    vollath_f4_symm = cf_vollathF4_symmetric
+    vollath_f5 = cf_vollathF5
+
+    # trafo filters
+
+    # dict
+    __pad_shape_dict__ = {
+        'tenengrad':        ((1, 1), (1, 1)),
+        'brenner':          ((1, 1), (0, 0)),
+        'abs_laplacian':    ((1, 1), (1, 1)),
+        'squared_laplacian': ((1, 1), (1, 1)),
+        'total_variation':  ((1, 1), (1, 1)),
+        'vollath_f4':       ((0, 0), (1, 1)),
+        'vollath_f4_symm':  ((2, 2), (2, 2)),
+        'vollath_f5':       ((0, 0), (1, 1)),
+
+    }
+
+    # padding selection
+    def _get_padding_(self, filter_chosen='tenengrad'):
+        return self.__pad_shape_dict__[filter_chosen]
+
+    def _test_consistance_(self):
+        obj = generate_spokes_target()
+        for getc in self._get_commands_():
+            print(f"Testing for filter: {getc}...", end='')
+            _, _ = filter_sharpness(obj, filter=getc)
+            print("Done")
+        print(f"Works for all filters listed in class {self.__class__}!")
+
+    def _get_commands_(self):
+        return [mycmd for mycmd in self.__dir__() if not mycmd.startswith('_')]
+
+    def __str__(self):
+        print("Possible commands are:")
+
+        # return ", ".join(cmds)
+        return ", ".join(self._get_commands_())
+
+
+def filter_sharpness(im, filter='tenengrad', **kwargs):
+    """Interface to select filters of interest.
+
+    Parameters
+    ----------
+    im : image
+        input nD-image stack
+    filter : str, optional
+        to check potential filter functions in "filters"-class, by default 'tenengrad'
+        print via print(mipy.filters())
+
+    Parameters
+    ----------
+    im : image
+        Input image
+    axes : tuple, optional
+        axes to be used for 2D-calculation, by default (-2, -1)
+    pad_shape : tuple, optional
+        if padding (and thereby keeping input-image dimension) shall be used, by default ((1,1),(0,0))
+    return_im : bool, optional
+        whether the filtered image shall be returned as well, by default False
+
+    Returns
+    -------
+    res: list
+        res[0] calculated metric results
+        res[1] list of sub-images created for metric calculation
+
+    See Also
+    --------
+    filters,
+    """
+    my_filters = filters()
+
+    # sanity
+    if not 'axes' in kwargs:
+        kwargs['axes'] = (-2, -1)
+    if not 'faxes' in kwargs:
+        kwargs['faxes'] = (0, 1)
+    if not 'direction' in kwargs:
+        kwargs['direction'] = 'forward'
+    if not 'return_im' in kwargs:
+        kwargs['return_im'] = True
+    if not 'pad_shape' in kwargs:
+        kwargs['pad_shape'] = my_filters._get_padding_(filter_chosen=filter)
+
+    # get function from filtername
+    filter_func = getattr(my_filters, filter)
+
+    # prepare image and put [y,x] to first dimensions
+    im, kwargs['npix'] = filter_prep_im(
+        im, axes=kwargs['axes'], direction=kwargs['direction'], pad_shape=kwargs['pad_shape'])
+
+    # calculate measure; im_filtered given as list of images
+    res, im_filtered = filter_func(im, **kwargs)
+
+    # if return wanted transpose and append
+    if kwargs['return_im']:
+        kwargs['direction'] = 'backward'
+        for m in range(len(im_filtered)):
+            im_filtered[m] = filter_prep_im(
+                im_filtered[m], axes=kwargs['axes'], direction=kwargs['direction'])
+        res = [res, im_filtered]
+
+    # done?
+    return res
 
 # %%
 # --------------------------------------------------------
 #               FREQUENCY FILTERS
 # --------------------------------------------------------
 #
+
 
 def filter_pass(im, filter_size=(10,), mode='circle', kind='low', filter_out=True):
     '''

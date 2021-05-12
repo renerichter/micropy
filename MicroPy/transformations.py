@@ -152,10 +152,18 @@ def lp_norm(data, p=2, normaxis=None):
     return norm
 
 
+def lp_sparsity(im, p=2):
+    '''
+    Measures the LP-sparsity having p=2 as default to ensure higher response for sparse images = sharp images.
+    '''
+    return np.prod(im.shape)**(p-1.0/p)*lp_norm(im, p=1.0/p)/lp_norm(im, p=p)
+
 # %%
 # ------------------------------------------------------------------
 #               DERIVATIVES
 # ------------------------------------------------------------------
+
+
 def euler_forward_1d(im, dim=0, dx=1):
     '''
     Calculates the forward euler with a stepsize of 1 on default.
