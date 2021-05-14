@@ -4,7 +4,7 @@
 	@author René Lachmann
 	@email herr.rene.richter@gmail.com
 	@create date 2019 11:53:25
-	@modify date 2021-05-11 11:53:39
+	@modify date 2021-05-14 14:20:41
 	@desc Utility package
 
 ---------------------------------------------------------------------------------------------------
@@ -1097,6 +1097,66 @@ def normto(im, dims=(), method='max', direct=True):
     return im
 
 
+def avoid_division_by_zero(nom, denom):
+    """Avoids division by zero by simply excluding division by zero values from division and setting these positions to zero (=exclude from influencing further processing).
+
+    Parameters
+    ----------
+    nom : image
+        nominator
+    denom : image
+        denominator
+
+    Returns
+    -------
+    res : image
+        calculated division image
+    """
+    res = np.zeros(nom.shape)
+    validmask = np.copy(denom)
+    validmask[validmask != 0] = 1
+    np.divide(nom, denom, where=validmask.astype('bool'), out=res)
+    return res
+
+
+def match_dim(im, imaxes, out_ndim):
+    """Matches dimensionality of input array to out_shape for broadcasting.
+
+    Parameters
+    ----------
+    im : image
+        input image
+    imaxes : list
+        list of axes of output image that are present (=used) in im
+    out_ndim : image
+        number of dimensions of output image
+
+    Returns
+    -------
+    im : image
+        reshaped image
+
+    Example
+    -------
+    >>> im = np.ones([7,9])
+    >>> goal_im = np.ones([2,5,7,5,11,9])
+    >>> img = match_dim(im,imaxes=[-4,-1],goal_im.ndim)
+    >>> print(img.shape)
+    (1, 1, 7, 1, 1, 9)
+    """
+
+    # create shape
+    goal_shape = np.ones(out_ndim).astype('uint8')
+    for m, sa in enumerate(imaxes):
+        goal_shape[sa] = im.shape[m]
+
+    # reshape
+    im = np.reshape(im, newshape=goal_shape)
+
+    # done?
+    return im
+
+
 def add_multi_newaxis(imstack, newax_pos=[-1, ]):
     '''
     Adds new-axis at the mentioned position with respect to the final shape per step. So hence, if ndim = 3 and e.g. (3,256,256) and newax_pos = (1,2,-1) it will lead to:(3,1,1,256,256,1), where negative indexes are added first (postpending) and positive indexes are inserted last (prepend).
@@ -1310,6 +1370,67 @@ def set_val_atpos(obj, val, pos):
     """
     posn = np.ravel_multi_index(pos, obj.shape)
     obj.flat[posn] = val
+
+
+def split_nd(im, tile_sizes=[8, 8], split_axes=[-1, -2]):
+    """Splits an nd-Array into an sorted set of tiles.
+    Note: The Tiling is pre-pended according to the order split_axes was used. Hence if split axes is of shape [-1,-2] the resulting image has the number of tiles along the [-2,-1] direction prepended. 
+
+    Parameters
+    ----------
+    im : image
+        input nd-image
+    tile_sizes : list, optional
+        sorted (w.r.t. split_axes) list of tile sizes, by default [8,8]
+    split_axes : list, optional
+        list of axes to be split, by default [-2,-1]
+
+    Returns
+    -------
+    im : array
+        split array
+    sal : array
+        list of finally used split axes
+
+    Example
+    -------
+    >>> im = np.ones([32, 64, 35, 73, 41])
+    >>> ims = mipy.split_nd(im, tile_sizes=[8, 8, 6, 9], split_axes=[1, 2, -1, 0])
+    >>> print(ims.shape)
+    (3, 6, 4, 8, 9, 8, 8, 73, 6)
+    # note: [3,6,4,8] are the tiling along the [0,-1,2,1] axes
+
+    >>> im = np.ones([19,68])
+    >>> ims = mipy.split_nd(im, tile_sizes=[8, 8], split_axes=[-2,-1])
+    >>> print(ims.shape)
+    (8,2,8,8)
+
+
+    See Also
+    --------
+    np.split
+    """
+
+    imdim = im.ndim
+    sal = []
+
+    imshape = np.array([im.shape[m] for m in split_axes])
+    im_multiples = np.floor(imshape // tile_sizes).astype('uint8')
+
+    if not np.sum(np.mod(imshape, tile_sizes)) == 0:
+        imshapeh = list(im.shape)
+        for m, sa in enumerate(split_axes):
+            imshapeh[sa] = im_multiples[m]*tile_sizes[m]
+        im = nip.extract(im, imshapeh)
+
+    for m, sa in enumerate(split_axes):
+        sa = sa-imdim if sa > -1 else sa
+        sal.append(sa)
+        im = np.array(np.split(im, np.arange(
+            tile_sizes[m], tile_sizes[m]*im_multiples[m], tile_sizes[m]), axis=sa))
+
+    # done?
+    return im, sal
 
 # %% -----------------------------------------------------
 # ----              VIEWER INTERACTION

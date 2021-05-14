@@ -302,3 +302,30 @@ def cartesian2polar(outcoords, origin, outshape, printout=False, **kwargs):
         print(
             f"r={np.round(r,2)}, f={np.round(f,2)}, x={np.round(x,2)}, y={np.round(y,2)}")
     return (x, y)
+
+
+def radial_projection(im, radius=None, **kwargs):
+    """Calculates the Radial projection of an image by means of Converting it from cartesian to polar coordinates and summing over the angle-coordinate phi.
+    Note: only works on 2D-arrays OR 3D-arrays, where all higher dimensions are listed into the 3rd dimension, hence eg dim = [X,Y,nz*nt*...]. Center for transformation is always image center (for now).
+
+    Parameters
+    ----------
+    im : image
+        input 2D/3D image
+    radius : float, optional
+        maximum radius to be used for transformation, by default None
+
+    Returns
+    -------
+    res : image
+        projected image
+    """
+    from skimage.transform import warp_polar
+
+    # transform to polar coordinates
+    is_multichannel = True if im.ndim > 2 else False
+    res = warp_polar(im, radius=radius, multichannel=is_multichannel)
+    res = np.sum(res, axis=0)
+
+    # sum over phi to get only radial dependence
+    return res

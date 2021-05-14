@@ -4,7 +4,7 @@
 	@author René Lachmann
 	@email herr.rene.richter@gmail.com
 	@create date 2019-11-25 10:26:14
-	@modify date 2021-05-13 12:05:48
+	@modify date 2021-05-14 14:22:17
 	@desc The Filters are build such that they assume to receive an nD-stack, but they only operate in a 2D-manner (meaning: interpreting the stack as a (n-2)D series of 2D-images). Further, they assume that the last two dimensions (-2,-1) are the image-dimensions. The others are just for stacking.
 
 ---------------------------------------------------------------------------------------------------
@@ -30,7 +30,7 @@ __maintainer__ = "René Lachmann"
 import numpy as np
 import NanoImagingPack as nip
 
-from .utility import transpose_arbitrary, get_nbrpixel
+from .utility import add_multi_newaxis, transpose_arbitrary, split_nd, avoid_division_by_zero, match_dim
 from .transformations import dct2, lp_norm
 from .simulation import generate_spokes_target
 
@@ -256,36 +256,71 @@ def diff_total_variation(im, faxes=(0, 1), **kwargs):
 #
 
 
-def spf_kristans_bayes_spectral_entropy(im, axes=(-2,-1), **kwargs):
-    np.tile()
-    
-    nip.image(dct2(im, forward=True, axes=[-2, -1]))
-
-
-def spf_dct_normalized_shannon_entropy(im, r0=100):
+def spf_kristans_bayes_spectral_entropy(im, faxes=(-2, -1), tile_exp=3, klim=6, **kwargs):
     '''
-    Calculates the normalized Shannon entropy. Does not catch any division by 0 errors etc.
-
-    :param:
-    =======
-    :r0:FLOAT:  Radius of DCT-cutoff ?
+    Kristan's Bayes Spectral Entropy filter that works on 2^n x 2^n - tiles and represents only the central region of the image that can be represented by an integer multiple of this tile-size.
     '''
-    # entropy_term =
+    # get tile_size and extract biggest possible multiple
+    tile_sizes = [2**tile_exp, ]*len(faxes)
+    im_split, sal = split_nd(im, tile_sizes=tile_sizes,
+                             split_axes=np.transpose(np.array(faxes)))
 
-    im_res = nip.image(dct2(im, forward=True, axes=[-2, -1]))
-    imlp2 = lp_norm(im_res, p=2)
-    en_el = np.abs(im_res/imlp2)
-    sum_radius = (nip.rr(en_el, placement='positive') < r0) * 1
-    res = - 2.0 * r0**(-2) * np.sum((en_el * np.log(en_el)) * sum_radius)
-    return res, im_res
+    # calculate DCT along split-axes for the 8x8 tiles
+    res = nip.image(dct2(im_split, forward=True, axes=sal))
 
+    # create selection mask for summing
+    mask = (nip.rr(tile_sizes, placement='corner') < klim).astype('uint8')
+    mask = match_dim(mask, sal, res.ndim)
+
+    # calculate nominator and denominator
+    nom = np.sum(res * res * mask, axis=tuple(sal))
+    denom = np.sum(res*mask, axis=tuple(sal))
+    denom *= denom
+
+    # avoid division by zero
+    res = avoid_division_by_zero(nom, denom)
+    res = -np.mean(1-res, axis=tuple(np.arange(len(sal))))
+
+    return res, [nom, denom]
+
+
+def spf_dct_normalized_shannon_entropy(im, faxes=(-2, -1), klim=100, **kwargs):
+    """Calculates the normalized shannon entropy. 
+
+    Parameters
+    ----------
+    im : image
+        input image
+    faxes : tuple, optional
+        axes to work on, by default (-2, -1)
+    klim : int, optional
+        maximum Fourier-frequency in DCT-splace, by default 100
+
+
+    """
+    # get DCT and prepare terms
+    im = nip.image(dct2(im, forward=True, axes=faxes))
+    imlp2 = lp_norm(im, p=2, normaxis=faxes)
+    en_el = np.abs(im/imlp2)
+
+    # get mask
+    sum_radius = (nip.rr(en_el, placement='corner') < klim) * 1
+    im_res = (en_el * np.log2(en_el)) * sum_radius
+
+    # calculate norm
+    res = - 2.0 * klim**(-2) * np.sum(im_res, axis=faxes)
+
+    # done?
+    return res, [im_res, ]
 
 #
 # -------------------------------------------------------------------------
 # Statistical Filters
 # -------------------------------------------------------------------------
 #
-def stf_max(im, axes=(-2, -1), **kwargs):
+
+
+def stf_max(im, faxes=(-2, -1), **kwargs):
     '''
     Numpy-Max Wrapper implemented for 2D image and called via `filter_sharpness`-interfacing function to assure proper padding and axis orientation.
 
@@ -293,11 +328,11 @@ def stf_max(im, axes=(-2, -1), **kwargs):
     --------
     filter_sharpness
     '''
-    res = np.max(im, axis=axes)
+    res = np.max(im, axis=faxes)
     return res, [None, ]
 
 
-def stf_min(im, axes=(-2, -1), **kwargs):
+def stf_min(im, faxes=(-2, -1), **kwargs):
     '''
     Numpy-Min Wrapper implemented for 2D image and called via `filter_sharpness`-interfacing function to assure proper padding and axis orientation.
 
@@ -305,11 +340,11 @@ def stf_min(im, axes=(-2, -1), **kwargs):
     --------
     filter_sharpness
     '''
-    res = np.min(im, axis=axes)
+    res = np.min(im, axis=faxes)
     return res, [None, ]
 
 
-def stf_mean(im, axes=(-2, -1), **kwargs):
+def stf_mean(im, faxes=(-2, -1), **kwargs):
     '''
     Numpy-Mean wrapper implemented for 2D image and called via `filter_sharpness`-interfacing function to assure proper padding and axis orientation.
 
@@ -317,11 +352,11 @@ def stf_mean(im, axes=(-2, -1), **kwargs):
     --------
     filter_sharpness
     '''
-    res = np.mean(im, axis=axes)
+    res = np.mean(im, axis=faxes)
     return res, [None, ]
 
 
-def stf_median(im, axes=(-2, -1), **kwargs):
+def stf_median(im, faxes=(-2, -1), **kwargs):
     '''
     Numpy-median wrapper implemented for 2D image and called via `filter_sharpness`-interfacing function to assure proper padding and axis orientation.
 
@@ -329,11 +364,11 @@ def stf_median(im, axes=(-2, -1), **kwargs):
     --------
     filter_sharpness
     '''
-    res = np.median(im, axis=axes)
+    res = np.median(im, axis=faxes)
     return res, [None, ]
 
 
-def stf_var(im, axes=(-2, -1), **kwargs):
+def stf_var(im, faxes=(-2, -1), **kwargs):
     '''
     Numpy Variance-Wrapper implemented for 2D image and called via `filter_sharpness`-interfacing function to assure proper padding and axis orientation.
 
@@ -341,22 +376,22 @@ def stf_var(im, axes=(-2, -1), **kwargs):
     --------
     filter_sharpness
     '''
-    res = np.var(im, axis=axes)
+    res = np.var(im, axis=faxes)
     return res, [None, ]
 
 
-def stf_normvar(im, axes=(-2, -1), **kwargs):
+def stf_normvar(im, faxes=(-2, -1), **kwargs):
     """Normalized Variance implemented for 2D image and called via `filter_sharpness`-interfacing function to assure proper padding and axis orientation.
 
     See Also
     --------
     filter_sharpness
     """
-    res = stf_var(im, axes=axes)[0] / (stf_mean(im, axes=axes)[0]**2)
+    res = stf_var(im, faxes=faxes)[0] / (stf_mean(im, faxes=faxes)[0]**2)
     return res, [None, ]
 
 
-def stf_basic(im, axes=(-2, -1), printout=False, **kwargs):
+def stf_basic(im, faxes=(-2, -1), printout=False, **kwargs):
     '''
     Collectionfo basic statistical sharpness metrics: MAX,MIN,MEAN,MEDIAN,VAR,NVAR. Reducing the dimensionality of application to 1 value. Implemented for 2D image and called via `filter_sharpness`-interfacing function to assure proper padding and axis orientation.
 
@@ -365,19 +400,19 @@ def stf_basic(im, axes=(-2, -1), printout=False, **kwargs):
     filter_sharpness
     '''
     im_res = list()
-    im_res.append(stf_max(im, axes=axes)[0])
-    im_res.append(stf_min(im, axes=axes)[0])
-    im_res.append(stf_mean(im, axes=axes)[0])
-    im_res.append(stf_median(im, axes=axes)[0])
-    im_res.append(stf_var(im, axes=axes)[0])
-    im_res.append(stf_normvar(im, axes=axes)[0])
+    im_res.append(stf_max(im, faxes=faxes)[0])
+    im_res.append(stf_min(im, faxes=faxes)[0])
+    im_res.append(stf_mean(im, faxes=faxes)[0])
+    im_res.append(stf_median(im, faxes=faxes)[0])
+    im_res.append(stf_var(im, faxes=faxes)[0])
+    im_res.append(stf_normvar(im, faxes=faxes)[0])
     if printout == True:
         print("Basic analysis yields:\nMAX=\t{}\nMIN=\t{}\nMEAN=\t{}\nMEDIAN=\t{}\nVAR=\t{}\nNVAR=\t{}".format(
             im_res[0], im_res[1], im_res[2], im_res[3], im_res[4], im_res[5]))
     return np.array(im_res), [None, ]
 
 
-def stf_kurtosis(im, axes=(-2, -1), **kwargs):
+def stf_kurtosis(im, faxes=(-2, -1), **kwargs):
     '''
     Forth moment ( https://en.wikipedia.org/wiki/Kurtosis ).
     Scipy-Kurtosis  implemented for 2D image and called via `filter_sharpness`-interfacing function to assure proper padding and axis orientation.
@@ -386,11 +421,11 @@ def stf_kurtosis(im, axes=(-2, -1), **kwargs):
     --------
     filter_sharpness
     '''
-    res = np.mean((im-np.mean(im, axis=axes))**4) / np.var(im, axis=axes)**2
+    res = np.mean((im-np.mean(im, axis=faxes))**4, axis=faxes) / np.var(im, axis=faxes)**2
     return res, [None, ]
 
 
-def stf_diffim_kurtosis(im, axes=(-2, -1), **kwargs):
+def stf_diffim_kurtosis(im, faxes=(0, 1), **kwargs):
     '''
     Difference image Kurtosis implemented for 2D image and called via `filter_sharpness`-interfacing function to assure proper padding and axis orientation.
 
@@ -398,7 +433,7 @@ def stf_diffim_kurtosis(im, axes=(-2, -1), **kwargs):
     --------
     filter_sharpness
     '''
-    return stf_kurtosis(im[2:, 2:] - im[:-2, :-2], axes=axes)
+    return stf_kurtosis(im[2:, 2:] - im[:-2, :-2], faxes=faxes)
 
 
 def stf_histogram_entropy(im, bins=256, **kwargs):
@@ -455,12 +490,14 @@ class filters():
         'normvar':          [stf_normvar,               ((0, 0), (0, 0)),   False],
         'kurtosis':         [stf_kurtosis,              ((0, 0), (0, 0)),   False],
         'diffim_kurtosis':  [stf_diffim_kurtosis,       ((0, 0), (0, 0)),   False],
-        'hist_entropy':     [stf_histogram_entropy,     ((0, 0), (0, 0)),   False],
+        # 'hist_entropy':     [stf_histogram_entropy,     ((0, 0), (0, 0)),   False],
         # correlative filters
         'vollath_f4':       [cf_vollathF4,              ((0, 0), (1, 1)),   True],
         'vollath_f4_symm':  [cf_vollathF4_symmetric,    ((2, 2), (2, 2)),   True],
         'vollath_f5':       [cf_vollathF5,              ((0, 0), (1, 1)),   True],
         # trafo filters
+        'kristans_entropy': [spf_kristans_bayes_spectral_entropy,   ((0, 0), (1, 1)),   True],
+        'shannon_entropy':  [spf_dct_normalized_shannon_entropy,    ((0, 0), (1, 1)),   True],
     }
 
     # padding selection
@@ -543,7 +580,7 @@ def filter_sharpness(im, filter='tenengrad', **kwargs):
 
     # prepare image and put [y,x] to first dimensions
     im, kwargs['npix'] = filter_prep_im(
-        im, axes=kwargs['axes'], direction=kwargs['direction'], pad_shape=kwargs['pad_shape'])
+        im, axes=kwargs['axes'], direction=kwargs['direction'], pad_shape=kwargs['pad_shape'], faxes=kwargs['faxes'])
 
     # calculate measure; im_filtered given as list of images
     res, im_filtered = filter_func(im, **kwargs)
@@ -551,9 +588,10 @@ def filter_sharpness(im, filter='tenengrad', **kwargs):
     # if return wanted transpose and append
     if kwargs['return_im']:
         kwargs['direction'] = 'backward'
+        im_filtered = list(im_filtered)
         for m in range(len(im_filtered)):
             im_filtered[m] = filter_prep_im(
-                im_filtered[m], axes=kwargs['axes'], direction=kwargs['direction'])
+                im_filtered[m], axes=kwargs['axes'], direction=kwargs['direction'], faxes=kwargs['faxes'])
         res = [res, im_filtered]
     else:
         res = [res, None]
