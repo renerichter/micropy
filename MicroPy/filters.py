@@ -4,7 +4,7 @@
 	@author René Lachmann
 	@email herr.rene.richter@gmail.com
 	@create date 2019-11-25 10:26:14
-	@modify date 2021-05-11 18:16:03
+	@modify date 2021-05-13 12:05:48
 	@desc The Filters are build such that they assume to receive an nD-stack, but they only operate in a 2D-manner (meaning: interpreting the stack as a (n-2)D series of 2D-images). Further, they assume that the last two dimensions (-2,-1) are the image-dimensions. The others are just for stacking.
 
 ---------------------------------------------------------------------------------------------------
@@ -97,7 +97,7 @@ def filter_prep_im(im, axes=(-2, -1), direction='forward', pad_shape=None, faxes
 # -------------------------------------------------------------------------
 #
 
-@staticmethod
+
 def cf_vollathF4(im, faxes=(0, 1), **kwargs):
     '''
     Calculates the Vollath-F4 correllative Sharpness-metric.
@@ -119,7 +119,6 @@ def cf_vollathF4_corr(im):
     return im_res
 
 
-@staticmethod
 def cf_vollathF4_symmetric(im, faxes=(0, 1), **kwargs):
     '''
     Calculates the symmetric Vollath-F4 correllative Sharpness-metric.
@@ -146,7 +145,6 @@ def cf_vollathF4_symmetric_corr(im):
     return im_res
 
 
-@staticmethod
 def cf_vollathF5(im, faxes=(0, 1), **kwargs):
     '''
     Calculates the Vollath-F4 correllative Sharpness-metric.
@@ -167,7 +165,6 @@ def cf_vollathF5(im, faxes=(0, 1), **kwargs):
 #
 
 
-@ staticmethod
 def diff_tenengrad(im, faxes=(0, 1), **kwargs):
     '''
     Calculates Tenengrad-Sharpness Metric.
@@ -201,7 +198,6 @@ def diff_sobel_vertical(im):
     return im_filtered
 
 
-@ staticmethod
 def diff_brenners_measure(im, faxes=(0, 1), **kwargs):
     """Calculates differential brenners measure.
     """
@@ -213,7 +209,6 @@ def diff_brenners_measure(im, faxes=(0, 1), **kwargs):
     return res, [im_filtered, ]
 
 
-@ staticmethod
 def diff_absolute_laplacian(im, faxes=(0, 1), **kwargs):
     """Calculates Absolute Laplacian.
     """
@@ -226,7 +221,6 @@ def diff_absolute_laplacian(im, faxes=(0, 1), **kwargs):
     return res, [im_filtered, ]
 
 
-@ staticmethod
 def diff_squared_laplacian(im, faxes=(0, 1), **kwargs):
     """Calculates Absolute Laplacian.
     """
@@ -242,7 +236,6 @@ def diff_squared_laplacian(im, faxes=(0, 1), **kwargs):
     return res, [im_filtered, ]
 
 
-@ staticmethod
 def diff_total_variation(im, faxes=(0, 1), **kwargs):
     """Calculates Absolute Laplacian.
     """
@@ -261,6 +254,12 @@ def diff_total_variation(im, faxes=(0, 1), **kwargs):
 # Spectral Filters
 # -------------------------------------------------------------------------
 #
+
+
+def spf_kristans_bayes_spectral_entropy(im, axes=(-2,-1), **kwargs):
+    np.tile()
+    
+    nip.image(dct2(im, forward=True, axes=[-2, -1]))
 
 
 def spf_dct_normalized_shannon_entropy(im, r0=100):
@@ -286,50 +285,123 @@ def spf_dct_normalized_shannon_entropy(im, r0=100):
 # Statistical Filters
 # -------------------------------------------------------------------------
 #
-def stf_basic(im, axes=(-2, -1), printout=False):
+def stf_max(im, axes=(-2, -1), **kwargs):
     '''
-    Basic statistical sharpness metrics: MAX,MIN,MEAN,MEDIAN,VAR,NVAR. Reducing the whole dimensionality to 1 value.
+    Numpy-Max Wrapper implemented for 2D image and called via `filter_sharpness`-interfacing function to assure proper padding and axis orientation.
+
+    See Also
+    --------
+    filter_sharpness
+    '''
+    res = np.max(im, axis=axes)
+    return res, [None, ]
+
+
+def stf_min(im, axes=(-2, -1), **kwargs):
+    '''
+    Numpy-Min Wrapper implemented for 2D image and called via `filter_sharpness`-interfacing function to assure proper padding and axis orientation.
+
+    See Also
+    --------
+    filter_sharpness
+    '''
+    res = np.min(im, axis=axes)
+    return res, [None, ]
+
+
+def stf_mean(im, axes=(-2, -1), **kwargs):
+    '''
+    Numpy-Mean wrapper implemented for 2D image and called via `filter_sharpness`-interfacing function to assure proper padding and axis orientation.
+
+    See Also
+    --------
+    filter_sharpness
+    '''
+    res = np.mean(im, axis=axes)
+    return res, [None, ]
+
+
+def stf_median(im, axes=(-2, -1), **kwargs):
+    '''
+    Numpy-median wrapper implemented for 2D image and called via `filter_sharpness`-interfacing function to assure proper padding and axis orientation.
+
+    See Also
+    --------
+    filter_sharpness
+    '''
+    res = np.median(im, axis=axes)
+    return res, [None, ]
+
+
+def stf_var(im, axes=(-2, -1), **kwargs):
+    '''
+    Numpy Variance-Wrapper implemented for 2D image and called via `filter_sharpness`-interfacing function to assure proper padding and axis orientation.
+
+    See Also
+    --------
+    filter_sharpness
+    '''
+    res = np.var(im, axis=axes)
+    return res, [None, ]
+
+
+def stf_normvar(im, axes=(-2, -1), **kwargs):
+    """Normalized Variance implemented for 2D image and called via `filter_sharpness`-interfacing function to assure proper padding and axis orientation.
+
+    See Also
+    --------
+    filter_sharpness
+    """
+    res = stf_var(im, axes=axes)[0] / (stf_mean(im, axes=axes)[0]**2)
+    return res, [None, ]
+
+
+def stf_basic(im, axes=(-2, -1), printout=False, **kwargs):
+    '''
+    Collectionfo basic statistical sharpness metrics: MAX,MIN,MEAN,MEDIAN,VAR,NVAR. Reducing the dimensionality of application to 1 value. Implemented for 2D image and called via `filter_sharpness`-interfacing function to assure proper padding and axis orientation.
+
+    See Also
+    --------
+    filter_sharpness
     '''
     im_res = list()
-    im_res.append(np.max(im, axis=axes))
-    im_res.append(np.min(im, axis=axes))
-    im_res.append(np.mean(im, axis=axes))
-    im_res.append(np.median(im, axis=axes))
-    im_res.append(np.var(im, axis=axes))
-    im_res.append(im_res[4]/im_res[2]**2)  # normalized variance (NVAR)
+    im_res.append(stf_max(im, axes=axes)[0])
+    im_res.append(stf_min(im, axes=axes)[0])
+    im_res.append(stf_mean(im, axes=axes)[0])
+    im_res.append(stf_median(im, axes=axes)[0])
+    im_res.append(stf_var(im, axes=axes)[0])
+    im_res.append(stf_normvar(im, axes=axes)[0])
     if printout == True:
         print("Basic analysis yields:\nMAX=\t{}\nMIN=\t{}\nMEAN=\t{}\nMEDIAN=\t{}\nVAR=\t{}\nNVAR=\t{}".format(
             im_res[0], im_res[1], im_res[2], im_res[3], im_res[4], im_res[5]))
-    return np.array(im_res)
+    return np.array(im_res), [None, ]
 
 
-def stf_kurtosis(im, switch_axis=False, axes=(-2, -1)):
+def stf_kurtosis(im, axes=(-2, -1), **kwargs):
     '''
     Forth moment ( https://en.wikipedia.org/wiki/Kurtosis ).
-    Scipy-Kurtosis ->
+    Scipy-Kurtosis  implemented for 2D image and called via `filter_sharpness`-interfacing function to assure proper padding and axis orientation.
+
+    See Also
+    --------
+    filter_sharpness
     '''
-    # from scipy.stats import kurtosis
-    # res = list()
-    # res.append(np.mean((im-np.mean(im))**4) / np.var(im)**2)
-    # res.append(np.mean(np.abs(im-np.mean(im))**4) / (np.var(im)**2))
-    # res.append(np.mean(np.abs(im-np.mean(im))**4) / np.mean(np.abs(im-np.mean(im))**2))
-    # res_comp = kurtosis(im)
-    if switch_axis:
-        axes = (0, 1)
-    res = np.mean((im-np.mean(im, axis=axes))**4) / \
-        np.var(im, axis=axes)**2
-    return res
+    res = np.mean((im-np.mean(im, axis=axes))**4) / np.var(im, axis=axes)**2
+    return res, [None, ]
 
 
-def stf_diffim_kurtosis(im):
+def stf_diffim_kurtosis(im, axes=(-2, -1), **kwargs):
     '''
-    Difference image Kurtosis. Implemented for 2D image.
+    Difference image Kurtosis implemented for 2D image and called via `filter_sharpness`-interfacing function to assure proper padding and axis orientation.
+
+    See Also
+    --------
+    filter_sharpness
     '''
-    im = transpose_arbitrary(im, idx_startpos=[-2, -1], idx_endpos=[0, 1])
-    return stf_kurtosis(im[1:, 1:] - im[:-1, :-1], switch_axis=True)
+    return stf_kurtosis(im[2:, 2:] - im[:-2, :-2], axes=axes)
 
 
-def stf_histogram_entropy(im, bins=256, im_out=True):
+def stf_histogram_entropy(im, bins=256, **kwargs):
     '''
     Calculates the histogram entropy. Measure is still dependend on image-size and contrast. Improve to make independent?
     TODO: fix for new dimension ordering. Changed from [Y,X] = [0,1] to [-2,-1].
@@ -341,7 +413,7 @@ def stf_histogram_entropy(im, bins=256, im_out=True):
             im, newshape=[np.prod(im.shape[:-2]), im.shape[-2], im.shape[- 1]], order='C')
         im_hist = ['', ]
         for cla in range(imh.shape[-1]):
-            im_hist.append(np.histogram(imh[cla, :, :], bins=bins)[1],)
+            im_hist.append(np.histogram(imh[cla], bins=bins)[1],)
         im_hist.pop(0)
         im_hist = np.array(im_hist)
         im_hist = np.reshape(im_hist, newshape=tuple(
@@ -353,10 +425,8 @@ def stf_histogram_entropy(im, bins=256, im_out=True):
     # some Photoncases yield NAN -> given empty bins? what to do?
     im_res = im_hist * np.log(im_hist)
     res = np.sum(im_res, axis=(0))
-    if im_out:
-        return res, im_res, im_hist
-    else:
-        return res
+
+    return res, [im_res, im_hist]
 
 
 # %%
@@ -369,55 +439,57 @@ def stf_histogram_entropy(im, bins=256, im_out=True):
 class filters():
     """Class that links filters to functions and holds additional information on their necessary padding_shape etc.
     """
-    # differential filters
-    tenengrad = diff_tenengrad
-    brenner = diff_brenners_measure
-    abs_laplacian = diff_absolute_laplacian
-    squared_laplacian = diff_squared_laplacian
-    total_variation = diff_total_variation
-
-    # spectral filters
-
-    # correlative filters
-    vollath_f4 = cf_vollathF4
-    vollath_f4_symm = cf_vollathF4_symmetric
-    vollath_f5 = cf_vollathF5
-
-    # trafo filters
-
-    # dict
-    __pad_shape_dict__ = {
-        'tenengrad':        ((1, 1), (1, 1)),
-        'brenner':          ((1, 1), (0, 0)),
-        'abs_laplacian':    ((1, 1), (1, 1)),
-        'squared_laplacian': ((1, 1), (1, 1)),
-        'total_variation':  ((1, 1), (1, 1)),
-        'vollath_f4':       ((0, 0), (1, 1)),
-        'vollath_f4_symm':  ((2, 2), (2, 2)),
-        'vollath_f5':       ((0, 0), (1, 1)),
-
+    _filters_dict_ = {
+        # differential filters
+        'tenengrad':        [diff_tenengrad,            ((1, 1), (1, 1)),   True],
+        'brenner':          [diff_brenners_measure,     ((1, 1), (0, 0)),   True],
+        'abs_laplacian':    [diff_absolute_laplacian,   ((1, 1), (1, 1)),   True],
+        'squared_laplacian': [diff_squared_laplacian,   ((1, 1), (1, 1)),   True],
+        'total_variation':  [diff_total_variation,      ((1, 1), (1, 1)),   True],
+        # spectral filters
+        'max':              [stf_max,                   ((0, 0), (0, 0)),   False],
+        'min':              [stf_min,                   ((0, 0), (0, 0)),   False],
+        'mean':             [stf_mean,                  ((0, 0), (0, 0)),   False],
+        'median':           [stf_median,                ((0, 0), (0, 0)),   False],
+        'var':              [stf_var,                   ((0, 0), (0, 0)),   False],
+        'normvar':          [stf_normvar,               ((0, 0), (0, 0)),   False],
+        'kurtosis':         [stf_kurtosis,              ((0, 0), (0, 0)),   False],
+        'diffim_kurtosis':  [stf_diffim_kurtosis,       ((0, 0), (0, 0)),   False],
+        'hist_entropy':     [stf_histogram_entropy,     ((0, 0), (0, 0)),   False],
+        # correlative filters
+        'vollath_f4':       [cf_vollathF4,              ((0, 0), (1, 1)),   True],
+        'vollath_f4_symm':  [cf_vollathF4_symmetric,    ((2, 2), (2, 2)),   True],
+        'vollath_f5':       [cf_vollathF5,              ((0, 0), (1, 1)),   True],
+        # trafo filters
     }
 
     # padding selection
-    def _get_padding_(self, filter_chosen='tenengrad'):
-        return self.__pad_shape_dict__[filter_chosen]
+    def get_padding(self, filter_chosen):
+        return self._filters_dict_[filter_chosen][1]
 
-    def _test_consistance_(self):
+    def test_consistance(self):
         obj = generate_spokes_target()
-        for getc in self._get_commands_():
+        for getc in self.get_commands():
             print(f"Testing for filter: {getc}...", end='')
             _, _ = filter_sharpness(obj, filter=getc)
             print("Done")
         print(f"Works for all filters listed in class {self.__class__}!")
 
-    def _get_commands_(self):
-        return [mycmd for mycmd in self.__dir__() if not mycmd.startswith('_')]
+    def get_commands(self):
+        # return [mycmd for mycmd in self.__dir__() if not mycmd.startswith('_') and not type(getattr(self, mycmd)) == type(self.get_padding)]
+        return [mycmd for mycmd in self._filters_dict_]
+
+    def get_filter_func(self, filter_chosen):
+        return self._filters_dict_[filter_chosen][0]
+
+    def get_return_im(self, filter_chosen):
+        return self._filters_dict_[filter_chosen][2]
 
     def __str__(self):
         print("Possible commands are:")
 
         # return ", ".join(cmds)
-        return ", ".join(self._get_commands_())
+        return ", ".join(self.get_commands())
 
 
 def filter_sharpness(im, filter='tenengrad', **kwargs):
@@ -462,12 +534,12 @@ def filter_sharpness(im, filter='tenengrad', **kwargs):
     if not 'direction' in kwargs:
         kwargs['direction'] = 'forward'
     if not 'return_im' in kwargs:
-        kwargs['return_im'] = True
+        kwargs['return_im'] = my_filters.get_return_im(filter_chosen=filter)
     if not 'pad_shape' in kwargs:
-        kwargs['pad_shape'] = my_filters._get_padding_(filter_chosen=filter)
+        kwargs['pad_shape'] = my_filters.get_padding(filter_chosen=filter)
 
     # get function from filtername
-    filter_func = getattr(my_filters, filter)
+    filter_func = my_filters.get_filter_func(filter)
 
     # prepare image and put [y,x] to first dimensions
     im, kwargs['npix'] = filter_prep_im(
@@ -483,6 +555,8 @@ def filter_sharpness(im, filter='tenengrad', **kwargs):
             im_filtered[m] = filter_prep_im(
                 im_filtered[m], axes=kwargs['axes'], direction=kwargs['direction'])
         res = [res, im_filtered]
+    else:
+        res = [res, None]
 
     # done?
     return res
