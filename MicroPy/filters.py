@@ -4,7 +4,7 @@
 	@author René Lachmann
 	@email herr.rene.richter@gmail.com
 	@create date 2019-11-25 10:26:14
-	@modify date 2021-05-14 14:22:17
+	@modify date 2021-06-02 12:54:50
 	@desc The Filters are build such that they assume to receive an nD-stack, but they only operate in a 2D-manner (meaning: interpreting the stack as a (n-2)D series of 2D-images). Further, they assume that the last two dimensions (-2,-1) are the image-dimensions. The others are just for stacking.
 
 ---------------------------------------------------------------------------------------------------
@@ -285,7 +285,7 @@ def spf_kristans_bayes_spectral_entropy(im, faxes=(-2, -1), tile_exp=3, klim=6, 
 
 
 def spf_dct_normalized_shannon_entropy(im, faxes=(-2, -1), klim=100, **kwargs):
-    """Calculates the normalized shannon entropy. 
+    """Calculates the normalized shannon entropy.
 
     Parameters
     ----------
@@ -476,29 +476,37 @@ class filters():
     """
     _filters_dict_ = {
         # differential filters
-        'tenengrad':        [diff_tenengrad,            ((1, 1), (1, 1)),   True],
-        'brenner':          [diff_brenners_measure,     ((1, 1), (0, 0)),   True],
-        'abs_laplacian':    [diff_absolute_laplacian,   ((1, 1), (1, 1)),   True],
-        'squared_laplacian': [diff_squared_laplacian,   ((1, 1), (1, 1)),   True],
-        'total_variation':  [diff_total_variation,      ((1, 1), (1, 1)),   True],
+        'tenengrad':        [diff_tenengrad,            ((1, 1), (1, 1)),   True, [0, 1, 0, 1]],
+        'brenner':          [diff_brenners_measure,     ((1, 1), (0, 0)),   True, [0.1, 1, 0.2, 1]],
+        'abs_laplacian':    [diff_absolute_laplacian,   ((1, 1), (1, 1)),   True, [0.2, 0.8, 0.1, 1]],
+        'squared_laplacian': [diff_squared_laplacian,   ((1, 1), (1, 1)),   True, [0.1, 0.7, 0.1, 1]],
+        'total_variation':  [diff_total_variation,      ((1, 1), (1, 1)),   True, [0.2, 0.6, 0.2, 1]],
         # spectral filters
-        'max':              [stf_max,                   ((0, 0), (0, 0)),   False],
-        'min':              [stf_min,                   ((0, 0), (0, 0)),   False],
-        'mean':             [stf_mean,                  ((0, 0), (0, 0)),   False],
-        'median':           [stf_median,                ((0, 0), (0, 0)),   False],
-        'var':              [stf_var,                   ((0, 0), (0, 0)),   False],
-        'normvar':          [stf_normvar,               ((0, 0), (0, 0)),   False],
-        'kurtosis':         [stf_kurtosis,              ((0, 0), (0, 0)),   False],
-        'diffim_kurtosis':  [stf_diffim_kurtosis,       ((0, 0), (0, 0)),   False],
+        'max':              [stf_max,                   ((0, 0), (0, 0)),   False, [0, 0.85, 1, 1]],
+        'min':              [stf_min,                   ((0, 0), (0, 0)),   False, [0, 0.7, 1, 1]],
+        'mean':             [stf_mean,                  ((0, 0), (0, 0)),   False, [0, 0.4, 1, 1]],
+        'median':           [stf_median,                ((0, 0), (0, 0)),   False, [0.4, 0, 1, 1]],
+        'var':              [stf_var,                   ((0, 0), (0, 0)),   False, [0.7, 0, 1, 0.95]],
+        'normvar':          [stf_normvar,               ((0, 0), (0, 0)),   False, [0.85, 0, 1, 0.9]],
+        'kurtosis':         [stf_kurtosis,              ((0, 0), (0, 0)),   False, [0.3, 0.4, 0.9, 0.85]],
+        'diffim_kurtosis':  [stf_diffim_kurtosis,       ((0, 0), (0, 0)),   False, [0.5, 0.4, 0.9, 0.8]],
         # 'hist_entropy':     [stf_histogram_entropy,     ((0, 0), (0, 0)),   False],
         # correlative filters
-        'vollath_f4':       [cf_vollathF4,              ((0, 0), (1, 1)),   True],
-        'vollath_f4_symm':  [cf_vollathF4_symmetric,    ((2, 2), (2, 2)),   True],
-        'vollath_f5':       [cf_vollathF5,              ((0, 0), (1, 1)),   True],
+        'vollath_f4':       [cf_vollathF4,              ((0, 0), (1, 1)),   True, [1, 0, 0, 1]],
+        'vollath_f4_symm':  [cf_vollathF4_symmetric,    ((2, 2), (2, 2)),   True, [0.85, 0, 0, 1]],
+        'vollath_f5':       [cf_vollathF5,              ((0, 0), (1, 1)),   True, [0.7, 0, 0, 1]],
         # trafo filters
-        'kristans_entropy': [spf_kristans_bayes_spectral_entropy,   ((0, 0), (1, 1)),   True],
-        'shannon_entropy':  [spf_dct_normalized_shannon_entropy,    ((0, 0), (1, 1)),   True],
+        'kristans_entropy': [spf_kristans_bayes_spectral_entropy,   ((0, 0), (1, 1)),   True,  [0.8, 0.8, 0.8, 1]],
+        'shannon_entropy':  [spf_dct_normalized_shannon_entropy,    ((0, 0), (1, 1)),   True, [0.7, 0.7, 0.7, 1]],
     }
+
+    _colors_ = []
+
+    def __init__(self, create_colors=True, cmap='rainbow'):
+        if create_colors:
+            self.create_filter_colors(cmap)
+        else:
+            self.set_filter_colors()
 
     # padding selection
     def get_padding(self, filter_chosen):
@@ -521,6 +529,21 @@ class filters():
 
     def get_return_im(self, filter_chosen):
         return self._filters_dict_[filter_chosen][2]
+
+    def create_filter_colors(self, cmap, use_own=False):
+        if use_own:
+            pass
+        else:
+            from matplotlib.pyplot import get_cmap
+            self._colors_ = get_cmap(cmap)(np.arange(256))[
+                ::int(np.floor(256/len(self._filters_dict_)))]
+
+    def set_filter_colors(self):
+        self._colors_ = [[0, 1, 0, 1], [0.1, 1, 0.2, 1], [0.2, 0.8, 0.1, 1],        [0.1, 0.7, 0.1, 1],        [0.2, 0.6, 0.2, 1],         [0, 0.85, 1, 1],         [0, 0.7, 1, 1],         [0, 0.4, 1, 1],         [
+            0.4, 0, 1, 1],         [0.7, 0, 1, 0.95],         [0.85, 0, 1, 0.9],         [0.3, 0.4, 0.9, 0.85],         [0.5, 0.4, 0.9, 0.8],        [1, 0, 0, 1],        [0.85, 0, 0, 1],        [0.7, 0, 0, 1],          [0.8, 0.8, 0.8, 1],         [0.7, 0.7, 0.7, 1], ]
+
+    def get_filter_colors(self, m):
+        return self._colors_[m]
 
     def __str__(self):
         print("Possible commands are:")
