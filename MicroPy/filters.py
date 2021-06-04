@@ -4,7 +4,7 @@
 	@author René Lachmann
 	@email herr.rene.richter@gmail.com
 	@create date 2019-11-25 10:26:14
-	@modify date 2021-06-02 12:54:50
+	@modify date 2021-06-04 09:55:39
 	@desc The Filters are build such that they assume to receive an nD-stack, but they only operate in a 2D-manner (meaning: interpreting the stack as a (n-2)D series of 2D-images). Further, they assume that the last two dimensions (-2,-1) are the image-dimensions. The others are just for stacking.
 
 ---------------------------------------------------------------------------------------------------
@@ -502,9 +502,9 @@ class filters():
 
     _colors_ = []
 
-    def __init__(self, create_colors=True, cmap='rainbow'):
+    def __init__(self, create_colors=True, cmap='rainbow', myfilters=None):
         if create_colors:
-            self.create_filter_colors(cmap)
+            self.create_filter_colors(cmap, myfilters)
         else:
             self.set_filter_colors()
 
@@ -530,13 +530,11 @@ class filters():
     def get_return_im(self, filter_chosen):
         return self._filters_dict_[filter_chosen][2]
 
-    def create_filter_colors(self, cmap, use_own=False):
-        if use_own:
-            pass
-        else:
-            from matplotlib.pyplot import get_cmap
-            self._colors_ = get_cmap(cmap)(np.arange(256))[
-                ::int(np.floor(256/len(self._filters_dict_)))]
+    def create_filter_colors(self, cmap, myfilters=None):
+        collen = len(myfilters) if myfilters is not None else len(self._filters_dict_)
+        from matplotlib.pyplot import get_cmap
+        self._colors_ = get_cmap(cmap)(np.arange(256))[
+            ::int(np.floor(256/collen))]
 
     def set_filter_colors(self):
         self._colors_ = [[0, 1, 0, 1], [0.1, 1, 0.2, 1], [0.2, 0.8, 0.1, 1],        [0.1, 0.7, 0.1, 1],        [0.2, 0.6, 0.2, 1],         [0, 0.85, 1, 1],         [0, 0.7, 1, 1],         [0, 0.4, 1, 1],         [

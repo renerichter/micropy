@@ -304,7 +304,7 @@ def cartesian2polar(outcoords, origin, outshape, printout=False, **kwargs):
     return (x, y)
 
 
-def radial_projection(im, radius=None, **kwargs):
+def radial_projection_sum(im, radius=None, **kwargs):
     """Calculates the Radial projection of an image by means of Converting it from cartesian to polar coordinates and summing over the angle-coordinate phi.
     Note: only works on 2D-arrays OR 3D-arrays, where all higher dimensions are listed into the 3rd dimension, hence eg dim = [X,Y,nz*nt*...]. Center for transformation is always image center (for now).
 
@@ -329,3 +329,51 @@ def radial_projection(im, radius=None, **kwargs):
 
     # sum over phi to get only radial dependence
     return res
+
+
+def radial_sum(im, maxbins=None):
+    """Calculates the radialsum. Use eg to calculate the mean frequency transfer efficiency and to have a quick look at the noise floor when using together with FT-images. Implementation is agnostic to input-datatype and hence needs to get proper (eg modulus of FT) input.
+
+    Parameters
+    ----------
+    im : image
+        input image (eg FT)
+    maxbins : int, optional
+        maximum number of bins to be used to calculate frequenc, by default None
+
+    Returns
+    -------
+    rsum : image
+        summed projection
+    idx : image
+        indices of bins used
+
+    Examples
+    --------
+    >>> im = np.zeros((8,8))
+    >>> im[:,3:6] = 1
+    >>> imr,idx = radial_sum(im,maxbins=None)
+    >>> print(f"imr={imr}\nidx={idx}")
+    imr=[1.         1.         0.625      0.375      0.16666667     0.  0.        ]
+    idx=[[6 5 5 4 4 4 5 5]
+    [5 4 4 3 3 3 4 4]
+    [5 4 3 2 2 2 3 4]
+    [4 3 2 2 1 2 2 3]
+    [4 3 2 1 0 1 2 3]
+    [4 3 2 2 1 2 2 3]
+    [5 4 3 2 2 2 3 4]
+    [5 4 4 3 3 3 4 4]]
+
+    See Also
+    --------
+    lp_norm, radial_projection_sum
+    """
+    if maxbins is None:
+        maxbins = np.ceil(lp_norm(np.array(im.shape)/2.0)).astype('int32')+1
+
+    idx = nip.rr(im.shape)
+    idx = np.round(idx*(maxbins-1)/np.max(idx)).astype('int32')
+    rsum = np.array([np.mean(im[idx == m]) for m in range(maxbins)])
+    rsum[np.isnan(rsum)] = 0
+
+    return rsum, idx

@@ -4,7 +4,7 @@
 	@author René Lachmann
 	@email herr.rene.richter@gmail.com
 	@create date 2019 11:53:25
-	@modify date 2021-05-14 14:20:41
+	@modify date 2021-06-04 18:15:01
 	@desc Utility package
 
 ---------------------------------------------------------------------------------------------------
@@ -18,6 +18,7 @@ from deprecated import deprecated
 # mipy imports
 from .functions import gaussian1D
 from .numbers import generate_combinations
+import timeit
 
 # %%
 # -------------------------------------------------------------------------
@@ -1624,6 +1625,137 @@ def visualize_extrema_1D(flatim, localmax, value, output_shape):
     for m in localmax[0]:
         b[m] = 10
     return b.reshape(output_shape)
+
+# %% -----------------------------------------------------
+# ----                  TIMING AND PERFORMANCE
+# --------------------------------------------------------
+
+
+def protected_run(stmt, module_name='__main__'):
+    """Runs a function only if it is part of the intended module. 
+
+    Parameters
+    ----------
+    stmt : function
+        function to be run
+    module_name : str, optional
+        scope of aim, by default 'scratch_20210604'
+
+    Example
+    -------
+    #in module testme.py will not evaluate...
+    >>> protected_run(print('hiho'), module_name='testyou')
+
+    # while in testyou.py
+    >>> protected_run(print('hiho'), module_name='testyou')
+    hiho
+    """
+    if __name__ == module_name:
+        stmt
+
+
+def time_me(call_str, myfuncs=None, repeats=1000, name_scope=None):
+    """Simple wraper to use data from timeit nicely. 
+    Note: Automatic name_scope retrieval not working yet!
+
+    Parameters
+    ----------
+    call_str : str
+        input function call to be evaluated
+    myfuncs : list, optional
+        functions called in call_str, by default None
+    repeats : int, optional
+        number of repitions, by default 1000
+    name_scope : str, optional
+        module to import from, by default None
+
+
+    Returns
+    -------
+    time_repeats : array
+        list if timings
+    time_stats : array
+        list of parameters: min, max, median, mean, variance
+
+    Example
+    -------
+    >>> def mysq(x):
+    >>>     return x*x*x
+    >>> def mysum(x,y):
+    >>>     return 2*x+y
+    >>> def myminus(x,y):
+    >>>     return 2*x-np.min([x,y])
+    >>> print(mipy.time_me(call_str="mysq(mysum(10,myminus(5,4)))",myfuncs=[mysq,mysum,myminus],repeats=1000,name_scope=__name__)[1][0])
+    9.433002560399473e-06
+
+    See Also
+    --------
+    time_me_loop
+    """
+    if name_scope is None:
+        name_scope = get_caller_function()
+
+    setup_str = time_me_setup_string(myfuncs, name_scope)
+    time_repeats = timeit.repeat(
+        call_str, setup=setup_str, number=1, repeat=repeats)
+    time_stats = time_me_stats(time_repeats)
+
+    return time_repeats, time_stats
+
+
+def time_me_setup_string(myfuncs, name_scope):
+    res = "" if myfuncs is None else f"from {name_scope} import {','.join([m.__name__ for m in myfuncs])}"
+    return res
+
+
+def get_caller_function():
+    from inspect import stack
+    return stack()[1].function
+
+
+def time_me_stats(time_vec):
+    return [np.min(time_vec), np.max(time_vec), np.median(time_vec), np.mean(time_vec), np.var(time_vec)]
+
+
+def time_me_loop(call_str, myfuncs=None, repeats=1000, averages=100, name_scope=None):
+    """Loop based timing of input-function. Helpful to get more concise data for averaging. 
+
+    Parameters
+    ----------
+    call_str : str
+        input function call to be evaluated
+    myfuncs : list, optional
+        functions called in call_str, by default None
+    repeats : int, optional
+        number of repitions, by default 1000
+    averages : int, optional
+        number of evaluations of myfunc per 1 repetition, by default 100
+    name_scope : str, optional
+        module to import from, by default None
+
+
+    Returns
+    -------
+    time_nbrsl : array
+        list if timings
+    time_stats : array
+        list of parameters: min, max, median, mean, variance
+
+    See Also
+    --------
+    time_me_loop
+    """
+    if name_scope is None:
+        name_scope = get_caller_function()
+
+    setup_str = time_me_setup_string(myfuncs, name_scope)
+    time_nbrsl = []
+    for m in range(repeats):
+        time_nbrsl.append(timeit.timeit(
+            call_str, setup=setup_str, number=averages)/averages)
+
+    time_stats = time_me_stats(time_nbrsl)
+    return time_nbrsl, time_stats
 
 # %% ---------------------------------------------------------------
 # ---                         DEPRECATED                         ---
