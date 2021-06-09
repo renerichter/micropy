@@ -4,7 +4,7 @@
 	@author René Lachmann
 	@email herr.rene.richter@gmail.com
 	@create date 2019 11:53:25
-	@modify date 2021-06-04 18:15:01
+	@modify date 2021-06-08 08:47:58
 	@desc Utility package
 
 ---------------------------------------------------------------------------------------------------
@@ -1741,9 +1741,19 @@ def time_me_loop(call_str, myfuncs=None, repeats=1000, averages=100, name_scope=
     time_stats : array
         list of parameters: min, max, median, mean, variance
 
+    Example
+    -------
+    >>> def mysq(x):
+    >>>     return x*x*x
+    >>> def mysum(x,y):
+    >>>     return 2*x+y
+    >>> def myminus(x,y):
+    >>>     return 2*x-np.min([x,y])
+    >>> print(mipy.time_me_loop(call_str="mysq(mysum(10,myminus(5,4)))",myfuncs=[mysq,mysum,myminus],repeats=1000,averages=1000,name_scope=__name__)[1][0])
+    9.433002560399473e-06
     See Also
     --------
-    time_me_loop
+    time_me
     """
     if name_scope is None:
         name_scope = get_caller_function()

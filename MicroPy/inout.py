@@ -589,7 +589,7 @@ def print_stack2subplot(imstack, plt_raster=[4, 4], plt_format=[8, 6], title=Non
     if type(imstack) == list:
         imstack_len = len(imstack)
     # needs NanoImagingPack imported as nip
-    elif type(imstack) == nip.image or type(imstack) == np.array:
+    elif type(imstack) == nip.image or type(imstack) == np.ndarray:
         imstack_len = imstack.shape[0]
     else:
         raise TypeError("Unexpected Data-type.")
@@ -600,13 +600,15 @@ def print_stack2subplot(imstack, plt_raster=[4, 4], plt_format=[8, 6], title=Non
     if title == None:
         title = datetime.now().strftime("%d.%m.%Y %H:%M:%S")
 
-    # parameter
-    x_offset = 3
-    y_offset = 21
-
     # create figure (fig), and array of axes (ax)
     fig, ax = plt.subplots(
         nrows=plt_raster[0], ncols=plt_raster[1], figsize=plt_format)
+
+    # parameter
+    ax_meas = [ax.flat[0].bbox.width, ax.flat[0].bbox.height]
+    x_offset = np.round(3*ax_meas[0]/250.0).astype('uint16')
+    y_offset = np.round(21*ax_meas[1]/250.0).astype('uint16')
+
     # plot simple raster image on each sub-plot
     for m, axm in enumerate(ax.flat):
         ima = axm.imshow(imstack[m], alpha=1.0,
@@ -641,10 +643,10 @@ def print_stack2subplot(imstack, plt_raster=[4, 4], plt_format=[8, 6], title=Non
             axm.set_title(titlestack[m])
 
         if nbrs:
-            xoff = int(x_offset/imstack[0].shape[-1]*imstack[m].shape[-1])
-            yoff = int(y_offset/imstack[0].shape[-2]*imstack[m].shape[-2])
-            axm.text(xoff, yoff, chr(97+m)+')',
-                     fontsize=2*plt.rcParams['font.size'], color=nbrs_color, fontname='Helvetica', weight='normal')
+            #xoff = int(x_offset/imstack[0].shape[-1]*imstack[m].shape[-1])
+            #yoff = int(y_offset/imstack[0].shape[-2]*imstack[m].shape[-2])
+            axm.text(x_offset, y_offset, chr(97+m)+')',
+                     fontsize=ax_meas[1]/5, color=nbrs_color, fontname='Helvetica', weight='normal')
 
         if not use_axis:
             axm.axis('off')
