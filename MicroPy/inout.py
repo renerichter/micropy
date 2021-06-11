@@ -673,25 +673,31 @@ def print_stack2subplot(imstack, plt_raster=[4, 4], plt_format=[8, 6], title=Non
     return fig
 
 
-def stack2plot(x, ystack, refs=None, title=None, xlabel=None, ylabel=None, colors=None):
+def stack2plot(x, ystack, refs=None, title=None, xlabel=None, ylabel=None, colors=None, legend=[1, 1.05], figsize=(8, 8), show_plot=True):
     '''
     Prints a 1d-"ystack" into 1 plot and assigns legends + titles.
     '''
-    fig1 = plt.figure()
+    fig1 = plt.figure(figsize=figsize)
+    ax = plt.subplot(111)
     for m in range(len(ystack)):
         label = str(m) if refs is None else refs[m]
         colorse = tuple(np.random.rand(3)) if colors is None else colors[m]
         xlabel = 'Pixel' if xlabel is None else xlabel
         ylabel = 'Pixel' if ylabel is None else ylabel
         title = datetime.now().strftime("%Y%M%D") if title is None else title
-        line, = plt.plot(x, ystack[m], label=label, color=colorse)
+        line, = ax.plot(x, ystack[m], label=label, color=colorse)
         line.set_antialiased(False)
-        plt.xlabel(xlabel)
-        plt.ylabel(ylabel)
-        plt.title(title)
-        plt.legend(loc="best")
+    if type(legend) == list:
+        ax.legend(bbox_to_anchor=legend)
+    else:
+        ax.legend(loc="best")
+    ax.set_xlabel(xlabel)
+    ax.set_ylabel(ylabel)
+    ax.set_title(title)
+    plt.tight_layout()
 
-    plt.show()
+    if show_plot:
+        plt.show()
 
     return fig1
 

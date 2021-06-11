@@ -4,7 +4,7 @@
 	@author René Lachmann
 	@email herr.rene.richter@gmail.com
 	@create date 2019 11:53:25
-	@modify date 2021-06-08 08:47:58
+	@modify date 2021-06-11 19:08:04
 	@desc Utility package
 
 ---------------------------------------------------------------------------------------------------
@@ -1654,20 +1654,15 @@ def protected_run(stmt, module_name='__main__'):
         stmt
 
 
-def time_me(call_str, myfuncs=None, repeats=1000, name_scope=None):
+def time_me(fcall, repeats=1000, averages=100):
     """Simple wraper to use data from timeit nicely. 
-    Note: Automatic name_scope retrieval not working yet!
 
     Parameters
     ----------
-    call_str : str
+    call_str : function
         input function call to be evaluated
-    myfuncs : list, optional
-        functions called in call_str, by default None
     repeats : int, optional
         number of repitions, by default 1000
-    name_scope : str, optional
-        module to import from, by default None
 
 
     Returns
@@ -1685,19 +1680,16 @@ def time_me(call_str, myfuncs=None, repeats=1000, name_scope=None):
     >>>     return 2*x+y
     >>> def myminus(x,y):
     >>>     return 2*x-np.min([x,y])
-    >>> print(mipy.time_me(call_str="mysq(mysum(10,myminus(5,4)))",myfuncs=[mysq,mysum,myminus],repeats=1000,name_scope=__name__)[1][0])
+    >>> print(mipy.time_me(lambda: mysq(mysum(10,myminus(5,4)))repeats=1000)[1][0])
     9.433002560399473e-06
 
     See Also
     --------
     time_me_loop
     """
-    if name_scope is None:
-        name_scope = get_caller_function()
-
-    setup_str = time_me_setup_string(myfuncs, name_scope)
     time_repeats = timeit.repeat(
-        call_str, setup=setup_str, number=1, repeat=repeats)
+        lambda: fcall, number=averages, repeat=repeats)
+    time_repeats = np.array(time_repeats)/averages
     time_stats = time_me_stats(time_repeats)
 
     return time_repeats, time_stats
@@ -1717,7 +1709,13 @@ def time_me_stats(time_vec):
     return [np.min(time_vec), np.max(time_vec), np.median(time_vec), np.mean(time_vec), np.var(time_vec)]
 
 
-def time_me_loop(call_str, myfuncs=None, repeats=1000, averages=100, name_scope=None):
+# %% ---------------------------------------------------------------
+# ---                         DEPRECATED                         ---
+# ------------------------------------------------------------------
+
+
+@deprecated(version='0.1.5', reason='Name_scope resolution and passing of arrays etc not working as planned. Changed to call by relay-function.')
+def time_me_loop(call_str, myfuncs=None, repeats=1000, averages=100, name_scope=None, **kwargs):
     """Loop based timing of input-function. Helpful to get more concise data for averaging. 
 
     Parameters
@@ -1762,14 +1760,10 @@ def time_me_loop(call_str, myfuncs=None, repeats=1000, averages=100, name_scope=
     time_nbrsl = []
     for m in range(repeats):
         time_nbrsl.append(timeit.timeit(
-            call_str, setup=setup_str, number=averages)/averages)
+            call_str, setup=setup_str, number=averages, globals=kwargs)/averages)
 
     time_stats = time_me_stats(time_nbrsl)
     return time_nbrsl, time_stats
-
-# %% ---------------------------------------------------------------
-# ---                         DEPRECATED                         ---
-# ------------------------------------------------------------------
 
 
 @deprecated(version='0.1.3', reason='General Change of ISM-interface lead to rather use distances instead of rectangular geometry to allow for arbitrary shapes. See mask_from_dist for more.')
