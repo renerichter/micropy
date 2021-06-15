@@ -673,7 +673,7 @@ def print_stack2subplot(imstack, plt_raster=[4, 4], plt_format=[8, 6], title=Non
     return fig
 
 
-def stack2plot(x, ystack, refs=None, title=None, xlabel=None, ylabel=None, colors=None, legend=[1, 1.05], figsize=(8, 8), show_plot=True):
+def stack2plot(x, ystack, refs=None, title=None, xlabel=None, ylabel=None, colors=None, mmarker='', mlinestyle='-', legend=[1, 1.05], figsize=(8, 8), show_plot=True):
     '''
     Prints a 1d-"ystack" into 1 plot and assigns legends + titles.
     '''
@@ -685,7 +685,8 @@ def stack2plot(x, ystack, refs=None, title=None, xlabel=None, ylabel=None, color
         xlabel = 'Pixel' if xlabel is None else xlabel
         ylabel = 'Pixel' if ylabel is None else ylabel
         title = datetime.now().strftime("%Y%M%D") if title is None else title
-        line, = ax.plot(x, ystack[m], label=label, color=colorse)
+        line, = ax.plot(x, ystack[m], label=label, color=colorse,
+                        marker=mmarker, linestyle=mlinestyle)
         line.set_antialiased(False)
     if type(legend) == list:
         ax.legend(bbox_to_anchor=legend)
@@ -700,6 +701,74 @@ def stack2plot(x, ystack, refs=None, title=None, xlabel=None, ylabel=None, color
         plt.show()
 
     return fig1
+
+
+def plot_3dstacks(res_noisy_s, defocus_range, noise_stack, myfilters, axis_labels=['', '', ''], show_plot=True, suptitle='', nbrs=False, nbrs_color=[0, 0, 0]):
+    #fig3 = plt.figure(figsize=(6, 10))  #
+    mcols = 3
+    mrows = len(myfilters)//mcols
+    fig3, axm3 = plt.subplots(mrows, mcols, figsize=(9, 12),
+                              subplot_kw={'projection': '3d'})  # sharey=True,sharex=True,
+    axm3 = axm3.flat
+
+    ax_meas = [axm3[0].bbox.width, axm3[0].bbox.height]
+
+    try:
+        if len(defocus_range[0]) != 0:
+            defocus_use_indiv = True
+    except:
+        defocus_use_indiv = False
+    try:
+        if len(noise_stack[0]) != 0:
+            noise_use_indiv = True
+    except:
+        noise_use_indiv = False
+
+    for m, mfilters in enumerate(myfilters):
+        ax3 = axm3[m]
+        # ax3 = fig3.add_subplot(len(myfilters)//3, 3, m+1, projection='3d')
+        xrange = defocus_range[m] if defocus_use_indiv else defocus_range
+        yrange = noise_stack[m] if noise_use_indiv else noise_stack
+        Y, X = np.meshgrid(xrange, yrange)
+        ax3.plot_surface(np.log(X), Y, res_noisy_s[m],
+                         cmap=cm.coolwarm, linewidth=0, antialiased=False)
+        # ax3.plot_trisurf(np.log(X), Y, res_noisy_s[m],                     triangles=tri.triangles, cmap='viridis', linewidths=0.2)
+        ax3.set_xlabel(axis_labels[0])
+        ax3.set_ylabel(axis_labels[1])
+        ax3.set_zlabel(axis_labels[2])
+        if nbrs:
+            ax3.text2D(x=0.01, y=0.85, s=chr(97+m)+')', fontsize=int(
+                ax_meas[1]/8), color=nbrs_color, fontname='Helvetica', weight='normal', transform=ax3.transAxes)
+        else:
+            ax3.set_title(mfilters)
+        # ax3.xaxis.set_major_formatter(mticker.FuncFormatter(log_tick_formatter))
+        # ax3.xaxis.set_major_locator(mticker.MaxNLocator(integer=True))
+        if m//3 < (mrows-1):
+            ax3.get_xaxis().set_visible(False)
+            ax3.xaxis.set_ticklabels("")
+            ax3.set_xlabel('')
+            ax3.get_yaxis().set_visible(False)
+            ax3.yaxis.set_ticklabels("")
+            ax3.set_ylabel('')
+            # ax.xaxis.set_major_locator(ticker.NullLocator())
+        if m % 3 < (mcols-1):
+            ax3.get_yaxis().set_visible(False)
+            ax3.yaxis.set_ticklabels("")
+            ax3.set_ylabel('')
+            ax3.get_zaxis().set_visible(False)
+            ax3.zaxis.set_ticklabels("")
+            ax3.set_zlabel('')
+            # ax.yaxis.set_major_locator(ticker.NullLocator())
+            # ax.xaxis.ticks
+        # ax3.set_xlim(0, np.round(np.max(X)))
+        # ax3.set_ylim(0, np.max(Y))
+        # ax3.set_zlim(0, 1)
+    # fig3.subplots_adjust(hspace=1.0, wspace=1.0)
+    # plt.tight_layout()
+    fig3.suptitle(suptitle)
+    if show_plot:
+        plt.show()
+    return fig3, axm3
 
 
 def plot_save(ppointer, save_name, save_format='png', dpi=300):

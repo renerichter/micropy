@@ -4,7 +4,7 @@
 	@author René Lachmann
 	@email herr.rene.richter@gmail.com
 	@create date 2019 11:53:25
-	@modify date 2021-06-11 19:08:04
+	@modify date 2021-06-14 11:14:48
 	@desc Utility package
 
 ---------------------------------------------------------------------------------------------------
@@ -1098,8 +1098,9 @@ def normto(im, dims=(), method='max', direct=True):
     return im
 
 
-def avoid_division_by_zero(nom, denom):
+def avoid_division_by_zero(nom, denom, releps=1e-8):
     """Avoids division by zero by simply excluding division by zero values from division and setting these positions to zero (=exclude from influencing further processing).
+    Note: right now max not taken care for correct sign on assignment to validmask.
 
     Parameters
     ----------
@@ -1115,8 +1116,11 @@ def avoid_division_by_zero(nom, denom):
     """
     res = np.zeros(nom.shape)
     validmask = np.copy(denom)
-    validmask[validmask != 0] = 1
-    np.divide(nom, denom, where=validmask.astype('bool'), out=res)
+    avm = abs(validmask)
+    mvm = np.max(avm)
+    mvma = tuple(np.unravel_index(np.argmax(avm), shape=avm.shape))
+    validmask[avm <= mvm*releps] = denom[mvma]*releps
+    _ = np.divide(nom, denom, where=validmask.astype('bool'), out=res)
     return res
 
 

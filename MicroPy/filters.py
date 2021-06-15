@@ -4,7 +4,7 @@
 	@author René Lachmann
 	@email herr.rene.richter@gmail.com
 	@create date 2019-11-25 10:26:14
-	@modify date 2021-06-08 11:33:03
+	@modify date 2021-06-14 16:09:18
 	@desc The Filters are build such that they assume to receive an nD-stack, but they only operate in a 2D-manner (meaning: interpreting the stack as a (n-2)D series of 2D-images). Further, they assume that the last two dimensions (-2,-1) are the image-dimensions. The others are just for stacking.
 
 ---------------------------------------------------------------------------------------------------
@@ -300,7 +300,7 @@ def spf_dct_normalized_shannon_entropy(im, faxes=(-2, -1), klim=100, **kwargs):
     """
     # get DCT and prepare terms
     im = nip.image(dct2(im, forward=True, axes=faxes))
-    imlp2 = lp_norm(im, p=2, normaxis=faxes)
+    imlp2 = lp_norm(im, p=2, normaxis=faxes, keepdims=True)
     en_el = np.abs(im/imlp2)
 
     # get mask
@@ -476,28 +476,28 @@ class filters():
     """
     _filters_dict_ = {
         # differential filters
-        'tenengrad':        [diff_tenengrad,            ((1, 1), (1, 1)),   True, [0, 1, 0, 1]],
-        'brenner':          [diff_brenners_measure,     ((1, 1), (0, 0)),   True, [0.1, 1, 0.2, 1]],
-        'abs_laplacian':    [diff_absolute_laplacian,   ((1, 1), (1, 1)),   True, [0.2, 0.8, 0.1, 1]],
-        'squared_laplacian': [diff_squared_laplacian,   ((1, 1), (1, 1)),   True, [0.1, 0.7, 0.1, 1]],
-        'total_variation':  [diff_total_variation,      ((1, 1), (1, 1)),   True, [0.2, 0.6, 0.2, 1]],
+        'tenengrad':        [diff_tenengrad,            ((1, 1), (1, 1)),   True, [0, 1, 0, 1], [(-2, -1), (0, 1)], 'Tenengrad'],
+        'brenner':          [diff_brenners_measure,     ((1, 1), (0, 0)),   True, [0.1, 1, 0.2, 1], [(-2, -1), (0, 1)], 'Brenner'],
+        'abs_laplacian':    [diff_absolute_laplacian,   ((1, 1), (1, 1)),   True, [0.2, 0.8, 0.1, 1], [(-2, -1), (0, 1)], 'Absolute Laplacian'],
+        'squared_laplacian': [diff_squared_laplacian,   ((1, 1), (1, 1)),   True, [0.1, 0.7, 0.1, 1], [(-2, -1), (0, 1)], 'Squared Laplacian'],
+        'total_variation':  [diff_total_variation,      ((1, 1), (1, 1)),   True, [0.2, 0.6, 0.2, 1], [(-2, -1), (0, 1)], 'Total Variation'],
         # spectral filters
-        'max':              [stf_max,                   ((0, 0), (0, 0)),   False, [0, 0.85, 1, 1]],
-        'min':              [stf_min,                   ((0, 0), (0, 0)),   False, [0, 0.7, 1, 1]],
-        'mean':             [stf_mean,                  ((0, 0), (0, 0)),   False, [0, 0.4, 1, 1]],
-        'median':           [stf_median,                ((0, 0), (0, 0)),   False, [0.4, 0, 1, 1]],
-        'var':              [stf_var,                   ((0, 0), (0, 0)),   False, [0.7, 0, 1, 0.95]],
-        'normvar':          [stf_normvar,               ((0, 0), (0, 0)),   False, [0.85, 0, 1, 0.9]],
-        'kurtosis':         [stf_kurtosis,              ((0, 0), (0, 0)),   False, [0.3, 0.4, 0.9, 0.85]],
-        'diffim_kurtosis':  [stf_diffim_kurtosis,       ((0, 0), (0, 0)),   False, [0.5, 0.4, 0.9, 0.8]],
+        'max':              [stf_max,                   ((0, 0), (0, 0)),   False, [0, 0.85, 1, 1], [(-2, -1), (0, 1)], 'Maximum'],
+        'min':              [stf_min,                   ((0, 0), (0, 0)),   False, [0, 0.7, 1, 1], [(-2, -1), (0, 1)], 'Minimum'],
+        'mean':             [stf_mean,                  ((0, 0), (0, 0)),   False, [0, 0.4, 1, 1], [(-2, -1), (0, 1)], 'Mean'],
+        'median':           [stf_median,                ((0, 0), (0, 0)),   False, [0.4, 0, 1, 1], [(-2, -1), (0, 1)], 'Median'],
+        'var':              [stf_var,                   ((0, 0), (0, 0)),   False, [0.7, 0, 1, 0.95], [(-2, -1), (0, 1)], 'Variance'],
+        'normvar':          [stf_normvar,               ((0, 0), (0, 0)),   False, [0.85, 0, 1, 0.9], [(-2, -1), (0, 1)], 'Normed Variance'],
+        'kurtosis':         [stf_kurtosis,              ((0, 0), (0, 0)),   False, [0.3, 0.4, 0.9, 0.85], [(-2, -1), (0, 1)], 'Kurtosis'],
+        'diffim_kurtosis':  [stf_diffim_kurtosis,       ((0, 0), (0, 0)),   False, [0.5, 0.4, 0.9, 0.8], [(-2, -1), (0, 1)], 'Difference Kurtosis'],
         # 'hist_entropy':     [stf_histogram_entropy,     ((0, 0), (0, 0)),   False],
         # correlative filters
-        'vollath_f4':       [cf_vollathF4,              ((0, 0), (1, 1)),   True, [1, 0, 0, 1]],
-        'vollath_f4_symm':  [cf_vollathF4_symmetric,    ((2, 2), (2, 2)),   True, [0.85, 0, 0, 1]],
-        'vollath_f5':       [cf_vollathF5,              ((0, 0), (1, 1)),   True, [0.7, 0, 0, 1]],
+        'vollath_f4':       [cf_vollathF4,              ((0, 0), (1, 1)),   True, [1, 0, 0, 1], [(-2, -1), (0, 1)], 'Vollath F4'],
+        'vollath_f4_symm':  [cf_vollathF4_symmetric,    ((2, 2), (2, 2)),   True, [0.85, 0, 0, 1], [(-2, -1), (0, 1)], 'symmetric Vollath F4'],
+        'vollath_f5':       [cf_vollathF5,              ((0, 0), (1, 1)),   True, [0.7, 0, 0, 1], [(-2, -1), (0, 1)], 'Vollath F5'],
         # trafo filters
-        'kristans_entropy': [spf_kristans_bayes_spectral_entropy,   ((0, 0), (1, 1)),   True,  [0.8, 0.8, 0.8, 1]],
-        'shannon_entropy':  [spf_dct_normalized_shannon_entropy,    ((0, 0), (1, 1)),   True, [0.7, 0.7, 0.7, 1]],
+        'kristans_entropy': [spf_kristans_bayes_spectral_entropy,   ((0, 0), (0, 0)),   True,  [0.8, 0.8, 0.8, 1], [(-2, -1), (-2, -1)], 'Kristans Entropy'],
+        'shannon_entropy':  [spf_dct_normalized_shannon_entropy,    ((0, 0), (0, 0)),   True, [0.7, 0.7, 0.7, 1], [(-2, -1), (-2, -1)], 'Shannon Entropy'],
     }
 
     _colors_ = []
@@ -511,6 +511,16 @@ class filters():
     # padding selection
     def get_padding(self, filter_chosen):
         return self._filters_dict_[filter_chosen][1]
+
+    def get_axes_faxes(self, filter_chosen):
+        return self._filters_dict_[filter_chosen][4]
+
+    def get_pprint_names(self, filter_list_chosen):
+        if type(filter_list_chosen) == list:
+            res = [self._filters_dict_[m][5] for m in filter_list_chosen]
+        else:
+            res = self._filters_dict_[filter_list_chosen][5]
+        return res
 
     def test_consistance(self):
         obj = generate_spokes_target()
@@ -586,9 +596,9 @@ def filter_sharpness(im, filter='tenengrad', **kwargs):
 
     # sanity
     if not 'axes' in kwargs:
-        kwargs['axes'] = (-2, -1)
+        kwargs['axes'] = my_filters.get_axes_faxes(filter_chosen=filter)[0]
     if not 'faxes' in kwargs:
-        kwargs['faxes'] = (0, 1)
+        kwargs['faxes'] = my_filters.get_axes_faxes(filter_chosen=filter)[1]
     if not 'direction' in kwargs:
         kwargs['direction'] = 'forward'
     if not 'return_im' in kwargs:

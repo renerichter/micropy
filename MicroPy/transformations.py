@@ -128,7 +128,7 @@ def dct2(im, forward=True, axes=[-2, -1]):
 # ------------------------------------------------------------------
 #               NORMS
 # ------------------------------------------------------------------
-def lp_norm(data, p=2, normaxis=None):
+def lp_norm(data, p=2, normaxis=None, keepdims=False):
     """Calculates the LP-norm.
 
     Parameters
@@ -139,6 +139,8 @@ def lp_norm(data, p=2, normaxis=None):
         norm-dimensionality, by default 2
     normaxis : tuple, optional
         norm-direction , by default None (=all directions)
+    keepdims : bool, optional
+        whether to keep singular dimensions, by default False
 
     Returns
     -------
@@ -146,9 +148,9 @@ def lp_norm(data, p=2, normaxis=None):
         calculated norm along chosen (or all) directions
     """
     if normaxis is None:
-        norm = (np.sum(np.abs(data)**p))**(1.0/p)
+        norm = (np.sum(np.abs(data)**p, keepdims=keepdims))**(1.0/p)
     else:
-        norm = (np.sum(np.abs(data)**p, axis=tuple(normaxis)))**(1.0/p)
+        norm = (np.sum(np.abs(data)**p, axis=tuple(normaxis), keepdims=keepdims))**(1.0/p)
     return norm
 
 
