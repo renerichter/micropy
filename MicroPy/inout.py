@@ -6,6 +6,8 @@ from datetime import datetime
 import NanoImagingPack as nip
 import numpy as np
 import matplotlib.pyplot as plt
+import matplotlib as mpl
+import mpl_toolkits as mptk
 from mpl_toolkits.axes_grid1 import make_axes_locatable
 from tifffile import imread as tifimread
 # mipy imports
@@ -393,7 +395,7 @@ def osaka_load_2Dscan(im_path, imd=[128, 128], overscan=[1, 1.25], nbr_det=[16, 
 
 
 def osaka_convert2matlab(fd, imd=[128, 128], overscan=[1, 1.25], nbr_det=[16, 16], reader=2):
-    """Load 2D-overscan OSAKA-Data and save into 1D-list to be read by MATLAB for PSF estimation. 
+    """Load 2D-overscan OSAKA-Data and save into 1D-list to be read by MATLAB for PSF estimation.
 
     Parameters
     ----------
@@ -406,12 +408,12 @@ def osaka_convert2matlab(fd, imd=[128, 128], overscan=[1, 1.25], nbr_det=[16, 16
     nbr_det : list, optional
         number of detectors per dimension used for scanning -> see load_osakaScan2D, by default [16,16]
     reader : int, optional
-        readin method to be used -> see load_osakaScan2D, by default 2    
+        readin method to be used -> see load_osakaScan2D, by default 2
 
     Raises
     ------
     ValueError
-        Loaded and stored data are not the same -> error with output  
+        Loaded and stored data are not the same -> error with output
 
     Example
     -------
@@ -467,14 +469,14 @@ def rename_files(file_dir, extension='jpg', version=1):
     Renames numbered stack and inserts 0s so that readin it in works better.
     Leaves out image #9. Why?
 
-    Note: 
-        09.07.2020 -> version_parameter not needen anymore due to updated regex for file_search. 
+    Note:
+        09.07.2020 -> version_parameter not needen anymore due to updated regex for file_search.
     '''
     tstart = time.time()
     brename = False
 
     # load file_list without path and exclude files of wrong extension
-    #glob(load_experiment + '*.' + extension)
+    # glob(load_experiment + '*.' + extension)
     file_list = os.listdir(file_dir)
     file_list = [m for m in file_list if m[-len(extension):] == extension]
 
@@ -535,7 +537,7 @@ def dir_test_existance(mydir):
 
 def delete_files_in_path(load_path):
     '''
-    Deletes all files from a path, but leaves directories. 
+    Deletes all files from a path, but leaves directories.
     '''
     for root_path, dirs, files in os.walk(load_path):
         for file in files:
@@ -580,7 +582,7 @@ def paths_from_dict(path_dict):
 #
 
 
-def print_stack2subplot(imstack, plt_raster=[4, 4], plt_format=[8, 6], title=None, titlestack=True, colorbar=True, axislabel=True, laytight=True, nbrs=True, nbrs_color=[1, 1, 1], use_axis=True, plt_show=False):
+def print_stack2subplot(imstack, plt_raster=[4, 4], plt_format=[8, 6], title=None, titlestack=True, colorbar=True, axislabel=True, laytight=True, nbrs=True, nbrs_color=[1, 1, 1], nbrs_size=None, use_axis=True, plt_show=False, gridspec_kw=None):
     '''
     Plots an 3D-Image-stack as set of subplots
     Based on this: https://stackoverflow.com/a/46616645
@@ -600,14 +602,17 @@ def print_stack2subplot(imstack, plt_raster=[4, 4], plt_format=[8, 6], title=Non
     if title == None:
         title = datetime.now().strftime("%d.%m.%Y %H:%M:%S")
 
-    # create figure (fig), and array of axes (ax)
+    # create figure (fig), and array of axes (ax)-> gridspec_kw = {'height_ratios':[2,2,1,1]}
     fig, ax = plt.subplots(
-        nrows=plt_raster[0], ncols=plt_raster[1], figsize=plt_format)
+        nrows=plt_raster[0], ncols=plt_raster[1], figsize=plt_format, sharex=True, sharey=False,
+        gridspec_kw=gridspec_kw)
 
     # parameter
     ax_meas = [ax.flat[0].bbox.width, ax.flat[0].bbox.height]
     x_offset = np.round(3*ax_meas[0]/250.0).astype('uint16')
     y_offset = np.round(21*ax_meas[1]/250.0).astype('uint16')
+
+    nbrs_psize = ax_meas[1]*0.2 if nbrs_size is None else ax_meas[1]*nbrs_size
 
     # plot simple raster image on each sub-plot
     for m, axm in enumerate(ax.flat):
@@ -643,10 +648,10 @@ def print_stack2subplot(imstack, plt_raster=[4, 4], plt_format=[8, 6], title=Non
             axm.set_title(titlestack[m])
 
         if nbrs:
-            #xoff = int(x_offset/imstack[0].shape[-1]*imstack[m].shape[-1])
-            #yoff = int(y_offset/imstack[0].shape[-2]*imstack[m].shape[-2])
+            # xoff = int(x_offset/imstack[0].shape[-1]*imstack[m].shape[-1])
+            # yoff = int(y_offset/imstack[0].shape[-2]*imstack[m].shape[-2])
             axm.text(x_offset, y_offset, chr(97+m)+')',
-                     fontsize=ax_meas[1]/5, color=nbrs_color, fontname='Helvetica', weight='normal')
+                     fontsize=nbrs_psize, color=nbrs_color, fontname='Helvetica', weight='normal')
 
         if not use_axis:
             axm.axis('off')
@@ -671,6 +676,123 @@ def print_stack2subplot(imstack, plt_raster=[4, 4], plt_format=[8, 6], title=Non
     if plt_show:
         plt.show()
     return fig
+
+# not finished yet and maybe even a bad idea...
+# class Draw():
+#    """General Drawing class to generate basic plots for typical image-stacks that are generated within the different projects. It incorporates the plotting #functions:
+#    * print_stack2subplot
+#    * stack2plot
+#    * plot_3dstacks
+#
+#    and tries to overcome all the positioning limitations of legends etc
+#    """
+#
+#    # Dimensions
+#    is_2D = True
+#
+#    # Figure and canvas dimensions
+#    figure_size = [8, 8]
+#    figure_dpi = 300
+#    rows = 1
+#    cols = 1
+#
+#    # labels
+#    xlabel = 'Pixel [a.u.]'
+#    ylabel = 'Pixel [a.u.]'
+#    zlabel = 'Pixel [a.u.]'
+#    label_share_axes = True
+#
+#    figure_title = ''
+#    subplot_title = ''
+#    subplot_nbrs_show = False
+#    subplot_nbrs_colors = [0, 0, 0]
+#    subplot_nbrs_size = 0.2
+#    subplot_shape = [2, 3]
+#
+#    label_fontname = 'Helvetica'
+#    label_weight = 'normal'
+#
+#    # Axes
+#    axis_show = False
+#    projection = 'rectilinear'
+#    active_ax = None
+#
+#    # Colors
+#    colors = None
+#    colors_cmap = cm.viridis
+#
+#    # Lines and Markers
+#    marker_style = ''
+#    marker_color = ''
+#    marker_size = ''
+#    line_style = '-'
+#    line_width = 2.0
+#    line_color = 'b'
+#
+#    # Graphic Options
+#    aliased = False
+#
+#    # Legend and colorbar
+#    legend = False
+#    legend_loc = None
+#    legend_pos = [1.05, 1.2]
+#    colorbar = False
+#    colorbar_pos = 'right'
+#    colorbar_size = '10%'
+#    colorbar_pad = '0.1'
+#
+#    # Layout
+#    tight_layout = False
+#
+#    # Data
+#    datx = None
+#    daty = None
+#    datz = None
+#    dat_stack = daty
+#    dat_type = 'g'  # 'g'=graph, 'im'=image
+#
+#    # output options
+#    show_plot = False
+#
+#    def __init__(self, **kwargs):
+#        # populate basic_attr_dict with user-input
+#        [setattr(self, m, kwargs[m]) for m in kwargs if getattr(self, m)]
+#
+#    def create_canvas(self):
+#        self.fig = mpl.figure.Figure(figsize=self.figsize, dpi=self.dpi)
+#
+#    @staticmethod
+#    def is_list(obj):
+#        if type(obj) in [list, tuple, np.ndarray]:
+#            return True
+#        else:
+#            return False
+#
+#    def make_listable(self, obj_list, ldim_list):
+#        for m, obj in enumerate(obj_list):
+#            if not self.is_list(getattr(self, obj)):
+#                setattr(self, obj, [obj, ] * len(ldim_list[m]))
+#
+#    def draw_data(self):
+#        self.make_listable(['projection', 'dat_type', 'is_2D'], [len(self.dat_stack), ]*3)
+#        self.projection = self.make_listable(self.projection, len(self.dat_stack))
+#        for m, dat in enumerate(self.dat_stack):
+#            self.active_ax = self.fig.add_subplot(
+#                nrows=self.subplot_shape[0], ncols=self.subplot_shape[1], index=m, projection=self.projection(m))
+#            self.ax.append(self.active_ax)
+#
+#            if self.is_2D[m]:
+#                if self.dat_type[m] == 'g':
+#                    prepare_data(self.datx)
+#                    self.active_ax.plot()
+#                else:
+#                    self.active_ax.imshow()
+#            else:
+#                pass
+#
+#    def prepare_data(is_2D, datx, daty=None)::
+#        pass
+#
 
 
 def stack2plot(x, ystack, refs=None, title=None, xlabel=None, ylabel=None, colors=None, mmarker='', mlinestyle='-', legend=[1, 1.05], figsize=(8, 8), show_plot=True):
