@@ -795,10 +795,15 @@ def print_stack2subplot(imstack, plt_raster=[4, 4], plt_format=[8, 6], title=Non
 #
 
 
-def stack2plot(x, ystack, refs=None, title=None, xlabel=None, ylabel=None, colors=None, mmarker='', mlinestyle='-', legend=[1, 1.05], figsize=(8, 8), show_plot=True):
+def stack2plot(x, ystack, refs=None, title=None, xlabel=None, ylabel=None, colors=None, mmarker='', mlinestyle='-', mlinewidth=None, legend=[1, 1.05], figsize=(8, 8), show_plot=True):
     '''
     Prints a 1d-"ystack" into 1 plot and assigns legends + titles.
     '''
+    # sanity
+    if not mlinewidth is None and not type(mlinewidth) in [np.ndarray, list, tuple]:
+        mlinewidth = [mlinewidth, ]*len(ystack)
+
+    # plot
     fig1 = plt.figure(figsize=figsize)
     ax = plt.subplot(111)
     for m in range(len(ystack)):
@@ -809,6 +814,8 @@ def stack2plot(x, ystack, refs=None, title=None, xlabel=None, ylabel=None, color
         title = datetime.now().strftime("%Y%M%D") if title is None else title
         line, = ax.plot(x, ystack[m], label=label, color=colorse,
                         marker=mmarker, linestyle=mlinestyle)
+        if not mlinewidth is None:
+            line.set_linewidth(mlinewidth[m])
         line.set_antialiased(False)
     if type(legend) == list:
         ax.legend(bbox_to_anchor=legend)
