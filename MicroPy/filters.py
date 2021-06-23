@@ -4,7 +4,7 @@
 	@author René Lachmann
 	@email herr.rene.richter@gmail.com
 	@create date 2019-11-25 10:26:14
-	@modify date 2021-06-14 16:09:18
+	@modify date 2021-06-22 14:04:37
 	@desc The Filters are build such that they assume to receive an nD-stack, but they only operate in a 2D-manner (meaning: interpreting the stack as a (n-2)D series of 2D-images). Further, they assume that the last two dimensions (-2,-1) are the image-dimensions. The others are just for stacking.
 
 ---------------------------------------------------------------------------------------------------
@@ -19,7 +19,7 @@ __author__ = "René Lachmann"
 __copyright__ = "Copyright 2019"
 __credits__ = ["Jan Becker, Sebastian Unger, David McFadden"]
 __license__ = "MIT"
-__version__ = "0.3a"
+__version__ = "0.7a"
 __maintainer__ = "René Lachmann"
 
 # %%
@@ -29,10 +29,12 @@ __maintainer__ = "René Lachmann"
 #
 import numpy as np
 import NanoImagingPack as nip
+from scipy.ndimage import binary_closing
 
 from .utility import add_multi_newaxis, transpose_arbitrary, split_nd, avoid_division_by_zero, match_dim
 from .transformations import dct2, lp_norm
 from .simulation import generate_spokes_target
+
 
 # %%
 # -------------------------------------------------------------------------
@@ -215,6 +217,7 @@ def diff_absolute_laplacian(im, faxes=(0, 1), **kwargs):
     # calculate measure
     im_filtered = abs(2*im[1:-1, 1:-1]-im[1:-1, :-2]-im[1:-1, 2:]) + \
         abs(2*im[1:-1, 1:-1]-im[:-2, 1:-1]-im[2:, 1:-1])
+
     res = np.mean(im_filtered, axis=faxes)
 
     # done?
@@ -237,7 +240,7 @@ def diff_squared_laplacian(im, faxes=(0, 1), **kwargs):
 
 
 def diff_total_variation(im, faxes=(0, 1), **kwargs):
-    """Calculates Absolute Laplacian.
+    """Calculates Total Variation.
     """
     # calculate measure
     tv1 = im[1:-1, 2:]-im[1:-1, :-2]
@@ -284,7 +287,7 @@ def spf_kristans_bayes_spectral_entropy(im, faxes=(-2, -1), tile_exp=3, klim=6, 
     return res, [nom, denom]
 
 
-def spf_dct_normalized_shannon_entropy(im, faxes=(-2, -1), klim=100, **kwargs):
+def spf_dct_normalized_shannon_entropy(im, faxes=(-2, -1), klim=100, krel=1e-2,**kwargs):
     """Calculates the normalized shannon entropy.
 
     Parameters
@@ -295,23 +298,52 @@ def spf_dct_normalized_shannon_entropy(im, faxes=(-2, -1), klim=100, **kwargs):
         axes to work on, by default (-2, -1)
     klim : int, optional
         maximum Fourier-frequency in DCT-splace, by default 100
+    krel : float, optional
+        relativ kvalue to maxval of DCT-image to find limiting support. Used if klim==None, by default 1e-2
 
 
     """
     # get DCT and prepare terms
-    im = nip.image(dct2(im, forward=True, axes=faxes))
-    imlp2 = lp_norm(im, p=2, normaxis=faxes, keepdims=True)
-    en_el = np.abs(im/imlp2)
+    imDCT = nip.image(dct2(im, forward=True, axes=faxes))
+    imlp2 = lp_norm(imDCT, p=2, normaxis=faxes, keepdims=True)
+    en_el = np.abs(imDCT/imlp2)
 
-    # get mask
-    sum_radius = (nip.rr(en_el, placement='corner') < klim) * 1
-    im_res = (en_el * np.log2(en_el)) * sum_radius
+    # make sure for OTF-support
+    if klim is None:
+        mask = np.copy(imDCT)
+        mask[mask<np.max(mask)*krel]=0
+        mask[mask>np.max(mask)*krel]=1
+        
+        if imDCT.ndim>3:
+            mask_pad = tuple([(0,0),]*(imDCT.ndim-3)+[(4,4),(4,4),(4,4)])
+            mask_struct = np.ones( [1,]*(imDCT.ndim-3)+[3,3,3])
+            sdim=-3
+        elif imDCT.ndim==3:
+            mask_pad = ((0,0),(4,4),(4,4))
+            mask_struct = np.ones([1,3,3])
+            sdim=-3
+        else:
+            mask_pad = ((4,4),(4,4))
+            mask_struct = np.ones([3,3])
+            sdim=-2
+        mask = np.pad(mask, mask_pad, mode='constant', constant_values=0)
+        mask = binary_closing(mask, structure=mask_struct ,iterations=3)
+        mask = nip.extract(img=mask,ROIsize=imDCT.shape)
+
+        # assume spherical support and calculate radius from area per slice
+        klim_sqr=np.floor((4*np.sum(mask,axis=(-2,-1))/np.pi)).astype('int32')
+    else:
+        mask = nip.rr(en_el, placement='corner') < klim
+        klim_sqr = klim*klim
+    
+    im_res = (en_el * np.log2(en_el, where=en_el != 0, out=np.zeros(en_el.shape)))
 
     # calculate norm
-    res = - 2.0 * klim**(-2) * np.sum(im_res, axis=faxes)
+    res = - 2.0 / klim_sqr * np.sum(im_res*mask, axis=faxes)
 
     # done?
     return res, [im_res, ]
+
 
 #
 # -------------------------------------------------------------------------
@@ -499,6 +531,10 @@ class filters():
         'kristans_entropy': [spf_kristans_bayes_spectral_entropy,   ((0, 0), (0, 0)),   True,  [0.8, 0.8, 0.8, 1], [(-2, -1), (-2, -1)], 'Kristans Entropy'],
         'shannon_entropy':  [spf_dct_normalized_shannon_entropy,    ((0, 0), (0, 0)),   True, [0.7, 0.7, 0.7, 1], [(-2, -1), (-2, -1)], 'Shannon Entropy'],
     }
+    _filters_special_params_ = {
+        'kristans_entropy': {'tile_exp': 3, 'klim': 6, },
+        'shannon_entropy':  {'klim': None, 'krel':1e-2},
+    }
 
     _colors_ = []
 
@@ -539,6 +575,16 @@ class filters():
 
     def get_return_im(self, filter_chosen):
         return self._filters_dict_[filter_chosen][2]
+
+    def get_special_param(self, filter_chosen):
+        if not self._filters_special_params_.get(filter_chosen) is None:
+            return self._filters_special_params_[filter_chosen]
+        else:
+            return False
+
+    def add_special_param(self, kwargs, filter_chosen=filter):
+        for sparam in self._filters_special_params_[filter_chosen]:
+            kwargs[sparam] = self._filters_special_params_[filter_chosen][sparam]
 
     def create_filter_colors(self, cmap, myfilters=None):
         collen = len(myfilters) if myfilters is not None else len(self._filters_dict_)
@@ -605,7 +651,8 @@ def filter_sharpness(im, filter='tenengrad', **kwargs):
         kwargs['return_im'] = my_filters.get_return_im(filter_chosen=filter)
     if not 'pad_shape' in kwargs:
         kwargs['pad_shape'] = my_filters.get_padding(filter_chosen=filter)
-
+    if not my_filters.get_special_param(filter_chosen=filter) == False:
+        my_filters.add_special_param(kwargs, filter_chosen=filter)
     # get function from filtername
     filter_func = my_filters.get_filter_func(filter)
 

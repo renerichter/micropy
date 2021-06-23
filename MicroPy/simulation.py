@@ -181,7 +181,7 @@ def generate_testobj(test_object=3, mypath=''):
     return im
 
 
-def generate_spokes_target(imsize=[128, 128], nbr_spokes=14, method='cart'):
+def generate_spokes_target(imsize=[128, 128], nbr_spokes=14, method='cart', gen3D=False, nbr_spokes_ax=14):
     """Generate spokes target.
     Interestingly, method "polar" is rather imprecise and shifted.
 
@@ -195,6 +195,10 @@ def generate_spokes_target(imsize=[128, 128], nbr_spokes=14, method='cart'):
         Method to be used for calculation, by default 'cart'
             'polar' : generate spokes in polar coordinates and apply coordinate transform
             'cart' : calculate directly in cartesian coordinates
+    gen3D : bool, optional
+        if 3D spokes target shall be generated, by default: False
+    nbr_spokes_ax : int, optional
+        axial amount of spokes, by default: 14
 
     Returns
     -------
@@ -206,19 +210,31 @@ def generate_spokes_target(imsize=[128, 128], nbr_spokes=14, method='cart'):
     >>> spokes_cart = generate_spokes_target(imsize=[128, 128], nbr_spokes=14, method='cart')
     >>> spokes_polar = generate_spokes_target(imsize=[64, 64], nbr_spokes=14, method='polar')
     >>> nip.v5(nip.catE(spokes_cart, np.rot90(spokes_polar, k=1)))
+    >>> nip.v5(generate_spokes_target(imsize=[64, 64,64], nbr_spokes=14, gen3D=True,nbr_spokes_ax=14))
 
     See Also
     -------
     generate_tilted_stripes, polar2cartesian, scipy.ndimage.geometric_transform
     """
-    # via coordinate transformations
-    if method == 'polar':
-        phi = nip.xx(imsize, placement='corner')/imsize[-1]*2*np.pi*nbr_spokes
-        spokes_polar = (np.sin(phi) > 0)*1
-        spokes_cart = geometric_transform(spokes_polar, polar2cartesian, order=0, output_shape=(
-            imsize[0] * 2, imsize[0] * 2), extra_keywords={'inputshape': imsize, 'origin': (imsize[0], imsize[0])})
+
+    if gen3D:
+        # get coordinates
+        x = nip.ramp1D(imsize[-1], ramp_dim=-1, placement='center')
+        y = nip.ramp1D(imsize[-2], ramp_dim=-2, placement='center')
+        z = nip.ramp1D(imsize[-3], ramp_dim=-3, placement='center')
+        phi = np.arctan2(y, x)
+        theta = np.arctan2(np.sqrt(x*x+y*y), z)
+
+        sin_cart = np.cos(phi*nbr_spokes)*np.sin(theta*nbr_spokes_ax)
+        spokes_cart = (sin_cart > 0).astype('float32')
     else:
-        spokes_cart = (nip.image(np.sin(nip.phiphi(imsize)*nbr_spokes)) > 0)*1
+        if method == 'polar':
+            phi = nip.xx(imsize, placement='corner')/imsize[-1]*2*np.pi*nbr_spokes
+            spokes_polar = (np.sin(phi) > 0)*1
+            spokes_cart = geometric_transform(spokes_polar, polar2cartesian, order=0, output_shape=(
+                imsize[0] * 2, imsize[0] * 2), extra_keywords={'inputshape': imsize, 'origin': (imsize[0], imsize[0])})
+        else:
+            spokes_cart = (nip.image(np.sin(nip.phiphi(imsize)*nbr_spokes)) > 0)*1
 
     # done?
     return spokes_cart.astype(np.float32)

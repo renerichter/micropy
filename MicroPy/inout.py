@@ -795,7 +795,7 @@ def print_stack2subplot(imstack, plt_raster=[4, 4], plt_format=[8, 6], title=Non
 #
 
 
-def stack2plot(x, ystack, refs=None, title=None, xlabel=None, ylabel=None, colors=None, mmarker='', mlinestyle='-', mlinewidth=None, legend=[1, 1.05], figsize=(8, 8), show_plot=True):
+def stack2plot(x, ystack, refs=None, title=None, xlabel=None, ylabel=None, colors=None, mmarker='', mlinestyle='-', mlinewidth=None, legend=[1, 1.05], xlims=None, ylims=None, figsize=(8, 8), show_plot=True):
     '''
     Prints a 1d-"ystack" into 1 plot and assigns legends + titles.
     '''
@@ -824,6 +824,10 @@ def stack2plot(x, ystack, refs=None, title=None, xlabel=None, ylabel=None, color
     ax.set_xlabel(xlabel)
     ax.set_ylabel(ylabel)
     ax.set_title(title)
+    if not xlims is None:
+        ax.set_xlim(xlims)
+    if not ylims is None:
+        ax.set_ylim(ylims)
     plt.tight_layout()
 
     if show_plot:
