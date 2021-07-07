@@ -819,6 +819,8 @@ def stack2plot(x, ystack, refs=None, title=None, xlabel=None, ylabel=None, color
         line.set_antialiased(False)
     if type(legend) == list:
         ax.legend(bbox_to_anchor=legend)
+    elif type(legend) == str:
+        ax.legend(loc=legend)
     else:
         ax.legend(loc="best")
     ax.set_xlabel(xlabel)

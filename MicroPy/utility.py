@@ -4,7 +4,7 @@
 	@author René Lachmann
 	@email herr.rene.richter@gmail.com
 	@create date 2019 11:53:25
-	@modify date 2021-06-14 11:14:48
+	@modify date 2021-07-06 15:07:41
 	@desc Utility package
 
 ---------------------------------------------------------------------------------------------------
@@ -19,6 +19,9 @@ from deprecated import deprecated
 from .functions import gaussian1D
 from .numbers import generate_combinations
 import timeit
+from time import time
+from skimage.feature import register_translation
+from skimage.registration import phase_cross_correlation
 
 # %%
 # -------------------------------------------------------------------------
@@ -195,7 +198,7 @@ def image_getshift(im, im_ref, prec=100):
     return shift
 
 
-def findshift_stack(im1, imstack, prec=100, printout=False):
+def findshift_stack(im1, imstack, prec=100, use_pcc=True, printout=False):
     """Wrapper for findshift-routine  for stacks. Assumes 0th-dimension to be stack dimension. 
 
     Parameters
@@ -235,7 +238,7 @@ def findshift_stack(im1, imstack, prec=100, printout=False):
     tends = []
     for m in range(imstack.shape[0]):
         shift, error, diffphase, tend = findshift(
-            im1=im1, im2=imstack[m], prec=prec, printout=printout)
+            im1=im1, im2=imstack[m], prec=prec, use_pcc=use_pcc, printout=printout)
         shifts.append(shift)
         errors.append(error)
         diffphases.append(diffphase)
@@ -244,7 +247,7 @@ def findshift_stack(im1, imstack, prec=100, printout=False):
     return shifts, errors, diffphases, tends
 
 
-def findshift(im1, im2, prec=100, printout=False):
+def findshift(im1, im2, prec=100, use_pcc=True, printout=False):
     """
     Just a wrapper for the Skimage function using sub-pixel shifts, but with nice info-printout.
     link: https://scikit-image.org/docs/dev/auto_examples/transform/plot_register_translation.html
@@ -277,12 +280,13 @@ def findshift(im1, im2, prec=100, printout=False):
     image_getshift : more complex version for stack-comparison
 
     """
-    from time import time
-    from skimage.feature import register_translation
     tstart = time()
     # 'real' marks that input-data still has to be fft-ed
-    shift, error, diffphase = register_translation(
-        im1, im2, prec, space='real', return_error=True)
+    if use_pcc:
+        shift, error, diffphase = phase_cross_correlation(im1, im2, upsample_factor=prec)
+    else:
+        shift, error, diffphase = register_translation(
+            im1, im2, prec, space='real', return_error=True)
     tend = np.round(time() - tstart, 2)
     if printout:
         print("Found shifts={} with upsampling={}, error={} and diffphase={} in {}s.".format(
