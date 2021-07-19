@@ -795,7 +795,7 @@ def print_stack2subplot(imstack, plt_raster=[4, 4], plt_format=[8, 6], title=Non
 #
 
 
-def stack2plot(x, ystack, refs=None, title=None, xlabel=None, ylabel=None, colors=None, mmarker='', mlinestyle='-', mlinewidth=None, legend=[1, 1.05], xlims=None, ylims=None, figsize=(8, 8), show_plot=True):
+def stack2plot(x, ystack, refs=None, title=None, xlabel=None, ylabel=None, colors=None, mmarker='', mlinestyle='-', mlinewidth=None, legend=[1, 1.05], xlims=None, ylims=None, figsize=(8, 8), show_plot=True, ptight=True, ax=None, nbrs=True, nbrs_color=[1, 1, 1], nbrs_size=None, nbrs_text=None):
     '''
     Prints a 1d-"ystack" into 1 plot and assigns legends + titles.
     '''
@@ -803,9 +803,14 @@ def stack2plot(x, ystack, refs=None, title=None, xlabel=None, ylabel=None, color
     if not mlinewidth is None and not type(mlinewidth) in [np.ndarray, list, tuple]:
         mlinewidth = [mlinewidth, ]*len(ystack)
 
+    # get figure
+    if ax is None:
+        fig1 = plt.figure(figsize=figsize)
+        ax = plt.subplot(111)
+    else:
+        fig1 = ax.get_figure()
+
     # plot
-    fig1 = plt.figure(figsize=figsize)
-    ax = plt.subplot(111)
     for m in range(len(ystack)):
         label = str(m) if refs is None else refs[m]
         colorse = tuple(np.random.rand(3)) if colors is None else colors[m]
@@ -821,21 +826,32 @@ def stack2plot(x, ystack, refs=None, title=None, xlabel=None, ylabel=None, color
         ax.legend(bbox_to_anchor=legend)
     elif type(legend) == str:
         ax.legend(loc=legend)
-    else:
-        ax.legend(loc="best")
     ax.set_xlabel(xlabel)
     ax.set_ylabel(ylabel)
     ax.set_title(title)
-    if not xlims is None:
-        ax.set_xlim(xlims)
-    if not ylims is None:
-        ax.set_ylim(ylims)
-    plt.tight_layout()
+
+    # axis limits
+    xlims = [np.min(x), np.max(x)] if xlims is None else xlims
+    ylims = [np.min(ystack), np.max(ystack)] if ylims is None else ylims
+    ax.set_xlim(xlims)
+    ax.set_ylim(ylims)
+
+    if nbrs:
+        text_size_factor = ax.figure.bbox_inches.bounds[-1]*ax.figure.dpi
+        nbrs_psize = text_size_factor * 0.05 if nbrs_size is None else text_size_factor*nbrs_size
+        x_offset = np.mean(ax.get_xticks()[:2])
+        # ax.get_yticks()[-1] - 4*nbrs_psize/text_size_factor*(ylims[1]-ylims[0])
+        y_offset = ax.get_yticks()[-2]
+        nbrs_text = chr(97+np.random.randint(26))+')' if nbrs_text is None else nbrs_text
+        ax.text(x_offset, y_offset, nbrs_text, fontsize=nbrs_psize,
+                color=nbrs_color, fontname='Helvetica', weight='normal')
+    if ptight:
+        plt.tight_layout()
 
     if show_plot:
         plt.show()
 
-    return fig1
+    return fig1, ax
 
 
 def plot_3dstacks(res_noisy_s, defocus_range, noise_stack, myfilters, axis_labels=['', '', ''], show_plot=True, suptitle='', nbrs=False, nbrs_color=[0, 0, 0]):

@@ -14,7 +14,7 @@ setuptools.setup(
     long_description=detailed_description,
     long_description_content_type="text/markdown",
     
-    install_requires=['deprecated','javabridge','matplotlib','matplotlib-scalebar','NanoImagingPack','numpy','opencv','scikit-image','scipy','tifffile' ],
+    install_requires=['deprecated','javabridge','matplotlib','matplotlib-scalebar','NanoImagingPack','numpy','opencv','pandas','scikit-image','scipy','tifffile' ],
     #dependency_links=['https://github.com/blink1073/tifffile','https://test.pypi.org/simple/NanoImagingPack'],
     #url="https://test.pypi.org/simple/NanoImagingPack", 
     #include_package_data=True,
