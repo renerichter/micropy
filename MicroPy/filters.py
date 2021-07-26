@@ -4,7 +4,7 @@
 	@author René Lachmann
 	@email herr.rene.richter@gmail.com
 	@create date 2019-11-25 10:26:14
-	@modify date 2021-06-22 14:04:37
+	@modify date 2021-07-23 12:37:41
 	@desc The Filters are build such that they assume to receive an nD-stack, but they only operate in a 2D-manner (meaning: interpreting the stack as a (n-2)D series of 2D-images). Further, they assume that the last two dimensions (-2,-1) are the image-dimensions. The others are just for stacking.
 
 ---------------------------------------------------------------------------------------------------
@@ -287,7 +287,7 @@ def spf_kristans_bayes_spectral_entropy(im, faxes=(-2, -1), tile_exp=3, klim=6, 
     return res, [nom, denom]
 
 
-def spf_dct_normalized_shannon_entropy(im, faxes=(-2, -1), klim=100, krel=1e-2,**kwargs):
+def spf_dct_normalized_shannon_entropy(im, faxes=(-2, -1), klim=100, krel=1e-2, klim_max=None, **kwargs):
     """Calculates the normalized shannon entropy.
 
     Parameters
@@ -310,32 +310,40 @@ def spf_dct_normalized_shannon_entropy(im, faxes=(-2, -1), klim=100, krel=1e-2,*
 
     # make sure for OTF-support
     if klim is None:
-        mask = np.copy(imDCT)
-        mask[mask<np.max(mask)*krel]=0
-        mask[mask>np.max(mask)*krel]=1
-        
-        if imDCT.ndim>3:
-            mask_pad = tuple([(0,0),]*(imDCT.ndim-3)+[(4,4),(4,4),(4,4)])
-            mask_struct = np.ones( [1,]*(imDCT.ndim-3)+[3,3,3])
-            sdim=-3
-        elif imDCT.ndim==3:
-            mask_pad = ((0,0),(4,4),(4,4))
-            mask_struct = np.ones([1,3,3])
-            sdim=-3
+        if klim_max is None:
+            mask = np.copy(imDCT)
         else:
-            mask_pad = ((4,4),(4,4))
-            mask_struct = np.ones([3,3])
-            sdim=-2
-        mask = np.pad(mask, mask_pad, mode='constant', constant_values=0)
-        mask = binary_closing(mask, structure=mask_struct ,iterations=3)
-        mask = nip.extract(img=mask,ROIsize=imDCT.shape)
+            mask = np.copy(imDCT[klim_max])
+        mask[mask < np.max(mask)*krel] = 0
+        mask[mask > np.max(mask)*krel] = 1
 
+        if mask.ndim > 3:
+            mask_pad = tuple([(0, 0), ]*(imDCT.ndim-3)+[(4, 4), (4, 4), (4, 4)])
+            mask_struct = np.ones([1, ]*(imDCT.ndim-3)+[3, 3, 3])
+            sdim = -3
+        elif mask.ndim == 3:
+            mask_pad = ((0, 0), (4, 4), (4, 4))
+            mask_struct = np.ones([1, 3, 3])
+            sdim = -3
+        else:
+            mask_pad = ((4, 4), (4, 4))
+            mask_struct = np.ones([3, 3])
+            sdim = -2
+        mask = np.pad(mask, mask_pad, mode='constant', constant_values=0)
+        mask = binary_closing(mask, structure=mask_struct, iterations=3)
+        if mask.ndim > 2:
+            mask = np.max(mask, axis=tuple(np.arange(0, mask.ndim-2)))
+        mask = nip.extract(img=mask, ROIsize=imDCT.shape)
         # assume spherical support and calculate radius from area per slice
-        klim_sqr=np.floor((4*np.sum(mask,axis=(-2,-1))/np.pi)).astype('int32')
+        klim_sqr = np.floor((4*np.sum(mask, axis=(-2, -1))/np.pi)).astype('int32')
     else:
-        mask = nip.rr(en_el, placement='corner') < klim
+        #mask_shape = imDCT.shape[-3:] if imDCT.ndim >= 3 else imDCT.shape[-2:]
+        xmask = abs(nip.xx(imDCT.shape, placement='corner'))
+        ymask = abs(nip.yy(imDCT.shape, placement='corner'))
+        zmask = abs(nip.zz(imDCT.shape, placement='center'))
+        mask = (np.sqrt(xmask*xmask+ymask*ymask+zmask*zmask) < klim).astype('bool')
         klim_sqr = klim*klim
-    
+
     im_res = (en_el * np.log2(en_el, where=en_el != 0, out=np.zeros(en_el.shape)))
 
     # calculate norm
@@ -532,8 +540,8 @@ class filters():
         'shannon_entropy':  [spf_dct_normalized_shannon_entropy,    ((0, 0), (0, 0)),   True, [0.7, 0.7, 0.7, 1], [(-2, -1), (-2, -1)], 'Shannon Entropy'],
     }
     _filters_special_params_ = {
-        'kristans_entropy': {'tile_exp': 3, 'klim': 6, },
-        'shannon_entropy':  {'klim': None, 'krel':1e-2},
+        'kristans_entropy': {'tile_exp': 4, 'klim': 2, },
+        'shannon_entropy':  {'klim': None, 'krel': 1e-2},
     }
 
     _colors_ = []

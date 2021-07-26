@@ -795,7 +795,7 @@ def print_stack2subplot(imstack, plt_raster=[4, 4], plt_format=[8, 6], title=Non
 #
 
 
-def stack2plot(x, ystack, refs=None, title=None, xlabel=None, ylabel=None, colors=None, mmarker='', mlinestyle='-', mlinewidth=None, legend=[1, 1.05], xlims=None, ylims=None, figsize=(8, 8), show_plot=True, ptight=True, ax=None, nbrs=True, nbrs_color=[1, 1, 1], nbrs_size=None, nbrs_text=None):
+def stack2plot(x, ystack, refs=None, title=None, xlabel=None, ylabel=None, colors=None, mmarker='', mlinestyle='-', mlinewidth=None, legend=[1, 1.05], xlims=None, ylims=None, figsize=(8, 8), show_plot=True, ptight=True, ax=None, nbrs=True, nbrs_color=[1, 1, 1], nbrs_size=None, nbrs_text=None, err_bar=None, err_capsize=3):
     '''
     Prints a 1d-"ystack" into 1 plot and assigns legends + titles.
     '''
@@ -817,8 +817,14 @@ def stack2plot(x, ystack, refs=None, title=None, xlabel=None, ylabel=None, color
         xlabel = 'Pixel' if xlabel is None else xlabel
         ylabel = 'Pixel' if ylabel is None else ylabel
         title = datetime.now().strftime("%Y%M%D") if title is None else title
-        line, = ax.plot(x, ystack[m], label=label, color=colorse,
-                        marker=mmarker, linestyle=mlinestyle)
+        if err_bar is None:
+            line, = ax.plot(x, ystack[m], label=label, color=colorse,
+                            marker=mmarker, linestyle=mlinestyle)
+            line.set_clip_on(False)
+        else:
+            line = ax.errorbar(x, ystack[m], err_bar[m], label=label, color=colorse,
+                               marker=mmarker, linestyle=mlinestyle, capsize=err_capsize)
+            line.set_clip_on(False)
         if not mlinewidth is None:
             line.set_linewidth(mlinewidth[m])
         line.set_antialiased(False)
@@ -833,6 +839,7 @@ def stack2plot(x, ystack, refs=None, title=None, xlabel=None, ylabel=None, color
     # axis limits
     xlims = [np.min(x), np.max(x)] if xlims is None else xlims
     ylims = [np.min(ystack), np.max(ystack)] if ylims is None else ylims
+    ylims_dist = ylims[1]-ylims[0]
     ax.set_xlim(xlims)
     ax.set_ylim(ylims)
 
@@ -841,7 +848,8 @@ def stack2plot(x, ystack, refs=None, title=None, xlabel=None, ylabel=None, color
         nbrs_psize = text_size_factor * 0.05 if nbrs_size is None else text_size_factor*nbrs_size
         x_offset = np.mean(ax.get_xticks()[:2])
         # ax.get_yticks()[-1] - 4*nbrs_psize/text_size_factor*(ylims[1]-ylims[0])
-        y_offset = ax.get_yticks()[-2]
+        #y_offset = ax.get_yticks()[-2]
+        y_offset = ylims[1]-ylims_dist/5.0
         nbrs_text = chr(97+np.random.randint(26))+')' if nbrs_text is None else nbrs_text
         ax.text(x_offset, y_offset, nbrs_text, fontsize=nbrs_psize,
                 color=nbrs_color, fontname='Helvetica', weight='normal')

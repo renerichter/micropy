@@ -4,7 +4,7 @@
 	@author René Lachmann
 	@email herr.rene.richter@gmail.com
 	@create date 2019 11:53:25
-	@modify date 2021-07-06 15:07:41
+	@modify date 2021-07-20 14:39:52
 	@desc Utility package
 
 ---------------------------------------------------------------------------------------------------
@@ -1425,8 +1425,11 @@ def split_nd(im, tile_sizes=[8, 8], split_axes=[-1, -2]):
 
     imshape = np.array([im.shape[m] for m in split_axes])
     im_multiples = np.floor(imshape // tile_sizes).astype('uint8')
+    im_multiples = im_multiples if np.prod(
+        im_multiples) > 0 else np.ones(len(im_multiples)).astype('int')
 
-    if not np.sum(np.mod(imshape, tile_sizes)) == 0:
+    # make image rect (as multiple of tile_sizes) and pad zeros
+    if not np.sum(np.mod(imshape, tile_sizes)) == 0:  # was np.mod(imshape, tile_sizes)
         imshapeh = list(im.shape)
         for m, sa in enumerate(split_axes):
             imshapeh[sa] = im_multiples[m]*tile_sizes[m]
@@ -1696,7 +1699,7 @@ def time_me(fcall, repeats=1000, averages=100):
     time_me_loop
     """
     time_repeats = timeit.repeat(
-        lambda: fcall, number=averages, repeat=repeats)
+        fcall, number=averages, repeat=repeats)
     time_repeats = np.array(time_repeats)/averages
     time_stats = time_me_stats(time_repeats)
 
