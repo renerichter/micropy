@@ -333,21 +333,21 @@ def radial_projection_sum(im, radius=None, **kwargs):
     return res
 
 
-def radial_sum(im, maxbins=None):
+def radial_sum(im: np.ndarray, maxbins: int = None, loop: bool = False, return_idx: bool = False) -> np.ndarray:
     """Calculates the radialsum. Use eg to calculate the mean frequency transfer efficiency and to have a quick look at the noise floor when using together with FT-images. Implementation is agnostic to input-datatype and hence needs to get proper (eg modulus of FT) input.
 
     Parameters
     ----------
-    im : image
+    im : np.ndarray
         input image (eg FT)
     maxbins : int, optional
         maximum number of bins to be used to calculate frequenc, by default None
 
     Returns
     -------
-    rsum : image
+    rsum : np.ndarray
         summed projection
-    idx : image
+    idx : image, optional
         indices of bins used
 
     Examples
@@ -370,12 +370,62 @@ def radial_sum(im, maxbins=None):
     --------
     lp_norm, radial_projection_sum
     """
-    if maxbins is None:
-        maxbins = np.ceil(lp_norm(np.array(im.shape)/2.0)).astype('int32')+1
+    # make sure that non-complex data is used
+    if im.dtype == 'complex':
+        im = np.abs(im)
 
-    idx = nip.rr(im.shape)
+    # calculate maximum number of bins
+    if maxbins is None:
+        maxbins = np.ceil(lp_norm(np.array(im.shape[-2:])/2.0)).astype('int32')+1
+
+    # get index-list and bin it
+    idx = nip.rr(im.shape[-2:])
     idx = np.round(idx*(maxbins-1)/np.max(idx)).astype('int32')
-    rsum = np.array([np.mean(im[idx == m]) for m in range(maxbins)])
+
+    # calculate resulting radial sum via loop or directly
+    if loop:
+        # make sure for single list dimension
+        if im.ndim > 3:
+            im = reduce_shape(im, -2)
+
+        # allocate space and calculate radial sums
+        rsum = np.zeros([im.shape[0], maxbins], dtype=im.dtype)
+        for m, ima in enumerate(im):
+            rsum[m] = np.array([np.mean(ima[idx == m]) for m in range(maxbins)])
+    else:
+        if im.ndim > 2:
+            idx = nip.repmat(idx, list(im.shape[:im.ndim-2])+[1, ]*2)
+        rsum = np.array([np.mean(im[idx == m]) for m in range(maxbins)])
+
     rsum[np.isnan(rsum)] = 0
 
-    return rsum, idx
+    # done?
+    if return_idx:
+        return rsum, idx
+    else:
+        return rsum
+
+
+def reduce_shape(im: np.ndarray, lim_dim: int = -2) -> np.ndarray:
+    """Reduces shape of an array until the last dimension lim_dim.
+
+    Parameters
+    ----------
+    im : np.ndarray
+        input array/image
+    lim_dim : int, optional
+        limiting dimension, by default -2
+
+    Returns
+    -------
+    np.ndarray
+        reduced array
+
+    Examples
+    --------
+    >>> a = np.ones([2,3,4,5,6])
+    >>> a_red = mipy.reduce_shape(a,-3))
+    >>> a_red.shape == (6,4,5,6)
+    True
+    """
+    return np.reshape(im, [np.prod(im.shape[:lim_dim]), ]+list(im.shape[lim_dim:]))

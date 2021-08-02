@@ -4,7 +4,7 @@
 	@author René Lachmann
 	@email herr.rene.richter@gmail.com
 	@create date 2019 11:53:25
-	@modify date 2021-07-20 14:39:52
+	@modify date 2021-07-30 11:33:00
 	@desc Utility package
 
 ---------------------------------------------------------------------------------------------------
@@ -861,17 +861,37 @@ def pinhole_shift(pinhole, pincenter):
 # ------------------------------------------------------------------
 
 
-def transpose_arbitrary(imstack, idx_startpos=[-2, -1], idx_endpos=[0, 1], direction='forward'):
-    '''
-    Exchange-based successive array transposition to exchange given start_pos with according endpos.
+def transpose_arbitrary(imstack: np.ndarray, idx_startpos: list = [-2, -1], idx_endpos: list = [0, 1], direction: str = 'forward') -> np.ndarray:
+    """Exchange-based successive array transposition to exchange given start_pos with according endpos.
+
+    Parameters
+    ----------
+    imstack : np.ndarray
+        input array
+    idx_startpos : list, optional
+        dimensions to move, by default [-2, -1]
+    idx_endpos : list, optional
+        positions to place dimensions, by default [0, 1]
+    direction : str, optional
+        direction of movement, by default 'forward'
+            'forward' : move as input 
+            'backward': opposite direction (works with any other string as well)
+
+    Returns
+    -------
+    im: np.ndarray
+        transposed array
 
     EXAMPLE:
     =======
-    a = np.reshape(np.arange(2*3*4*5*6),[2,3,4,5,6])
-    b = transpose_arbitrary(a,[-2,-1],[0,1],direction='forward')
-    b1 = transpose_arbitrary(b,[-2,-1],[0,1],direction='backward')
-    print(f"a.shape={a.shape}\nb.shape={b.shape}\nb1.shape={b1.shape}")
-    '''
+    >>> a = np.reshape(np.arange(2*3*4*5*6),[2,3,4,5,6])
+    >>> b = mipy.transpose_arbitrary(a,[-2,-1],[0,1],direction='forward')
+    >>> b1 = mipy.transpose_arbitrary(b,[-2,-1],[0,1],direction='backward')
+    >>> print(f"a.shape={a.shape}\nb.shape={b.shape}\nb1.shape={b1.shape}")
+    a.shape=(2, 3, 4, 5, 6)
+    b.shape=(5, 6, 4, 2, 3)
+    b1.shape=(2, 3, 4, 5, 6)
+    """
     # some sanity
     if type(idx_startpos) == int:
         idx_startpos = [idx_startpos, ]
@@ -1079,26 +1099,22 @@ def normto(im, dims=(), method='max', direct=True):
     # keep sane
     if dims == ():
         dims = tuple(np.arange(im.ndim))
+
+    # possible norms
+    func_dict = {'max': np.max, 'min': np.min, 'mean': np.mean, 'sum': np.sum}
+
+    # make sure for useability
+    if not method in func_dict:
+        raise ValueError(
+            "Normalization method not existent or not chosen properly.")
+    if not im.dtype == float and direct:
+        raise ValueError("Cannot in-place calculate as division process needs different dtype!")
+
+    # apply normalization
     if direct:
-        if method == 'max':
-            im /= im.max(dims, keepdims=True)
-        elif method == 'min':
-            im /= im.min(dims, keepdims=True)
-        elif method == 'mean':
-            im /= im.mean(dims, keepdims=True)
-        else:
-            raise ValueError(
-                "Normalization method not existent or not chosen properly.")
+        im /= func_dict[method](im, dims, keepdims=True)
     else:
-        if method == 'max':
-            im = im / im.max(dims, keepdims=True)
-        elif method == 'min':
-            im = im / im.min(dims, keepdims=True)
-        elif method == 'mean':
-            im = im / im.mean(dims, keepdims=True)
-        else:
-            raise ValueError(
-                "Normalization method not existent or not chosen properly.")
+        im = im / func_dict[method](im, dims, keepdims=True)
     return im
 
 
@@ -1443,6 +1459,73 @@ def split_nd(im, tile_sizes=[8, 8], split_axes=[-1, -2]):
 
     # done?
     return im, sal
+
+# %% -----------------------------------------------------
+# ----              NOISE AND STATISTIC-ANALYSIS
+# --------------------------------------------------------
+
+
+def get_avg_variance_ft(im_ft: np.ndarray, bbox: list = [10, 10], switch_axes=True, return_sel=False) -> np.ndarray:
+    """Calculates average variance in 4 corners (of each 2D-slice) of an nD image and assumes that either the last (switch_axes=True) or the first two dimensions (switch_axes=False) should be used. The input is assumed to be the modulo of the fourier-transformed image.
+
+    Parameters
+    ----------
+    im_ft : np.ndarray
+        input fourier-transformed image 
+    bbox : list, optional
+        size of region for averaging, by default [10,10]
+    switch_axes : bool, optional
+        if True, switches axes from [-2,-1] to [0,1] for easy application and undoes at the end, by default True
+    return_sel : bool, optional
+        whether to return selected regions (eg for further calculation or comparison) as well, by default False
+
+    Returns
+    -------
+    avg_variance : np.ndarray
+        resulting average variance
+    sel_region: np.ndarray, optional
+        selected regions
+
+    Example
+    -------
+    >>> im_ft = np.abs(nip.ft2d(nip.readim('obj3d')))
+    >>> avg_variance = get_avg_variance_ft(im_ft,bbox=[10,10])
+    >>> np.mean(avg_variance)
+    0.40872851358746365
+
+    TODO
+    ----
+    1) Add saninty checks for bbox vs image-size!
+    """
+
+    if im_ft.dtype == 'complex':
+        im_ft = np.abs(im_ft)
+
+    if switch_axes:
+        im_ft = transpose_arbitrary(
+            im_ft, idx_startpos=[-2, -1], idx_endpos=[0, 1], direction='forward')
+
+    slices = [[slice(0, bbox[0]), slice(0, bbox[1])],
+              [slice(0, bbox[0]), slice(im_ft.shape[-1]-bbox[1], im_ft.shape[-1])],
+              [slice(im_ft.shape[-0]-bbox[0], im_ft.shape[-0]), slice(0, bbox[0])],
+              [slice(im_ft.shape[-0]-bbox[0], im_ft.shape[-0]),
+               slice(im_ft.shape[-1]-bbox[1], im_ft.shape[-1])],
+              ]
+    sel_region = np.zeros([4, ]+bbox+list(im_ft.shape[2:]))
+    for m, sval in enumerate(slices):
+        sel_region[m] = im_ft[slices[0][0], slices[0][1]]
+
+    if switch_axes:
+        im_ft = transpose_arbitrary(
+            im_ft, idx_startpos=[-2, -1], idx_endpos=[0, 1], direction='backward')
+        sel_region = np.transpose(sel_region)
+
+    avg_variance = np.mean(sel_region, axis=(-3, -2, -1))
+
+    if return_sel:
+        avg_variance = [avg_variance, sel_region]
+
+    return avg_variance
 
 # %% -----------------------------------------------------
 # ----              VIEWER INTERACTION
