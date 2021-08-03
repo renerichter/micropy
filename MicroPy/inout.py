@@ -8,7 +8,8 @@ import numpy as np
 import matplotlib.pyplot as plt
 import matplotlib as mpl
 import mpl_toolkits as mptk
-from mpl_toolkits.axes_grid1 import make_axes_locatable
+from mpl_toolkits.axes_grid1 import make_axes_locatable, AxesGrid
+from matplotlib.ticker import FormatStrFormatter
 from tifffile import imread as tifimread
 # mipy imports
 
@@ -582,7 +583,7 @@ def paths_from_dict(path_dict):
 #
 
 
-def print_stack2subplot(imstack, plt_raster=[4, 4], plt_format=[8, 6], title=None, titlestack=True, colorbar=True, axislabel=True, laytight=True, nbrs=True, nbrs_color=[1, 1, 1], nbrs_size=None, use_axis=True, plt_show=False, gridspec_kw=None):
+def print_stack2subplot(imstack, plt_raster=[4, 4], plt_format=[8, 6], title=None, titlestack=True, colorbar=True, axislabel=True, laytight=True, nbrs=True, nbrs_color=[1, 1, 1], nbrs_size=None, use_axis=None, plt_show=False, gridspec_kw=None, yx_ticks=None, axticks_format=None):
     '''
     Plots an 3D-Image-stack as set of subplots
     Based on this: https://stackoverflow.com/a/46616645
@@ -603,9 +604,27 @@ def print_stack2subplot(imstack, plt_raster=[4, 4], plt_format=[8, 6], title=Non
         title = datetime.now().strftime("%d.%m.%Y %H:%M:%S")
 
     # create figure (fig), and array of axes (ax)-> gridspec_kw = {'height_ratios':[2,2,1,1]}
-    fig, ax = plt.subplots(
-        nrows=plt_raster[0], ncols=plt_raster[1], figsize=plt_format, sharex=True, sharey=False,
-        gridspec_kw=gridspec_kw)
+    if colorbar == 'global':
+        fig = plt.figure(figsize=plt_format)
+        grid = AxesGrid(fig, 111,
+                        nrows_ncols=(plt_raster[0], plt_raster[1],),
+                        axes_pad=0.4,
+                        cbar_mode='single',
+                        cbar_location='right',
+                        cbar_pad=0.1
+                        )
+        ax = np.array(grid.axes_all)
+        imstack -= np.min(imstack, axis=(-2, -1), keepdims=True)
+        imstack /= np.max(imstack, axis=(-2, -1), keepdims=True)
+    else:
+        fig, ax = plt.subplots(
+            nrows=plt_raster[0], ncols=plt_raster[1], figsize=plt_format, sharex=True, sharey=False,
+            gridspec_kw=gridspec_kw)
+
+    xy_extent = None if yx_ticks is None else [
+        yx_ticks[1][0], yx_ticks[1][-1], yx_ticks[0][0], yx_ticks[0][-1]]
+    aspect = 'auto' if xy_extent is None else (
+        xy_extent[1]-xy_extent[0])/(xy_extent[3]-xy_extent[2])
 
     # parameter
     ax_meas = [ax.flat[0].bbox.width, ax.flat[0].bbox.height]
@@ -613,16 +632,24 @@ def print_stack2subplot(imstack, plt_raster=[4, 4], plt_format=[8, 6], title=Non
     y_offset = np.round(21*ax_meas[1]/250.0).astype('uint16')
 
     nbrs_psize = ax_meas[1]*0.2 if nbrs_size is None else ax_meas[1]*nbrs_size
+    if not yx_ticks is None:
+        dx = xy_extent[1]-xy_extent[0]
+        dy = xy_extent[3]-xy_extent[2]
+        x_offset *= dx/ax_meas[0]
+        y_offset = xy_extent[3] - 2*dy/ax_meas[1]*y_offset
 
     # plot simple raster image on each sub-plot
     for m, axm in enumerate(ax.flat):
         ima = axm.imshow(imstack[m], alpha=1.0,
-                         interpolation='none')  # alpha=0.25)
+                         interpolation='none', extent=xy_extent, aspect=aspect)  # alpha=0.25)
         # write row/col indices as axes' title for identification
-        if colorbar:
+        if colorbar == True:
             divider = make_axes_locatable(axm)
             colorbar_axes = divider.append_axes("right", size="10%", pad=0.1)
-            fig.colorbar(ima, cax=colorbar_axes)
+            cbar = fig.colorbar(ima, cax=colorbar_axes)
+            imstp = [np.min(imstack[m]), np.max(imstack[m])]
+            cbar.set_ticks(np.arange(imstp[0], imstp[1], (imstp[1]-imstp[0])/5))
+            #cbar.set_ticklabels(['low', 'medium', 'high'])
             # if ax.ndim == 1:
             #    fig.colorbar(ima, ax=ax[m])
             # elif ax.ndim == 2:
@@ -636,8 +663,11 @@ def print_stack2subplot(imstack, plt_raster=[4, 4], plt_format=[8, 6], title=Non
         elif axislabel == False:
             pass
         else:
-            axm.set_xlabel(axislabel[0])
-            axm.set_ylabel(axislabel[1])
+            axm.set_xlabel(axislabel[0], fontsize=nbrs_psize/2)
+            axm.set_ylabel(axislabel[1], fontsize=nbrs_psize/2)
+
+        # axm.set_xticklabels(axm.get_xticklabels())
+        # axm.set_yticklabels(axm.get_yticklabels())
 
         if titlestack == True:
             axm.set_title(
@@ -645,7 +675,7 @@ def print_stack2subplot(imstack, plt_raster=[4, 4], plt_format=[8, 6], title=Non
         elif titlestack == False:
             pass
         else:
-            axm.set_title(titlestack[m])
+            axm.set_title(titlestack[m], fontsize=nbrs_psize/2)
 
         if nbrs:
             # xoff = int(x_offset/imstack[0].shape[-1]*imstack[m].shape[-1])
@@ -653,13 +683,44 @@ def print_stack2subplot(imstack, plt_raster=[4, 4], plt_format=[8, 6], title=Non
             axm.text(x_offset, y_offset, chr(97+m)+')',
                      fontsize=nbrs_psize, color=nbrs_color, fontname='Helvetica', weight='normal')
 
-        if not use_axis:
+        if not axticks_format is None:
+            axm.xaxis.set_major_formatter(FormatStrFormatter(axticks_format[0]))
+            axm.yaxis.set_major_formatter(FormatStrFormatter(axticks_format[1]))
+
+        if use_axis == None:
             axm.axis('off')
-            # fig.axes.get_xaxis().set_visible(False)
-            # fig.axes.get_yaxis().set_visible(False)
+        else:
+            if 'bottom' in use_axis:
+                if m//plt_raster[1] < (plt_raster[0]-1):
+                    axm.get_xaxis().set_visible(False)
+                    # axm.xaxis.set_ticklabels("")
+                    # axm.set_xlabel('')
+            elif 'top' in use_axis:
+                if m//plt_raster[1] > 0:
+                    axm.get_xaxis().set_visible(False)
+                    # axm.xaxis.set_ticklabels("")
+                    # axm.set_xlabel('')
+            else:
+                pass
+            if 'left' in use_axis:
+                if m % plt_raster[1] > 0:
+                    axm.get_yaxis().set_visible(False)
+                    # axm.yaxis.set_ticklabels("")
+                    # axm.set_ylabel('')
+            elif 'right' in use_axis:
+                if m % plt_raster[1] < plt_raster[1]-1:
+                    axm.get_yaxis().set_visible(False)
+                    # axm.yaxis.set_ticklabels("")
+                    # axm.set_ylabel('')
+            else:
+                pass
 
         if m >= imstack_len-1:
             break
+
+    if colorbar == 'global':
+        cbar = grid.cbar_axes[0].colorbar(ima)
+        cbar.ax.set_ylabel(axislabel[2], rotation=-90, va="bottom", fontsize=nbrs_psize/2)
 
     # delete empty axes
     while m+1 < (plt_raster[0]*plt_raster[1]):
