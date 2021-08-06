@@ -4,7 +4,7 @@
 	@author René Lachmann
 	@email herr.rene.richter@gmail.com
 	@create date 2019-11-25 10:26:14
-	@modify date 2021-07-23 12:37:41
+	@modify date 2021-08-03 15:37:10
 	@desc The Filters are build such that they assume to receive an nD-stack, but they only operate in a 2D-manner (meaning: interpreting the stack as a (n-2)D series of 2D-images). Further, they assume that the last two dimensions (-2,-1) are the image-dimensions. The others are just for stacking.
 
 ---------------------------------------------------------------------------------------------------
@@ -516,28 +516,28 @@ class filters():
     """
     _filters_dict_ = {
         # differential filters
-        'tenengrad':        [diff_tenengrad,            ((1, 1), (1, 1)),   True, [0, 1, 0, 1], [(-2, -1), (0, 1)], 'Tenengrad'],
-        'brenner':          [diff_brenners_measure,     ((1, 1), (0, 0)),   True, [0.1, 1, 0.2, 1], [(-2, -1), (0, 1)], 'Brenner'],
-        'abs_laplacian':    [diff_absolute_laplacian,   ((1, 1), (1, 1)),   True, [0.2, 0.8, 0.1, 1], [(-2, -1), (0, 1)], 'Absolute Laplacian'],
-        'squared_laplacian': [diff_squared_laplacian,   ((1, 1), (1, 1)),   True, [0.1, 0.7, 0.1, 1], [(-2, -1), (0, 1)], 'Squared Laplacian'],
-        'total_variation':  [diff_total_variation,      ((1, 1), (1, 1)),   True, [0.2, 0.6, 0.2, 1], [(-2, -1), (0, 1)], 'Total Variation'],
+        'tenengrad':        [diff_tenengrad,            ((1, 1), (1, 1)),   True, [0, 1, 0, 1], [(-2, -1), (0, 1)], 'Tenengrad', 'TEN'],
+        'brenner':          [diff_brenners_measure,     ((1, 1), (0, 0)),   True, [0.1, 1, 0.2, 1], [(-2, -1), (0, 1)], 'Brenner', 'BRE'],
+        'abs_laplacian':    [diff_absolute_laplacian,   ((1, 1), (1, 1)),   True, [0.2, 0.8, 0.1, 1], [(-2, -1), (0, 1)], 'Absolute Laplacian', 'ALA'],
+        'squared_laplacian': [diff_squared_laplacian,   ((1, 1), (1, 1)),   True, [0.1, 0.7, 0.1, 1], [(-2, -1), (0, 1)], 'Squared Laplacian', 'SLA'],
+        'total_variation':  [diff_total_variation,      ((1, 1), (1, 1)),   True, [0.2, 0.6, 0.2, 1], [(-2, -1), (0, 1)], 'Total Variation', 'TOV'],
         # spectral filters
-        'max':              [stf_max,                   ((0, 0), (0, 0)),   False, [0, 0.85, 1, 1], [(-2, -1), (0, 1)], 'Maximum'],
-        'min':              [stf_min,                   ((0, 0), (0, 0)),   False, [0, 0.7, 1, 1], [(-2, -1), (0, 1)], 'Minimum'],
-        'mean':             [stf_mean,                  ((0, 0), (0, 0)),   False, [0, 0.4, 1, 1], [(-2, -1), (0, 1)], 'Mean'],
-        'median':           [stf_median,                ((0, 0), (0, 0)),   False, [0.4, 0, 1, 1], [(-2, -1), (0, 1)], 'Median'],
-        'var':              [stf_var,                   ((0, 0), (0, 0)),   False, [0.7, 0, 1, 0.95], [(-2, -1), (0, 1)], 'Variance'],
-        'normvar':          [stf_normvar,               ((0, 0), (0, 0)),   False, [0.85, 0, 1, 0.9], [(-2, -1), (0, 1)], 'Normed Variance'],
-        'kurtosis':         [stf_kurtosis,              ((0, 0), (0, 0)),   False, [0.3, 0.4, 0.9, 0.85], [(-2, -1), (0, 1)], 'Kurtosis'],
-        'diffim_kurtosis':  [stf_diffim_kurtosis,       ((0, 0), (0, 0)),   False, [0.5, 0.4, 0.9, 0.8], [(-2, -1), (0, 1)], 'Difference Kurtosis'],
+        'max':              [stf_max,                   ((0, 0), (0, 0)),   False, [0, 0.85, 1, 1], [(-2, -1), (0, 1)], 'Maximum', 'MAX'],
+        'min':              [stf_min,                   ((0, 0), (0, 0)),   False, [0, 0.7, 1, 1], [(-2, -1), (0, 1)], 'Minimum', 'MIN'],
+        'mean':             [stf_mean,                  ((0, 0), (0, 0)),   False, [0, 0.4, 1, 1], [(-2, -1), (0, 1)], 'Mean', 'MEA'],
+        'median':           [stf_median,                ((0, 0), (0, 0)),   False, [0.4, 0, 1, 1], [(-2, -1), (0, 1)], 'Median', 'MED'],
+        'var':              [stf_var,                   ((0, 0), (0, 0)),   False, [0.7, 0, 1, 0.95], [(-2, -1), (0, 1)], 'Variance', 'VAR'],
+        'normvar':          [stf_normvar,               ((0, 0), (0, 0)),   False, [0.85, 0, 1, 0.9], [(-2, -1), (0, 1)], 'Normed Variance', 'NVA'],
+        'kurtosis':         [stf_kurtosis,              ((0, 0), (0, 0)),   False, [0.3, 0.4, 0.9, 0.85], [(-2, -1), (0, 1)], 'Kurtosis', 'KUR'],
+        'diffim_kurtosis':  [stf_diffim_kurtosis,       ((0, 0), (0, 0)),   False, [0.5, 0.4, 0.9, 0.8], [(-2, -1), (0, 1)], 'Difference Kurtosis', 'DKU'],
         # 'hist_entropy':     [stf_histogram_entropy,     ((0, 0), (0, 0)),   False],
         # correlative filters
-        'vollath_f4':       [cf_vollathF4,              ((0, 0), (1, 1)),   True, [1, 0, 0, 1], [(-2, -1), (0, 1)], 'Vollath F4'],
-        'vollath_f4_symm':  [cf_vollathF4_symmetric,    ((2, 2), (2, 2)),   True, [0.85, 0, 0, 1], [(-2, -1), (0, 1)], 'symmetric Vollath F4'],
-        'vollath_f5':       [cf_vollathF5,              ((0, 0), (1, 1)),   True, [0.7, 0, 0, 1], [(-2, -1), (0, 1)], 'Vollath F5'],
+        'vollath_f4':       [cf_vollathF4,              ((0, 0), (1, 1)),   True, [1, 0, 0, 1], [(-2, -1), (0, 1)], 'Vollath F4', 'VO4'],
+        'vollath_f4_symm':  [cf_vollathF4_symmetric,    ((2, 2), (2, 2)),   True, [0.85, 0, 0, 1], [(-2, -1), (0, 1)], 'symmetric Vollath F4', 'VS4'],
+        'vollath_f5':       [cf_vollathF5,              ((0, 0), (1, 1)),   True, [0.7, 0, 0, 1], [(-2, -1), (0, 1)], 'Vollath F5', 'VO5'],
         # trafo filters
-        'kristans_entropy': [spf_kristans_bayes_spectral_entropy,   ((0, 0), (0, 0)),   True,  [0.8, 0.8, 0.8, 1], [(-2, -1), (-2, -1)], 'Kristans Entropy'],
-        'shannon_entropy':  [spf_dct_normalized_shannon_entropy,    ((0, 0), (0, 0)),   True, [0.7, 0.7, 0.7, 1], [(-2, -1), (-2, -1)], 'Shannon Entropy'],
+        'kristans_entropy': [spf_kristans_bayes_spectral_entropy,   ((0, 0), (0, 0)),   True,  [0.8, 0.8, 0.8, 1], [(-2, -1), (-2, -1)], 'Kristans Entropy', 'KEN'],
+        'shannon_entropy':  [spf_dct_normalized_shannon_entropy,    ((0, 0), (0, 0)),   True, [0.7, 0.7, 0.7, 1], [(-2, -1), (-2, -1)], 'Shannon Entropy', 'SEN'],
     }
     _filters_special_params_ = {
         'kristans_entropy': {'tile_exp': 4, 'klim': 2, },
@@ -564,6 +564,13 @@ class filters():
             res = [self._filters_dict_[m][5] for m in filter_list_chosen]
         else:
             res = self._filters_dict_[filter_list_chosen][5]
+        return res
+
+    def get_filter_abbr_names(self, filter_list_chosen):
+        if type(filter_list_chosen) == list:
+            res = [self._filters_dict_[m][6] for m in filter_list_chosen]
+        else:
+            res = self._filters_dict_[filter_list_chosen][6]
         return res
 
     def test_consistance(self):

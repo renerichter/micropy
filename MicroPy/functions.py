@@ -34,6 +34,6 @@ def gaussian2D(size=[], mu=[], sigma=[]):
         mu = [mu, mu]
     if not (type(sigma) in [tuple, list]):
         sigma = [sigma, sigma]
-    gaussian2D = gaussian1D(size=size[0], mu=mu[0], sigma=sigma[0], axis=-1) * \
-        gaussian1D(size=size[1], mu=mu[1], sigma=sigma[1], axis=-2)
+    gaussian2D = gaussian1D(size=size[0], mu=mu[0], sigma=sigma[0], axis=-2) * \
+        gaussian1D(size=size[1], mu=mu[1], sigma=sigma[1], axis=-1)
     return gaussian2D

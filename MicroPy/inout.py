@@ -583,7 +583,7 @@ def paths_from_dict(path_dict):
 #
 
 
-def print_stack2subplot(imstack, plt_raster=[4, 4], plt_format=[8, 6], title=None, titlestack=True, colorbar=True, axislabel=True, laytight=True, nbrs=True, nbrs_color=[1, 1, 1], nbrs_size=None, use_axis=None, plt_show=False, gridspec_kw=None, yx_ticks=None, axticks_format=None):
+def print_stack2subplot(imstack, plt_raster=[4, 4], plt_format=[8, 6], title=None, titlestack=True, colorbar=True, axislabel=True, laytight=True, nbrs=True, nbrs_color=[1, 1, 1], nbrs_size=None, nbrs_offsets=None, use_axis=None, plt_show=False, gridspec_kw=None, yx_ticks=None, axticks_format=None, grid_param=None):
     '''
     Plots an 3D-Image-stack as set of subplots
     Based on this: https://stackoverflow.com/a/46616645
@@ -605,21 +605,33 @@ def print_stack2subplot(imstack, plt_raster=[4, 4], plt_format=[8, 6], title=Non
 
     # create figure (fig), and array of axes (ax)-> gridspec_kw = {'height_ratios':[2,2,1,1]}
     if colorbar == 'global':
+        # sanity
+        grid_param_default = {'pos': 111, 'nrows_ncols': (
+            plt_raster[0], plt_raster[1]), 'axes_pad': 0.4, 'cbar_mode': 'single', 'cbar_location': 'right', 'cbar_pad': 0.1}
+        for m in grid_param_default:
+            if not m in grid_param:
+                grid_param[m] = grid_param_default[m]
+
+        # generate grid
+        gp = grid_param
         fig = plt.figure(figsize=plt_format)
-        grid = AxesGrid(fig, 111,
-                        nrows_ncols=(plt_raster[0], plt_raster[1],),
-                        axes_pad=0.4,
-                        cbar_mode='single',
-                        cbar_location='right',
-                        cbar_pad=0.1
+        grid = AxesGrid(fig, gp['pos'],
+                        nrows_ncols=gp['nrows_ncols'],
+                        axes_pad=gp['axes_pad'],
+                        cbar_mode=gp['cbar_mode'],
+                        cbar_location=gp['cbar_location'],
+                        cbar_pad=gp['cbar_pad']
                         )
         ax = np.array(grid.axes_all)
         imstack -= np.min(imstack, axis=(-2, -1), keepdims=True)
         imstack /= np.max(imstack, axis=(-2, -1), keepdims=True)
+        xy_norm = [650, 650]
+
     else:
         fig, ax = plt.subplots(
             nrows=plt_raster[0], ncols=plt_raster[1], figsize=plt_format, sharex=True, sharey=False,
             gridspec_kw=gridspec_kw)
+        xy_norm = [250.0, 250.0]
 
     xy_extent = None if yx_ticks is None else [
         yx_ticks[1][0], yx_ticks[1][-1], yx_ticks[0][0], yx_ticks[0][-1]]
@@ -627,11 +639,15 @@ def print_stack2subplot(imstack, plt_raster=[4, 4], plt_format=[8, 6], title=Non
         xy_extent[1]-xy_extent[0])/(xy_extent[3]-xy_extent[2])
 
     # parameter
-    ax_meas = [ax.flat[0].bbox.width, ax.flat[0].bbox.height]
-    x_offset = np.round(3*ax_meas[0]/250.0).astype('uint16')
-    y_offset = np.round(21*ax_meas[1]/250.0).astype('uint16')
+    if nbrs_offsets is None:
+        ax_meas = [ax.flat[0].bbox.width, ax.flat[0].bbox.height]
+        x_offset = np.round(3*ax_meas[0] / xy_norm[1]) .astype('uint16')
+        y_offset = np.round(21*ax_meas[1]/xy_norm[1]).astype('uint16')
+    else:
+        y_offset, x_offset = nbrs_offsets
 
-    nbrs_psize = ax_meas[1]*0.2 if nbrs_size is None else ax_meas[1]*nbrs_size
+    #nbrs_psize = ax_meas[1]*0.2 if nbrs_size is None else ax_meas[1]*nbrs_size
+    nbrs_psize = 50*0.2 if nbrs_size is None else 50*nbrs_size
     if not yx_ticks is None:
         dx = xy_extent[1]-xy_extent[0]
         dy = xy_extent[3]-xy_extent[2]
@@ -720,7 +736,8 @@ def print_stack2subplot(imstack, plt_raster=[4, 4], plt_format=[8, 6], title=Non
 
     if colorbar == 'global':
         cbar = grid.cbar_axes[0].colorbar(ima)
-        cbar.ax.set_ylabel(axislabel[2], rotation=-90, va="bottom", fontsize=nbrs_psize/2)
+        if not axislabel == False:
+            cbar.ax.set_ylabel(axislabel[2], rotation=-90, va="bottom", fontsize=nbrs_psize/2)
 
     # delete empty axes
     while m+1 < (plt_raster[0]*plt_raster[1]):
