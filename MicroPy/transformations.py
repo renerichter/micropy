@@ -333,13 +333,15 @@ def radial_projection_sum(im, radius=None, **kwargs):
     return res
 
 
-def radial_sum(im: np.ndarray, maxfreq: int = None, nbr_bins: int = None, loop: bool = False, return_idx: bool = False) -> np.ndarray:
+def radial_sum(im: np.ndarray, scale: np.ndarray = None, maxfreq: int = None, nbr_bins: int = None, loop: bool = False, return_idx: bool = False) -> np.ndarray:
     """Calculates the radialsum. Use eg to calculate the mean frequency transfer efficiency and to have a quick look at the noise floor when using together with FT-images. Implementation is agnostic to input-datatype and hence needs to get proper (eg modulus of FT) input.
 
     Parameters
     ----------
     im : np.ndarray
         input image (eg FT)
+    scale: np.ndarray, optional
+        scaling to be applied and used for mask shape, by default None
     maxfreq : int
         maximum frequency to be used for support calculation (in pixels), by default None
     nbr_bins : int, optional
@@ -380,12 +382,15 @@ def radial_sum(im: np.ndarray, maxfreq: int = None, nbr_bins: int = None, loop: 
     if im.dtype == 'complex':
         im = np.abs(im)
 
+    if scale is None:
+        scale = np.array([1, ]*im.ndim)
+
     # calculate maximum number of bins
     if nbr_bins is None:
         nbr_bins = np.ceil(lp_norm(np.array(im.shape[-2:])/2.0)).astype('int32')+1
 
     # get index-list and bin it
-    idx = nip.rr(im.shape[-2:])
+    idx = nip.rr(im.shape[-2:], scale=scale)
     norm_max = np.max(idx)
 
     if not maxfreq is None:

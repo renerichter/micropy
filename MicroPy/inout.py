@@ -583,7 +583,7 @@ def paths_from_dict(path_dict):
 #
 
 
-def print_stack2subplot(imstack, plt_raster=[4, 4], plt_format=[8, 6], title=None, titlestack=True, colorbar=True, axislabel=True, laytight=True, nbrs=True, nbrs_color=[1, 1, 1], nbrs_size=None, nbrs_offsets=None, use_axis=None, plt_show=False, gridspec_kw=None, yx_ticks=None, axticks_format=None, grid_param=None):
+def print_stack2subplot(imstack, plt_raster=[4, 4], plt_format=[8, 6], title=None, titlestack=True, colorbar=True, axislabel=True, laytight=True, nbrs=True, nbrs_color=[1, 1, 1], nbrs_size=None, nbrs_offsets=None, xy_norm=None, aspect=None, use_axis=None, plt_show=False, gridspec_kw=None, yx_ticks=None, axticks_format=None, grid_param=None):
     '''
     Plots an 3D-Image-stack as set of subplots
     Based on this: https://stackoverflow.com/a/46616645
@@ -629,18 +629,21 @@ def print_stack2subplot(imstack, plt_raster=[4, 4], plt_format=[8, 6], title=Non
         ax = np.array(grid.axes_all)
         imstack -= np.min(imstack, axis=(-2, -1), keepdims=True)
         imstack /= np.max(imstack, axis=(-2, -1), keepdims=True)
-        xy_norm = [650, 650]
+        xy_norm_h = [650, 650]
 
     else:
         fig, ax = plt.subplots(
             nrows=plt_raster[0], ncols=plt_raster[1], figsize=plt_format, sharex=True, sharey=False,
             gridspec_kw=gridspec_kw)
-        xy_norm = [250.0, 250.0]
+        xy_norm_h = [250.0, 250.0]
+
+    xy_norm = xy_norm_h if xy_norm is None else xy_norm
 
     xy_extent = None if yx_ticks is None else [
         yx_ticks[1][0], yx_ticks[1][-1], yx_ticks[0][0], yx_ticks[0][-1]]
-    aspect = 'auto' if xy_extent is None else (
-        xy_extent[1]-xy_extent[0])/(xy_extent[3]-xy_extent[2])
+    if aspect is None:
+        aspect = 'auto' if xy_extent is None else (
+            xy_extent[1]-xy_extent[0])/(xy_extent[3]-xy_extent[2])
 
     # parameter
     if nbrs_offsets is None:
