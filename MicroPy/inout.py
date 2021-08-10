@@ -608,9 +608,13 @@ def print_stack2subplot(imstack, plt_raster=[4, 4], plt_format=[8, 6], title=Non
         # sanity
         grid_param_default = {'pos': 111, 'nrows_ncols': (
             plt_raster[0], plt_raster[1]), 'axes_pad': 0.4, 'cbar_mode': 'single', 'cbar_location': 'right', 'cbar_pad': 0.1}
-        for m in grid_param_default:
-            if not m in grid_param:
-                grid_param[m] = grid_param_default[m]
+
+        if grid_param is None:
+            grid_param = grid_param_default
+        else:
+            for m in grid_param_default:
+                if not m in grid_param:
+                    grid_param[m] = grid_param_default[m]
 
         # generate grid
         gp = grid_param

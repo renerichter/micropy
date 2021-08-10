@@ -333,15 +333,21 @@ def radial_projection_sum(im, radius=None, **kwargs):
     return res
 
 
-def radial_sum(im: np.ndarray, maxbins: int = None, loop: bool = False, return_idx: bool = False) -> np.ndarray:
+def radial_sum(im: np.ndarray, maxfreq: int = None, nbr_bins: int = None, loop: bool = False, return_idx: bool = False) -> np.ndarray:
     """Calculates the radialsum. Use eg to calculate the mean frequency transfer efficiency and to have a quick look at the noise floor when using together with FT-images. Implementation is agnostic to input-datatype and hence needs to get proper (eg modulus of FT) input.
 
     Parameters
     ----------
     im : np.ndarray
         input image (eg FT)
-    maxbins : int, optional
-        maximum number of bins to be used to calculate frequenc, by default None
+    maxfreq : int
+        maximum frequency to be used for support calculation (in pixels), by default None
+    nbr_bins : int, optional
+        number of bins to be used to calculate frequenc, by default None
+    loop : bool, optional
+        whether to use loop routine, by default False
+    return_idx : bool, optional
+        whether to return calculated index-map, by default False
 
     Returns
     -------
@@ -354,7 +360,7 @@ def radial_sum(im: np.ndarray, maxbins: int = None, loop: bool = False, return_i
     --------
     >>> im = np.zeros((8,8))
     >>> im[:,3:6] = 1
-    >>> imr,idx = radial_sum(im,maxbins=None)
+    >>> imr,idx = radial_sum(im,nbr_bins=None)
     >>> print(f"imr={imr}\nidx={idx}")
     imr=[1.         1.         0.625      0.375      0.16666667     0.  0.        ]
     idx=[[6 5 5 4 4 4 5 5]
@@ -375,12 +381,17 @@ def radial_sum(im: np.ndarray, maxbins: int = None, loop: bool = False, return_i
         im = np.abs(im)
 
     # calculate maximum number of bins
-    if maxbins is None:
-        maxbins = np.ceil(lp_norm(np.array(im.shape[-2:])/2.0)).astype('int32')+1
+    if nbr_bins is None:
+        nbr_bins = np.ceil(lp_norm(np.array(im.shape[-2:])/2.0)).astype('int32')+1
 
     # get index-list and bin it
     idx = nip.rr(im.shape[-2:])
-    idx = np.round(idx*(maxbins-1)/np.max(idx)).astype('int32')
+    norm_max = np.max(idx)
+
+    if not maxfreq is None:
+        idx[idx > maxfreq] = 0
+        norm_max = maxfreq
+    idx = np.round(idx*(nbr_bins-1)/norm_max).astype('int32')
 
     # calculate resulting radial sum via loop or directly
     if loop:
@@ -389,13 +400,13 @@ def radial_sum(im: np.ndarray, maxbins: int = None, loop: bool = False, return_i
             im = reduce_shape(im, -2)
 
         # allocate space and calculate radial sums
-        rsum = np.zeros([im.shape[0], maxbins], dtype=im.dtype)
+        rsum = np.zeros([im.shape[0], nbr_bins], dtype=im.dtype)
         for m, ima in enumerate(im):
-            rsum[m] = np.array([np.mean(ima[idx == m]) for m in range(maxbins)])
+            rsum[m] = np.array([np.mean(ima[idx == m]) for m in range(nbr_bins)])
     else:
         if im.ndim > 2:
             idx = nip.repmat(idx, list(im.shape[:im.ndim-2])+[1, ]*2)
-        rsum = np.array([np.mean(im[idx == m]) for m in range(maxbins)])
+        rsum = np.array([np.mean(im[idx == m]) for m in range(nbr_bins)])
 
     rsum[np.isnan(rsum)] = 0
 
