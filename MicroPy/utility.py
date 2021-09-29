@@ -4,7 +4,7 @@
 	@author René Lachmann
 	@email herr.rene.richter@gmail.com
 	@create date 2019 11:53:25
-	@modify date 2021-07-30 11:33:00
+	@modify date 2021-09-28 15:38:32
 	@desc Utility package
 
 ---------------------------------------------------------------------------------------------------
@@ -1045,7 +1045,7 @@ def norm_back(imstack, normstack, normtype):
     return imstack_changed
 
 
-def normNoff(im, dims=(), method='max', offset=None, direct=True):
+def normNoff(im, dims=None, method='max', offset=None, direct=False, atol=1e-10):
     """Subtracts offset and normalizes by calling normto. Read description of normto for further parameter info.
 
     Parameters
@@ -1063,8 +1063,8 @@ def normNoff(im, dims=(), method='max', offset=None, direct=True):
     normto
     """
 
-    # subtract offset
-    offset = np.min(im, axis=tuple(dims), keepdims=True) if offset is None else offset
+    # subtract offset (avoid division by zero)
+    offset = np.min(im, axis=dims, keepdims=True)-atol if offset is None else offset
     if direct:
         im -= offset
     else:

@@ -225,7 +225,7 @@ def generate_spokes_target(imsize=[128, 128], nbr_spokes=14, method='cart', gen3
         phi = np.arctan2(y, x)
         theta = np.arctan2(np.sqrt(x*x+y*y), z)
 
-        sin_cart = np.cos(phi*nbr_spokes)*np.sin(theta*nbr_spokes_ax)
+        sin_cart = np.sin(phi*nbr_spokes)*np.cos(theta*nbr_spokes_ax)
         spokes_cart = (sin_cart > 0).astype('float32')
     else:
         if method == 'polar':

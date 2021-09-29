@@ -583,7 +583,7 @@ def paths_from_dict(path_dict):
 #
 
 
-def print_stack2subplot(imstack, plt_raster=[4, 4], plt_format=[8, 6], title=None, titlestack=True, colorbar=True, axislabel=True, laytight=True, nbrs=True, nbrs_color=[1, 1, 1], nbrs_size=None, nbrs_offsets=None, xy_norm=None, aspect=None, use_axis=None, plt_show=False, gridspec_kw=None, yx_ticks=None, axticks_format=None, grid_param=None):
+def print_stack2subplot(imstack, inplace=False, plt_raster=[4, 4], plt_format=[8, 6], title=None, titlestack=True, colorbar=True, axislabel=True, laytight=True, nbrs=True, nbrs_color=[1, 1, 1], nbrs_size=None, nbrs_offsets=None, xy_norm=None, aspect=None, use_axis=None, plt_show=False, gridspec_kw=None, yx_ticks=None, axticks_format=None, grid_param=None):
     '''
     Plots an 3D-Image-stack as set of subplots
     Based on this: https://stackoverflow.com/a/46616645
@@ -598,6 +598,8 @@ def print_stack2subplot(imstack, plt_raster=[4, 4], plt_format=[8, 6], title=Non
         raise TypeError("Unexpected Data-type.")
     if not(imstack_len > 0):
         raise ValueError("Image size not fitting!")
+    if not inplace:
+        imstack = nip.image(np.array(imstack))
     # check for title
     from datetime import datetime
     if title == None:
@@ -629,6 +631,9 @@ def print_stack2subplot(imstack, plt_raster=[4, 4], plt_format=[8, 6], title=Non
         ax = np.array(grid.axes_all)
         imstack -= np.min(imstack, axis=(-2, -1), keepdims=True)
         imstack /= np.max(imstack, axis=(-2, -1), keepdims=True)
+
+        # assure proper results
+        imstack[np.isnan(imstack)] = 0
         xy_norm_h = [650, 650]
 
     else:
@@ -743,7 +748,7 @@ def print_stack2subplot(imstack, plt_raster=[4, 4], plt_format=[8, 6], title=Non
 
     if colorbar == 'global':
         cbar = grid.cbar_axes[0].colorbar(ima)
-        if not axislabel == False:
+        if not type(axislabel) == bool:
             cbar.ax.set_ylabel(axislabel[2], rotation=-90, va="bottom", fontsize=nbrs_psize/2)
 
     # delete empty axes

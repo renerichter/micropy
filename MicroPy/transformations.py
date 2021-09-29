@@ -394,7 +394,7 @@ def radial_sum(im: np.ndarray, scale: np.ndarray = None, maxfreq: int = None, nb
     norm_max = np.max(idx)
 
     if not maxfreq is None:
-        idx[idx > maxfreq] = 0
+        idx[idx > maxfreq] = -maxfreq/(nbr_bins-1)
         norm_max = maxfreq
     idx = np.round(idx*(nbr_bins-1)/norm_max).astype('int32')
 
