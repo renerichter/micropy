@@ -899,7 +899,7 @@ def print_stack2subplot(imstack, imdir='row', inplace=False, plt_raster=[4, 4], 
 #
 
 
-def stack2plot(x, ystack, refs=None, title=None, xlabel=None, ylabel=None, colors=None, mmarker='', mlinestyle='-', mlinewidth=None, legend=[1, 1.05], xlims=None, ylims=None, figsize=(8, 8), show_plot=True, ptight=True, ax=None, nbrs=True, nbrs_color=[1, 1, 1], nbrs_size=None, nbrs_text=None, err_bar=None, err_capsize=3):
+def stack2plot(x, ystack, refs=None, title=None, xlabel=None, ylabel=None, colors=None, mmarker='', mlinestyle='-', mlinewidth=None, legend=[1, 1.05], xlims=None, ylims=None, ax_inside=None, figsize=(8, 8), show_plot=True, ptight=True, ax=None, nbrs=True, nbrs_color=[1, 1, 1], nbrs_size=None, nbrs_text=None, err_bar=None, err_capsize=3):
     '''
     Prints a 1d-"ystack" into 1 plot and assigns legends + titles.
     '''
@@ -956,6 +956,11 @@ def stack2plot(x, ystack, refs=None, title=None, xlabel=None, ylabel=None, color
     ylims_dist = ylims[1]-ylims[0]
     ax.set_xlim(xlims)
     ax.set_ylim(ylims)
+
+    if not ax_inside is None:
+        # example: ax_inside={"x":-15,"y":"-22"}
+        for axkey in ax_inside:
+            ax.tick_params(axis=axkey, direction="in", pad=ax_inside[axkey])
 
     if nbrs:
         text_size_factor = ax.figure.bbox_inches.bounds[-1]*ax.figure.dpi
