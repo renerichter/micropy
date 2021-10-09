@@ -656,6 +656,9 @@ def print_stack2subplot(imstack, imdir='row', inplace=False, plt_raster=[4, 4], 
             gridspec_kw=gridspec_kw)
         xy_norm_h = [250.0, 250.0]
 
+    if not type(ax) == np.ndarray:
+        ax = np.array([ax, ])
+
     xy_norm = xy_norm_h if xy_norm is None else xy_norm
 
     xy_extent = None if yx_ticks is None else [
