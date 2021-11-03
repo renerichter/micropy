@@ -138,8 +138,8 @@ def otf_get_mask(otf, center_pinhole, mode='rft', eps=1e-5, bool_mask=False, clo
         proj_mask = my_mask_filled[zoff:].sum(axis=0)
     else:
         zoff = np.zeros(otf.shape[-2:], dtype=int)
-        proj_mask = my_mask_filled.sum(axis=0) if mode == 'rft' else nip.catE(
-            (int(my_mask_filled.shape[0]/2.0)-my_mask_filled[:int(my_mask_filled.shape[0]/2.0)].sum(axis=0), my_mask_filled.sum(axis=0)))
+        proj_mask = my_mask_filled.sum(axis=0)
+        # if mode == 'rft' else nip.catE((my_mask_filled.shape[0]//2-my_mask_filled[:my_mask_filled.shape[0]//2].sum(axis=0), my_mask_filled.sum(axis=0)))
 
     if bool_mask:
         my_mask_filled = np.array(my_mask_filled, dtype=bool)
@@ -193,10 +193,12 @@ def pinv_unmix(a, rcond=1e-15, svdnum=None, eps_reg=0, use_own=False):
     # use original pinv?
     if not use_own:
         res = np.linalg.pinv(a=a, rcond=rcond)
+        outdict = {}
 
     else:
         a = a.conjugate()
         u, s, vt = np.linalg.svd(a, full_matrices=False)
+        s_full = np.copy(s)
 
         # discard small singular values; regularize singular-values if wanted -> note: eps_reg is 0 on default
         if svdnum == None:
@@ -215,14 +217,17 @@ def pinv_unmix(a, rcond=1e-15, svdnum=None, eps_reg=0, use_own=False):
             s = np.zeros(s.shape)
             s[:len(cutoff)] = cutoff
 
-        res = np.matmul(np.transpose(vt), np.multiply(
-            s[..., np.newaxis], np.transpose(u)))
+        #res = np.matmul(np.transpose(vt), np.multiply(s[..., np.newaxis], np.transpose(u)))
+        res = np.transpose(np.dot(u*s, vt))
+
+        # return results
+        outdict = {'u': u, 's_full': s_full, 's': s, 'vt': vt}
 
     # done?
-    return res
+    return res, outdict
 
 
-def unmix_matrix(otf, mode='rft', eps_mask=5e-4, eps_reg=1e-3, svdlim=1e-8, svdnum=None, hermitian=False, use_own=False, closing=None, center_pinhole=None):
+def unmix_matrix(otf, mode='rft', eps_mask=5e-4, eps_reg=1e-3, svdlim=1e-8, svdnum=None, hermitian=False, use_own=True, closing=None, center_pinhole=None, verbose=True):
     '''
     Calculates the unmixing matrix. Assums pi-rotational-symmetry around origin (=conjugate), because PSF is real and only shifted laterally. No aberrations etc. Hence, only half of the OTF-support along z is calculated.
 
@@ -245,6 +250,8 @@ def unmix_matrix(otf, mode='rft', eps_mask=5e-4, eps_reg=1e-3, svdlim=1e-8, svdn
     :my_mask:           (IMAGE) mask used for defining limits of OTF-support
     :proj_mask:         (IMAGE) sum of mask along z-axis (used for inversion-range)
     '''
+    if verbose:
+        print("Calculating unmixing matrix.")
     # parameters/preparation
     otf_unmix = np.transpose(
         np.zeros(otf.shape, dtype=np.complex_), [1, 0, 2, 3])
@@ -254,15 +261,15 @@ def unmix_matrix(otf, mode='rft', eps_mask=5e-4, eps_reg=1e-3, svdlim=1e-8, svdn
 
     # calculate mask
     _, my_mask, proj_mask, zoff, _ = otf_get_mask(
-        otf, mode='rft', eps=eps_mask, bool_mask=False, closing=closing, center_pinhole=center_pinhole)
+        otf, mode=mode, eps=eps_mask, bool_mask=False, closing=closing, center_pinhole=center_pinhole)
 
-    proj_mask = proj_mask.astype(np.int8)
+    proj_mask = proj_mask.astype(np.int16)
 
     # loop over all kx,ky
     for kk in range(otf_unmix.shape[-2]):
         for jj in range(otf_unmix.shape[-1]):
             if my_mask[:, kk, jj].any():
-                otf_unmix[zoff[kk, jj]:zoff[kk, jj]+proj_mask[kk, jj], :, kk, jj] = pinv_unmix(
+                otf_unmix[zoff[kk, jj]:zoff[kk, jj]+proj_mask[kk, jj], :, kk, jj], _ = pinv_unmix(
                     otf[:, zoff[kk, jj]:zoff[kk, jj]+proj_mask[kk, jj], kk, jj], rcond=svdlim, svdnum=svdnum, eps_reg=eps_reg, use_own=use_own)
                 # otf[:, zoff[kk, jj]:zoff[kk, jj]+proj_mask[kk, jj], kk, jj] #otf[:, :,90,90]
     otf_unmix = nip.image(otf_unmix)
@@ -280,10 +287,12 @@ def unmix_matrix(otf, mode='rft', eps_mask=5e-4, eps_reg=1e-3, svdlim=1e-8, svdn
     return otf_unmix, otf_unmix_full, my_mask, proj_mask
 
 
-def unmix_image_ft(im_unmix_ft, recon_shape=None, mode='rft', show_phases=False):
+def unmix_image_ft(im_unmix_ft, recon_shape=None, mode='rft', show_phases=False, verbose=True):
     '''
     Fouriertransforms along -2,-1 and applies RFT along -3 (=kz), as only half space was used due to positivity and rotation symmetry.
     '''
+    if verbose:
+        print("Backtransform unmixed image.")
     # sanity
     if recon_shape is None:
         recon_shape = np.array(im_unmix_ft.shape)
@@ -310,11 +319,12 @@ def unmix_image_ft(im_unmix_ft, recon_shape=None, mode='rft', show_phases=False)
     else:
         raise ValueError("No proper mode chosen!")
 
+    unmix_im = np.abs(unmix_im)
     # done?
     return unmix_im, recon_shape
 
 
-def unmix_recover_thickslice(unmixer, im, unmixer_full=None):
+def unmix_recover_thickslice(unmixer, im, unmixer_full=None, verbose=True):
     '''
     Does the recovery multiplication step. Need to apply unmix matrix for every kx and ky individually. 
 
@@ -328,6 +338,8 @@ def unmix_recover_thickslice(unmixer, im, unmixer_full=None):
     :im_unmix:      3D unmixed images of dim [kz,kx,ky]
 
     '''
+    if verbose:
+        print("Recovering Thickslice using Einstein-Summation.")
     # the real thing
     im_unmix = nip.image(np.einsum('ijkl,jkl->ikl', unmixer, im))
 
