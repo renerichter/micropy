@@ -662,6 +662,7 @@ def calculatePSF(obj, psf_params=None, method='brightfield', amplitude=False, **
         nbr_det = None if not 'nbr_det' in kwargs else kwargs['nbr_det']
         fmodel = None if not 'fmodel' in kwargs else kwargs['fmodel']
         pinhole = None if not 'pinhole' in kwargs else kwargs['pinhole']
+        faxes = None if not 'faxes' in kwargs else kwargs['faxes']
 
         # calculate confocal PSF
         if psfex is None and psfdet is None:
@@ -670,7 +671,7 @@ def calculatePSF(obj, psf_params=None, method='brightfield', amplitude=False, **
 
         # calculate resulting ISM-PSF
         psf_eff, otf_eff, psfdet_array, shifts = calculatePSF_ism(
-            psfex=psfex, psfdet=psfdet, psfdet_array=psfdet_array, shift_offset=shift_offset, nbr_det=nbr_det, fmodel=fmodel, pinhole=pinhole)
+            psfex=psfex, psfdet=psfdet, psfdet_array=psfdet_array, shift_offset=shift_offset, nbr_det=nbr_det, fmodel=fmodel, pinhole=pinhole, faxes=faxes)
         return psf_eff, otf_eff, psfex, psfdet_array
 
     elif method == 'sax':

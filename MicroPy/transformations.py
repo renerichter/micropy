@@ -1,9 +1,10 @@
 '''
 Transformations that were helpful will be collected here. No matter whether Hough, Radon, Fourier, Affine, ...
 '''
-import NanoImagingPack as nip
-from scipy.fftpack import dct
 import numpy as np
+from scipy.fftpack import dct
+from pandas import DataFrame
+import NanoImagingPack as nip
 
 # %%
 # ------------------------------------------------------------------
@@ -47,7 +48,22 @@ def rft_getshape(im, raxis=None, faxes=None):
     return (rax,), tuple(fax)
 
 
-def rftnd(im, raxis=None, faxes=None):
+def rft_check_axes_shape(raxis, faxes, s=None):
+    if type(faxes) == int:
+        faxes = [faxes, ]
+    if type(raxis) == int:
+        raxis = [raxis, ]
+    axes = list(faxes)+list(raxis)
+
+    # for irft axes and shape must be in the same order for np.fft.irfftn
+    if not s is None:
+        s = np.array(s)
+        s = list(s[faxes])+list(s[raxis])
+
+    return axes, s
+
+
+def rftnd(im, raxis=None, faxes=None, norm='ortho'):
     '''
     Performs a nD-RFT forward on given or all axes axes. Especially, RFT can only be applied once (half-room selection). Hence, apply RFT first and then resulting FT. If no further axis is given, RFT will be applied along last dimension. 
 
@@ -61,11 +77,13 @@ def rftnd(im, raxis=None, faxes=None):
     =====
     Fourier-transformed image.
     '''
-    rax, ax = rft_getshape(im, raxis=raxis, faxes=faxes)
-    return nip.ft(nip.rft(im, axes=rax), axes=ax)
+    #rax, ax = rft_getshape(im, raxis=raxis, faxes=faxes)
+    axes, _ = rft_check_axes_shape(raxis, faxes)
+
+    return nip.rft(im=im,  axes=axes, norm=norm)  # nip.ft(nip.rft(im, axes=rax), axes=ax)
 
 
-def irftnd(im, s, raxis=None, faxes=None):
+def irftnd(im, s, raxis=None, faxes=None, norm='ortho'):
     '''
     Performs a nD-RFT backward (=irft) on the given (or all) axes. Especially, RFT can only be applied once (half-room selection). Hence, apply FT first and the RFT to reverse the application process of rftnd. 
 
@@ -80,8 +98,12 @@ def irftnd(im, s, raxis=None, faxes=None):
     =====
     Inverse Fourier-Transformed image.
     '''
-    rax, ax = rft_getshape(im, raxis=raxis, faxes=faxes)
-    return nip.irft(nip.ift(im, axes=ax), shift_after=True, axes=rax, s=s)
+    #rax, ax = rft_getshape(im, raxis=raxis, faxes=faxes)
+    # return nip.irft(nip.ift(im, axes=ax), shift_after=True, axes=rax, s=s)
+    # due to change in NIP interface
+    axes, s = rft_check_axes_shape(raxis, faxes, s)
+
+    return nip.irft(im=im, s=s, axes=axes, norm=norm)  # ,axes=raxis)
 
 
 def rft3dz(im):
@@ -159,6 +181,91 @@ def lp_sparsity(im, p=2):
     Measures the LP-sparsity having p=2 as default to ensure higher response for sparse images = sharp images.
     '''
     return np.prod(im.shape)**(p-1.0/p)*lp_norm(im, p=1.0/p)/lp_norm(im, p=p)
+
+
+def mean_norm(im, axes=None, in_place=False):
+    if in_place:
+        im -= np.mean(im, axis=axes, keepdims=True)
+    else:
+        im = im-np.mean(im, axis=axes, keepdims=True)
+    return im
+
+
+def std_norm(im, axes=None, in_place=False):
+    if in_place:
+        im /= np.std(im, axis=axes, keepdims=True, ddof=1)
+    else:
+        im = im/np.std(im, axis=axes, keepdims=True, ddof=1)
+    return im
+
+
+def stat_norm(im, axes=None, in_place=False):
+    im_std = np.std(im, axis=axes, keepdims=True, ddof=1)
+    if in_place:
+        mean_norm(im, axes=axes, in_place=in_place)
+        im /= im_std
+    else:
+        im = mean_norm(im, axes=axes, in_place=in_place)/im_std
+    return im
+
+# %%
+# ------------------------------------------------------------------
+#               Metrics
+# ------------------------------------------------------------------
+
+
+def normalized_cross_correlation(im1: np.ndarray, im2: np.ndarray, axes: tuple = None, in_place: bool = False, omit_im: int = None):
+    # based on: https://xcdskd.readthedocs.io/en/latest/cross_correlation/cross_correlation_coefficient.html
+    norm_fac = 1.0/(im1.size-1) if axes is None else 1.0/np.prod([im1.shape[a] for a in axes])
+
+    # accept to compare against pre-normed (or non-variant) objects
+    im1_norm = im1 if (omit_im == 1) else stat_norm(im=im1, axes=axes, in_place=in_place)
+    im2_norm = im2 if (omit_im == 2) else stat_norm(im=im2, axes=axes, in_place=in_place)
+
+    # fix normalization degrees
+    norm_fac = np.sqrt(norm_fac) if omit_im in [1, 2] else norm_fac
+
+    # done?
+    return norm_fac*np.sum(im1_norm*im2_norm, axis=axes)
+
+
+def get_cross_correlations(imlist_rows, imlist_cols, rows=None, cols=None, rlatex=True, triang=False):
+    '''Calculates NCC for all combinations of a list'''
+    # prepare
+    ncc_list = np.zeros([len(imlist_rows), len(imlist_cols)])
+
+    # calculate normalized cross-correlation for all images of the list
+    for n, imr in enumerate(imlist_rows):
+        for m, imc in enumerate(imlist_cols):
+            ncc_list[n, m] = normalized_cross_correlation(imr, imc)
+
+    if triang:
+        nccsel = (1-np.triu(np.ones(ncc_list.shape))).astype('bool')
+        ncc_list[nccsel] = 'NaN'
+
+    ncc_pd = DataFrame(ncc_list, columns=cols, index=rows)
+
+    if rlatex:
+        ncc_list_latex = ncc_pd.to_latex(float_format=lambda x: '%0.2f' %
+                                         x, column_format='l'+'c'*len(imlist_cols), escape=False, na_rep='')
+    # done?
+    return ncc_pd, ncc_list_latex
+
+
+def energy_regain(recon, groundtruth, atol=1e-8, snorm=True, use_indiv_abs=False):
+    # make sure distance between two images cannot be bigger than 1
+    if snorm:
+        recon = recon/np.sum(recon, keepdims=True)
+        groundtruth = groundtruth/np.sum(groundtruth, keepdims=True)
+
+    # validmask
+    nom = np.abs(recon)-np.abs(groundtruth) if use_indiv_abs else np.abs(recon - groundtruth)
+    nom *= nom
+    denom = np.abs(groundtruth)
+    denom *= denom
+    frac = np.ones(nom.shape)
+    frac = np.divide(nom, denom, where=denom > atol, out=frac)
+    return 1 - frac
 
 # %%
 # ------------------------------------------------------------------

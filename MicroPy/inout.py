@@ -1100,10 +1100,60 @@ def stack2tiles(im, tileshape=None):
     return iml
 
 
+def concat_list(imlist, cols=4, normal=False, gammal=None, method='np', dims=(-3, -2, -1)):
+    # normalize
+    if normal:
+        imlist = mipy.normNoff(imlist, dims=dims, direct=False)
+
+    if gammal is None:
+        gammal = np.ones(len(imlist))
+    elif type(gammal) in [float, int]:
+        gammal = np.ones(len(imlist))*gammal
+    imlist = imlist**mipy.add_multi_newaxis(gammal, newax_pos=[-1, ]*imlist[0].ndim)
+
+    if method == 'iter':
+        # prepare
+        col_list = [imlist[0]**gammal[0], ]
+        row_list = []
+
+        # add images to list
+        for m in range(1, len(imlist)):
+            if np.mod(m, cols) == 0:
+                row_list.append(nip.cat(col_list, axis=-1))
+                col_list = [imlist[m], ]
+            else:
+                col_list.append(imlist[m])
+
+        # make sure that final row is filled
+        if not len(col_list) == cols:
+            ims = np.array(imlist[0].shape)
+            ims[-1] *= (cols-len(col_list))
+            row_list.append(nip.cat(np.zeros(ims, dtype=imlist[0].dtype), axis=-1))
+
+        imlist = nip.cat(row_list, axis=-2)
+
+    else:
+
+        nbr_fills = np.mod(cols-len(imlist), cols)
+        imlist = nip.cat((imlist, np.zeros([nbr_fills, ]+list(imlist[0].shape))), axis=0)
+        imlist = mipy.transpose_arbitrary(
+            imlist, idx_startpos=[0, ], idx_endpos=[-2], direction='forward')
+        imlist = np.reshape(imlist, list(
+            imlist.shape[:-2])+[imlist.shape[-2]//cols, imlist.shape[-1]*cols])
+        imlist = mipy.transpose_arbitrary(
+            imlist, idx_startpos=[0, ], idx_endpos=[-1], direction='forward')
+        imlist = np.reshape(imlist, list(imlist.shape[:-2])+[imlist.shape[-2]*imlist.shape[-1]])
+        imlist = np.transpose(imlist, np.roll(np.arange(imlist.ndim), -1))
+
+    # done?
+    return imlist
+
 # %% ------------------------------------------------------
 # ---                        Time                      ---
 # ---------------------------------------------------------
 #
+
+
 def format_time(tsec):
     '''
     Simple time formatter.

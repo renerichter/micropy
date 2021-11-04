@@ -133,13 +133,13 @@ def otf_get_mask(otf, center_pinhole, mode='rft', eps=1e-5, bool_mask=False, clo
         my_mask_filled = my_mask
 
     # old mode???? WHAT IS HAPPENING HERE???
-    if mode == 'old':
-        zoff = otf.shape[1]//2  # z-offset
-        proj_mask = my_mask_filled[zoff:].sum(axis=0)
-    else:
-        zoff = np.zeros(otf.shape[-2:], dtype=int)
-        proj_mask = my_mask_filled.sum(axis=0)
-        # if mode == 'rft' else nip.catE((my_mask_filled.shape[0]//2-my_mask_filled[:my_mask_filled.shape[0]//2].sum(axis=0), my_mask_filled.sum(axis=0)))
+    # if mode == 'old':
+    #    zoff = otf.shape[1]//2  # z-offset
+    #    proj_mask = my_mask_filled[zoff:].sum(axis=0)
+    # else:
+    zoff = np.zeros(otf.shape[-2:], dtype=int)
+    proj_mask = my_mask_filled.sum(axis=0)
+    # if mode == 'rft' else nip.catE((my_mask_filled.shape[0]//2-my_mask_filled[:my_mask_filled.shape[0]//2].sum(axis=0), my_mask_filled.sum(axis=0)))
 
     if bool_mask:
         my_mask_filled = np.array(my_mask_filled, dtype=bool)
@@ -200,6 +200,10 @@ def pinv_unmix(a, rcond=1e-15, svdnum=None, eps_reg=0, use_own=False):
         u, s, vt = np.linalg.svd(a, full_matrices=False)
         s_full = np.copy(s)
 
+        # debug-hook
+        # if len(s) > 20:
+        #    print("stop")
+
         # discard small singular values; regularize singular-values if wanted -> note: eps_reg is 0 on default
         if svdnum == None:
             cutoff = np.array(rcond)[..., np.newaxis] * \
@@ -211,7 +215,7 @@ def pinv_unmix(a, rcond=1e-15, svdnum=None, eps_reg=0, use_own=False):
                           out=s) if eps_reg else np.divide(1, s, where=large, out=s)
             s[~large] = 0
         else:
-            cutoff = s[:svdnum+1] if svdnum < len(s) else s
+            cutoff = s[:svdnum] if svdnum < len(s) else s
             cutoff = cutoff/(cutoff*cutoff+eps_reg) if eps_reg else 1/cutoff
 
             s = np.zeros(s.shape)
@@ -255,6 +259,8 @@ def unmix_matrix(otf, mode='rft', eps_mask=5e-4, eps_reg=1e-3, svdlim=1e-8, svdn
     # parameters/preparation
     otf_unmix = np.transpose(
         np.zeros(otf.shape, dtype=np.complex_), [1, 0, 2, 3])
+    svd_counter = np.zeros(otf_unmix.shape, dtype=np.int16)
+    svd_lim_counter = np.zeros(otf_unmix.shape, dtype=np.int16)
 
     if center_pinhole is None:
         center_pinhole = otf.shape[0]//2
@@ -265,26 +271,38 @@ def unmix_matrix(otf, mode='rft', eps_mask=5e-4, eps_reg=1e-3, svdlim=1e-8, svdn
 
     proj_mask = proj_mask.astype(np.int16)
 
-    # loop over all kx,ky
+    # calculate SVs at a central pixel and generate svdnum for further processing
+    if svdnum is None:
+        max_sv_pos = np.unravel_index(np.argmax(proj_mask.flatten()), proj_mask.shape)
+        _, outdict = pinv_unmix(otf[:, :, max_sv_pos[0], max_sv_pos[1]],
+                                rcond=svdlim, svdnum=None, eps_reg=eps_reg, use_own=use_own)
+        svdnum = len(outdict['s'][outdict['s'] > 0])
+
+        # loop over all kx,ky
     for kk in range(otf_unmix.shape[-2]):
         for jj in range(otf_unmix.shape[-1]):
             if my_mask[:, kk, jj].any():
-                otf_unmix[zoff[kk, jj]:zoff[kk, jj]+proj_mask[kk, jj], :, kk, jj], _ = pinv_unmix(
+                otf_unmix[zoff[kk, jj]:zoff[kk, jj]+proj_mask[kk, jj], :, kk, jj], outdict = pinv_unmix(
                     otf[:, zoff[kk, jj]:zoff[kk, jj]+proj_mask[kk, jj], kk, jj], rcond=svdlim, svdnum=svdnum, eps_reg=eps_reg, use_own=use_own)
+                svd_lim_counter[zoff[kk, jj]:zoff[kk, jj]+proj_mask[kk, jj],
+                                :, kk, jj] = len(outdict['s'][outdict['s'] > 0])
+                svd_counter[zoff[kk, jj]:zoff[kk, jj]+proj_mask[kk, jj],
+                            :, kk, jj] = len(outdict['s_full'])
                 # otf[:, zoff[kk, jj]:zoff[kk, jj]+proj_mask[kk, jj], kk, jj] #otf[:, :,90,90]
     otf_unmix = nip.image(otf_unmix)
 
     # create full otf_unmix if necessary
-    if mode == 'old':
-        otf_unmix = otf_unmix[zoff:]
-        otf_unmix = nip.image(otf_unmix)
-        otf_unmix_full = np.transpose(
-            otf_fill(np.transpose(otf_unmix, [1, 0, 2, 3])), [1, 0, 2, 3])
-    else:
-        otf_unmix_full = otf_unmix
+    # if mode == 'old':
+    #    otf_unmix = otf_unmix[zoff:]
+    #    otf_unmix = nip.image(otf_unmix)
+    #    otf_unmix_full = np.transpose(
+    #        otf_fill(np.transpose(otf_unmix, [1, 0, 2, 3])), [1, 0, 2, 3])
+    # else:
+    #    otf_unmix_full = otf_unmix
+    svd_counter_dict = {'svd_counter': svd_counter, 'svd_lim_counter': svd_lim_counter}
 
-    # done?
-    return otf_unmix, otf_unmix_full, my_mask, proj_mask
+    # done? otf_unmix_full
+    return otf_unmix, svd_counter_dict, my_mask, proj_mask
 
 
 def unmix_image_ft(im_unmix_ft, recon_shape=None, mode='rft', show_phases=False, verbose=True):
