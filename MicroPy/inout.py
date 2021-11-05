@@ -1147,6 +1147,11 @@ def concat_list(imlist, cols=4, normal=False, gammal=None, method='np', dims=(-3
 
     # done?
     return imlist
+    
+def format_list(alist,formatting):
+    format_string=["{:"+formatting+"}",]*len(alist)
+    format_string=",".join(format_string)
+    return "["+format_string.format(*alist)+"]"
 
 # %% ------------------------------------------------------
 # ---                        Time                      ---

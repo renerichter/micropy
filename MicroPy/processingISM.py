@@ -11,7 +11,7 @@ from deprecated import deprecated
 # mipy imports
 from .transformations import irft3dz
 from .utility import findshift, midVallist, pinhole_shift, pinhole_getcenter, add_multi_newaxis, shiftby_list, subslice_arbitrary, mask_from_dist
-from .inout import stack2tiles
+from .inout import stack2tiles, format_list
 
 
 # %%
@@ -178,7 +178,7 @@ def test_otf_symmetry(otf):
     nip.v5(nip.cat((psfh3, psfc, psfh2)))
 
 
-def pinv_unmix(a, rcond=1e-15, svdnum=None, eps_reg=0, use_own=False):
+def pinv_unmix(a, rcond=1e-15, svdnum=None, eps_reg=0, use_own=True):
     """
     Functions as a wrapper and a regularized version of the np.linalg.pinv.
 
@@ -231,7 +231,41 @@ def pinv_unmix(a, rcond=1e-15, svdnum=None, eps_reg=0, use_own=False):
     return res, outdict
 
 
-def unmix_matrix(otf, mode='rft', eps_mask=5e-4, eps_reg=1e-3, svdlim=1e-8, svdnum=None, hermitian=False, use_own=True, closing=None, center_pinhole=None, verbose=True):
+def unmix_svd_stat(svd_range, sing_vals, kk, jj):
+    if (sing_vals[0]/sing_vals[-1]) > svd_range['biggest_ratio']['ratio']:
+        svd_range['biggest_ratio']['ratio'] = sing_vals[0]/sing_vals[-1]
+        svd_range['biggest_ratio']['max'] = sing_vals[0]
+        svd_range['biggest_ratio']['min'] = sing_vals[-1]
+        svd_range['biggest_ratio']['s_list'] = sing_vals
+        svd_range['biggest_ratio']['kk'] = kk
+        svd_range['biggest_ratio']['jj'] = jj
+    if (sing_vals[-1] < svd_range['smallest_sv']['sv']):
+        svd_range['smallest_sv']['sv'] = sing_vals[-1]
+        svd_range['smallest_sv']['s_list'] = sing_vals
+        svd_range['smallest_sv']['kk'] = kk
+        svd_range['smallest_sv']['jj'] = jj
+    if (sing_vals[0] > svd_range['biggest_sv']['sv']):
+        svd_range['biggest_sv']['sv'] = sing_vals[0]
+        svd_range['biggest_sv']['s_list'] = sing_vals
+        svd_range['biggest_sv']['kk'] = kk
+        svd_range['biggest_sv']['jj'] = jj
+    return svd_range
+
+
+def unmix_svdstat_pp(svd_range):
+    print("~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~\n\tSVD-Statistics\n~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~")
+    a = svd_range['biggest_ratio']
+    print(
+        f"Biggest Ratio:\n >>>> ratio={a['ratio']:.2e}, max={a['max']:.2e}, min={a['min']:.2e}, len(s)={len(a['s_list'])}, [kx,ky]=[{a['kk']},{a['jj']}].\n >>>> sv_list={format_list(a['s_list'],'.3e')}.")
+    a = svd_range['biggest_sv']
+    print(
+        f"Biggest Singular Value:\n >>>> λ={a['sv']:.2e}, len(s)={len(a['s_list'])}, [kx,ky]=[{a['kk']},{a['jj']}].\n >>>> sv_list={format_list(a['s_list'],'.3e')}.")
+    a = svd_range['smallest_sv']
+    print(
+        f"Smallest Singular Value:\n >>>> λ={a['sv']:.2e}, len(s)={len(a['s_list'])}, [kx,ky]=[{a['kk']},{a['jj']}].\n >>>> sv_list={format_list(a['s_list'],'.3e')}.")
+
+
+def unmix_matrix(otf, mode='rft', eps_mask=5e-4, eps_reg=1e-17, svdlim=1e-15, svdnum=None, hermitian=False, use_own=True, closing=None, center_pinhole=None, verbose=True, svd_stat=False):
     '''
     Calculates the unmixing matrix. Assums pi-rotational-symmetry around origin (=conjugate), because PSF is real and only shifted laterally. No aberrations etc. Hence, only half of the OTF-support along z is calculated.
 
@@ -261,6 +295,9 @@ def unmix_matrix(otf, mode='rft', eps_mask=5e-4, eps_reg=1e-3, svdlim=1e-8, svdn
         np.zeros(otf.shape, dtype=np.complex_), [1, 0, 2, 3])
     svd_counter = np.zeros(otf_unmix.shape, dtype=np.int16)
     svd_lim_counter = np.zeros(otf_unmix.shape, dtype=np.int16)
+    svd_range = {'biggest_ratio': {'ratio': 0.0, 'max': 0.0, 'min': 0.0, 's_list': [], 'kk': 0, 'jj': 0, },
+                 'smallest_sv': {'sv': 1e7, 's_list': [], 'kk': 0, 'jj': 0},
+                 'biggest_sv': {'sv': 0, 's_list': [], 'kk': 0, 'jj': 0}}
 
     if center_pinhole is None:
         center_pinhole = otf.shape[0]//2
@@ -274,9 +311,9 @@ def unmix_matrix(otf, mode='rft', eps_mask=5e-4, eps_reg=1e-3, svdlim=1e-8, svdn
     # calculate SVs at a central pixel and generate svdnum for further processing
     if svdnum is None:
         max_sv_pos = np.unravel_index(np.argmax(proj_mask.flatten()), proj_mask.shape)
-        _, outdict = pinv_unmix(otf[:, :, max_sv_pos[0], max_sv_pos[1]],
-                                rcond=svdlim, svdnum=None, eps_reg=eps_reg, use_own=use_own)
-        svdnum = len(outdict['s'][outdict['s'] > 0])
+        _, outdict_pre = pinv_unmix(otf[:, :, max_sv_pos[0], max_sv_pos[1]],
+                                    rcond=svdlim, svdnum=None, eps_reg=eps_reg, use_own=use_own)
+        svdnum = len(outdict_pre['s'][outdict_pre['s'] > 0])
 
         # loop over all kx,ky
     for kk in range(otf_unmix.shape[-2]):
@@ -284,10 +321,17 @@ def unmix_matrix(otf, mode='rft', eps_mask=5e-4, eps_reg=1e-3, svdlim=1e-8, svdn
             if my_mask[:, kk, jj].any():
                 otf_unmix[zoff[kk, jj]:zoff[kk, jj]+proj_mask[kk, jj], :, kk, jj], outdict = pinv_unmix(
                     otf[:, zoff[kk, jj]:zoff[kk, jj]+proj_mask[kk, jj], kk, jj], rcond=svdlim, svdnum=svdnum, eps_reg=eps_reg, use_own=use_own)
+                s_lim = outdict['s'][outdict['s'] > 0]
                 svd_lim_counter[zoff[kk, jj]:zoff[kk, jj]+proj_mask[kk, jj],
-                                :, kk, jj] = len(outdict['s'][outdict['s'] > 0])
+                                :, kk, jj] = len(s_lim)
                 svd_counter[zoff[kk, jj]:zoff[kk, jj]+proj_mask[kk, jj],
                             :, kk, jj] = len(outdict['s_full'])
+
+                # gather some unmixing statistics
+                if svd_stat:
+                    svd_range = unmix_svd_stat(
+                        svd_range, outdict['s_full'][outdict['s'] > 0], kk, jj)
+
                 # otf[:, zoff[kk, jj]:zoff[kk, jj]+proj_mask[kk, jj], kk, jj] #otf[:, :,90,90]
     otf_unmix = nip.image(otf_unmix)
 
@@ -299,7 +343,11 @@ def unmix_matrix(otf, mode='rft', eps_mask=5e-4, eps_reg=1e-3, svdlim=1e-8, svdn
     #        otf_fill(np.transpose(otf_unmix, [1, 0, 2, 3])), [1, 0, 2, 3])
     # else:
     #    otf_unmix_full = otf_unmix
-    svd_counter_dict = {'svd_counter': svd_counter, 'svd_lim_counter': svd_lim_counter}
+    svd_counter_dict = {'svd_counter': svd_counter,
+                        'svd_lim_counter': svd_lim_counter, 'svd_range': svd_range}
+
+    if verbose:
+        unmix_svdstat_pp(svd_range)
 
     # done? otf_unmix_full
     return otf_unmix, svd_counter_dict, my_mask, proj_mask
