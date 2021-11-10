@@ -4,7 +4,7 @@
 	@author René Lachmann
 	@email herr.rene.richter@gmail.com
 	@create date 2019 11:53:25
-	@modify date 2021-09-28 15:38:32
+	@modify date 2021-11-08 13:59:07
 	@desc Utility package
 
 ---------------------------------------------------------------------------------------------------
@@ -113,9 +113,10 @@ def noise_poisson_gauss(im, phot, mu, sigma):
     return im
 
 
-def noise_normalize(im, phot, norm='mean'):
+def factor_normalize(im, phot, norm='mean'):
     '''
     Normalizes the image so that proper noise can be applied.
+    old_name ('noise_normalize') was misleading. 
     '''
     if norm == 'mean':
         norm = np.mean(im, axis=(-2, -1)) / phot
@@ -922,7 +923,7 @@ def transpose_arbitrary(imstack: np.ndarray, idx_startpos: list = [-2, -1], idx_
     return im
 
 
-def subslice_arbitrary(im, roi):
+def subslice_arbitrary(im, slice_range, axes):
     """Select arbitrary subslice.
     For now: creates a copy of the input object. 
 
@@ -930,9 +931,11 @@ def subslice_arbitrary(im, roi):
     ----------
     im : image
         N dimensional image
-    roi : array
+    slice_range : array
         list to be used for subslicing. Shape has to be of the kind: 
         [dim,start,stop] per dimension, see example
+    axes : array
+        axes to be used
 
     Returns
     -------
@@ -942,8 +945,9 @@ def subslice_arbitrary(im, roi):
     Example
     -------
     >>> im = np.reshape(np.ones([2*3*4*5]),[2,3,4,5])
-    >>> roi = [[1,1,3],[2,0,3],[3,0,3]]
-    >>> a = selectROI(im,roi)
+    >>> slice_range = [[1,1,3],[2,0,3],[3,0,3]]
+    >>> axes = [-3,-2,-1]
+    >>> a = subslice_arbitrary(im,slice_range,axes)
     >>> print(f"im={im.shape}\na={a.shape}")
     im=(2, 3, 4, 5)
     a=(2, 2, 3, 3)
@@ -953,12 +957,12 @@ def subslice_arbitrary(im, roi):
     transpose_arbitrary
     """
     #roi = [dim,start,stop]
-    for _, roipos in enumerate(roi):
+    for m, ax in enumerate(axes):
         im = transpose_arbitrary(
-            im, idx_startpos=roipos[0], idx_endpos=0, direction='forward')
-        im = im[roipos[1]:roipos[2]]
+            im, idx_startpos=slice_range[m][0], idx_endpos=0, direction='forward')
+        im = im[slice_range[m][1]:slice_range[m][2]]
         im = transpose_arbitrary(
-            im, idx_startpos=roipos[0], idx_endpos=0, direction='backward')
+            im, idx_startpos=slice_range[m][0], idx_endpos=0, direction='backward')
     return im
 
 
@@ -1237,6 +1241,26 @@ def create_value_on_dimpos(dims_total, axes=[-2, -1], scaling=[0.5, 0.5]):
     for m in range(len(axes)):
         res[axes[m]] = scaling[m]
     return res
+
+
+def midIndexlist(iml, dims):
+    # sanity
+    dims = np.mod(dims, iml.ndim)
+
+    # preparation
+    im_centers = np.array(iml.shape)//2
+    idx_list = np.reshape(np.arange(np.prod(iml.shape)), iml.shape)
+
+    # find idx
+    dim_sel = []
+    for dim in range(iml.ndim):
+        if dim in dims:
+            dim_sel.append(slice(im_centers[dim], im_centers[dim]+1))
+        else:
+            dim_sel.append(slice(0, iml.shape[dim], 1))
+
+    # done?
+    return idx_list[dim_sel].flatten(), dim_sel
 
 
 def midVallist(iml, dims, method='iter', keepdims=False):
@@ -1774,7 +1798,7 @@ def time_me(fcall, repeats=1000, averages=100):
     >>>     return 2*x+y
     >>> def myminus(x,y):
     >>>     return 2*x-np.min([x,y])
-    >>> print(mipy.time_me(lambda: mysq(mysum(10,myminus(5,4)))repeats=1000)[1][0])
+    >>> print(mipy.time_me(lambda: mysq(mysum(10,myminus(5,4))),repeats=1000)[1][0])
     9.433002560399473e-06
 
     See Also

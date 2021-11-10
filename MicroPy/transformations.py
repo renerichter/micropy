@@ -6,6 +6,8 @@ from scipy.fftpack import dct
 from pandas import DataFrame
 import NanoImagingPack as nip
 
+from .utility import midVallist
+
 # %%
 # ------------------------------------------------------------------
 #               FOURIER (-like) TRAFOS
@@ -252,11 +254,31 @@ def get_cross_correlations(imlist_rows, imlist_cols, rows=None, cols=None, rlate
     return ncc_pd, ncc_list_latex
 
 
-def energy_regain(recon, groundtruth, atol=1e-8, snorm=True, use_indiv_abs=False):
+def noise_normalize(im, mode='fft'):
+    '''
+    Divides Fourier-Image by center frequency. 
+    '''
+    # find center frequency
+    if mode == 'fft':
+        im_norm = 1/midVallist(im, dims=np.arange(im.ndim), keepdims=True)
+    elif mode == 'rft':
+        im_norm = 1/im.flatten()[0]
+    else:
+        print("Chosen Method unknown hence avaiding normalization.")
+        im_norm = 1
+
+    # norm
+    im = im*im_norm
+
+    # done?
+    return im
+
+
+def energy_regain(recon, groundtruth, atol=1e-20, snorm=True, use_indiv_abs=False, mode='fft'):
     # make sure distance between two images cannot be bigger than 1
     if snorm:
-        recon = recon/np.sum(recon, keepdims=True)
-        groundtruth = groundtruth/np.sum(groundtruth, keepdims=True)
+        recon = noise_normalize(recon, mode=mode)
+        groundtruth = noise_normalize(groundtruth, mode=mode)
 
     # validmask
     nom = np.abs(recon)-np.abs(groundtruth) if use_indiv_abs else np.abs(recon - groundtruth)
