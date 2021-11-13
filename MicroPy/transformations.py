@@ -152,7 +152,7 @@ def dct2(im, forward=True, axes=[-2, -1]):
 # ------------------------------------------------------------------
 #               NORMS
 # ------------------------------------------------------------------
-def lp_norm(data, p=2, normaxis=None, keepdims=False):
+def lp_norm(data:np.ndarray, p:float=2, normaxis:tuple=None, keepdims:bool=False):
     """Calculates the LP-norm.
 
     Parameters

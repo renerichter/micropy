@@ -3,7 +3,13 @@ Relevant functions are implemented here.
 '''
 import NanoImagingPack as nip
 import numpy as np
+from typing import Optional, Tuple, List, Union, Generator, Callable
 
+
+def gaussian1D_func(x,mu,sigma):
+    gaussian1D=1.0 / np.sqrt(2*np.pi*sigma) * \
+        np.exp(- (x - mu)**2 / (2 * sigma**2))
+    return gaussian1D
 
 def gaussian1D(size=10, mu=0, sigma=20, axis=-1, norm='sum'):
     '''
@@ -12,8 +18,7 @@ def gaussian1D(size=10, mu=0, sigma=20, axis=-1, norm='sum'):
     For testing: size=100;mu=0;sigma=20;
     '''
     xcoords = nip.ramp1D(mysize=size, placement='center', ramp_dim=axis)
-    gaussian1D = 1.0 / np.sqrt(2*np.pi*sigma) * \
-        np.exp(- (xcoords - mu)**2 / (2 * sigma**2))
+    gaussian1D = gaussian1D_func(xcoords,mu,sigma)
     if norm == 'sum':
         gaussian1D /= np.sum(gaussian1D)
     return gaussian1D
@@ -37,3 +42,29 @@ def gaussian2D(size=[], mu=[], sigma=[]):
     gaussian2D = gaussian1D(size=size[0], mu=mu[0], sigma=sigma[0], axis=-2) * \
         gaussian1D(size=size[1], mu=mu[1], sigma=sigma[1], axis=-1)
     return gaussian2D
+
+
+def gaussianND(size: np.ndarray,
+               mu: Union[int, float, Tuple, List, np.ndarray] = 0,
+               sigma: Union[int, float, Tuple, List, np.ndarray] = 1):
+    '''
+    Calculates an ND gaussian. 
+    Note that mu and sigma can be different for the two directions and hence have to be input explicilty.
+
+    Example: 
+    size=[32,64,128];mu=0;sigma=[2,10,5];
+    nip.v5(mipy.gaussianND(size,mu,sigma))
+    '''
+    # sanity
+    mu = [mu, ]*len(size) if type(mu) in [int, float] else np.array(mu)
+    sigma = [sigma, ]*len(size) if type(sigma) in [int, float] else np.array(sigma)
+
+    # calculate gaussian
+    gaussianND = np.ones(size)
+    dimlist = list(np.arange(gaussianND.ndim))
+    for m, msize in enumerate(size):
+        gaussianND *= np.expand_dims(gaussian1D(size=msize,
+                                                mu=mu[m], sigma=sigma[m], axis=m), dimlist[m+1:])
+
+    # done?
+    return gaussianND

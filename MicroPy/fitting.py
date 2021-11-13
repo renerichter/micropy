@@ -85,7 +85,7 @@ def extract_PSFlist(im, ref=None, markers=None, list_dim=0, im_axes=(-2, -1), be
 def extract_multiPSF(im, markers=None, im_axes=(-2, -1), bead_roi=[16, 16], compare=False):
     """ Extracts PSF from image. 
     Extracts ROI from Marker-Positions, aligns selections and fits Gauss to them.
-    For now: only implemented in 2D.
+    Implemented for 2D and 3D.
 
     Parameters
     ----------
@@ -126,8 +126,7 @@ def extract_multiPSF(im, markers=None, im_axes=(-2, -1), bead_roi=[16, 16], comp
 
     TODO
     ----
-    1)  update for 3D -> respective: nD
-    2)  catch user-errors
+    1)  catch user-errors
     """
     # parameter
     roi_center = np.array(bead_roi)//2

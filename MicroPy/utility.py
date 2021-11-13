@@ -4,7 +4,7 @@
 	@author René Lachmann
 	@email herr.rene.richter@gmail.com
 	@create date 2019 11:53:25
-	@modify date 2021-11-08 13:59:07
+	@modify date 2021-11-12 09:21:58
 	@desc Utility package
 
 ---------------------------------------------------------------------------------------------------
@@ -295,7 +295,7 @@ def findshift(im1, im2, prec=100, use_pcc=True, printout=False):
     return shift, error, diffphase, tend
 
 
-def shiftby_list(psf, shifts=None, shift_offset=[1, 1], shift_method='uvec', shift_axes=[-2, -1], nbr_det=[3, 3], retreal=True, listaxis=None):
+def shiftby_list(psf, shifts=None, shift_offset=[1, 1], shift_method='uvec', shift_axes=[-2, -1], nbr_det=[3, 3], center=None, retreal=True, listaxis=None):
     """Shifts an image by a list of shift-vectors.
     If shifts not given, calculates an equally spaced rect-2D-array for nbr_det (array) of  with shift_offset spacing in pixels between them.
     If shifts given, uses the shape (nbr_det) to calculate the distances between detectors.
@@ -325,6 +325,8 @@ def shiftby_list(psf, shifts=None, shift_offset=[1, 1], shift_method='uvec', shi
     -------
     psf_res : nip.image
         list of N+1 DIM of shifted PSF
+    shifts : list
+        shifts applied
 
     Example
     -------
@@ -363,7 +365,7 @@ def shiftby_list(psf, shifts=None, shift_offset=[1, 1], shift_method='uvec', shi
                 shift_offset = np.array(shifti)
 
         # generate shift
-        shifts = gen_shift(method=shift_method, uvec=shift_offset, nbr=nbr_det)
+        shifts = gen_shift(method=shift_method, uvec=shift_offset, nbr=nbr_det, center=center)
 
     # assure use of positive numbers
     shift_axes = np.array(shift_axes)
@@ -542,7 +544,7 @@ def gen_shift(method='uvec', **kwargs):
     elif method == 'array':
         shiftarr = gen_shift_npfunc(soff=kwargs['soff'], nbr=kwargs['nbr'])
     else:
-        shiftarr = gen_shift_uvec(uvec=kwargs['uvec'], nbr=kwargs['nbr'])
+        shiftarr = gen_shift_uvec(uvec=kwargs['uvec'], nbr=kwargs['nbr'], center=kwargs['center'])
 
     return shiftarr
 
@@ -647,7 +649,7 @@ def gen_shift_loop_pix(soff, nbr):
     return shiftarr
 
 
-def gen_shift_npfunc(soff, pix):
+def gen_shift_npfunc(soff, nbr):
     """Calculates coordinates for an equally spaced rect-2D-array. Use with e.g. shiftby_list to generate a shifted set of images.
 
     Parameters
@@ -673,9 +675,9 @@ def gen_shift_npfunc(soff, pix):
     array([], dtype=float64)
     """
     a = np.repeat(
-        np.arange(-int(pix[0]/2.0), int(pix[0]/2.0)+1)[np.newaxis, :], pix[1], 0).flatten()
+        np.arange(-int(nbr[0]/2.0), int(nbr[0]/2.0)+1)[np.newaxis, :], nbr[1], 0).flatten()
     b = np.repeat(
-        np.arange(-int(pix[1]/2.0), int(pix[1]/2.0)+1)[:, np.newaxis], pix[0], 1).flatten()
+        np.arange(-int(nbr[1]/2.0), int(nbr[1]/2.0)+1)[:, np.newaxis], nbr[0], 1).flatten()
     shiftarr = [[soff[0]*m, soff[1]*n] for m, n in zip(b, a)]
     return shiftarr
 

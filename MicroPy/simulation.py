@@ -181,7 +181,7 @@ def generate_testobj(test_object=3, mypath=''):
     return im
 
 
-def generate_spokes_target(imsize=[128, 128], nbr_spokes=14, method='cart', gen3D=False, nbr_spokes_ax=14):
+def generate_spokes_target(imsize=[128, 128], nbr_spokes=14, method='cart', gen3D=False, nbr_spokes_ax=14, pixelsize=[40, 40]):
     """Generate spokes target.
     Interestingly, method "polar" is rather imprecise and shifted.
 
@@ -235,6 +235,8 @@ def generate_spokes_target(imsize=[128, 128], nbr_spokes=14, method='cart', gen3
                 imsize[0] * 2, imsize[0] * 2), extra_keywords={'inputshape': imsize, 'origin': (imsize[0], imsize[0])})
         else:
             spokes_cart = (nip.image(np.sin(nip.phiphi(imsize)*nbr_spokes)) > 0)*1
+
+    spokes_cart.pixelsize = pixelsize
 
     # done?
     return spokes_cart.astype(np.float32)
@@ -494,7 +496,7 @@ def calculatePSF_sax(psfex, k_fluo):
     return psf
 
 
-def calculatePSF_ism(psfex, psfdet=None, psfdet_array=None, shifts=None, shift_offset=[[2, 0], [0, 3]], shift_axes=[-2, -1], shift_method='uvec', nbr_det=[3, 5], fmodel='rft', faxes=[-2, -1], pinhole=None, do_norm=True):
+def calculatePSF_ism(psfex, psfdet=None, psfdet_array=None, shifts=None, shift_offset=[[2, 0], [0, 3]], shift_axes=[-2, -1], shift_method='uvec', nbr_det=[3, 5], center=None, fmodel='rft', faxes=[-2, -1], pinhole=None, do_norm=True):
     """ Generates the incoherent intensity ISM-PSF. Takes system excitation and emission PSF and assumes spatial invariance under translation on the detector.
 
     Parameters
@@ -548,7 +550,7 @@ def calculatePSF_ism(psfex, psfdet=None, psfdet_array=None, shifts=None, shift_o
     if psfdet_array is None:
         if shifts is None:
             psfdet_array, shifts = shiftby_list(
-                psfdet, shifts=None, shift_offset=shift_offset, shift_method=shift_method, shift_axes=shift_axes, nbr_det=nbr_det)
+                psfdet, shifts=None, shift_offset=shift_offset, shift_method=shift_method, shift_axes=shift_axes, nbr_det=nbr_det, center=center)
         else:
             shifts = np.sort(shifts)
             psfdet_array, _ = shiftby_list(psfdet, shifts=shifts)
@@ -660,6 +662,7 @@ def calculatePSF(obj, psf_params=None, method='brightfield', amplitude=False, **
         psfdet_array = None if not 'psfdet_array' in kwargs else kwargs['psfdet_array']
         shift_offset = None if not 'shift_offset' in kwargs else kwargs['shift_offset']
         nbr_det = None if not 'nbr_det' in kwargs else kwargs['nbr_det']
+        center = None if not 'center' in kwargs else kwargs['center']
         fmodel = None if not 'fmodel' in kwargs else kwargs['fmodel']
         pinhole = None if not 'pinhole' in kwargs else kwargs['pinhole']
         faxes = None if not 'faxes' in kwargs else kwargs['faxes']
@@ -671,8 +674,8 @@ def calculatePSF(obj, psf_params=None, method='brightfield', amplitude=False, **
 
         # calculate resulting ISM-PSF
         psf_eff, otf_eff, psfdet_array, shifts = calculatePSF_ism(
-            psfex=psfex, psfdet=psfdet, psfdet_array=psfdet_array, shift_offset=shift_offset, nbr_det=nbr_det, fmodel=fmodel, pinhole=pinhole, faxes=faxes)
-        return psf_eff, otf_eff, psfex, psfdet_array
+            psfex=psfex, psfdet=psfdet, psfdet_array=psfdet_array, shift_offset=shift_offset, nbr_det=nbr_det, center=center, fmodel=fmodel, pinhole=pinhole, faxes=faxes)
+        return psf_eff, otf_eff, psfex, psfdet_array, shifts
 
     elif method == 'sax':
         # fish entries from input-list

@@ -12,6 +12,7 @@ from mpl_toolkits.axes_grid1 import make_axes_locatable, AxesGrid
 from matplotlib.ticker import FormatStrFormatter
 from tifffile import imread as tifimread
 from typing import Optional, Tuple, List, Union, Generator, Callable
+from .utility import normNoff, add_multi_newaxis, transpose_arbitrary
 # mipy imports
 
 # %% -------------------------------------------
@@ -1103,13 +1104,13 @@ def stack2tiles(im, tileshape=None):
 def concat_list(imlist, cols=4, normal=False, gammal=None, method='np', dims=(-3, -2, -1)):
     # normalize
     if normal:
-        imlist = mipy.normNoff(imlist, dims=dims, direct=False)
+        imlist = normNoff(imlist, dims=dims, direct=False)
 
     if gammal is None:
         gammal = np.ones(len(imlist))
     elif type(gammal) in [float, int]:
         gammal = np.ones(len(imlist))*gammal
-    imlist = imlist**mipy.add_multi_newaxis(gammal, newax_pos=[-1, ]*imlist[0].ndim)
+    imlist = imlist**add_multi_newaxis(gammal, newax_pos=[-1, ]*imlist[0].ndim)
 
     if method == 'iter':
         # prepare
@@ -1136,21 +1137,22 @@ def concat_list(imlist, cols=4, normal=False, gammal=None, method='np', dims=(-3
 
         nbr_fills = np.mod(cols-len(imlist), cols)
         imlist = nip.cat((imlist, np.zeros([nbr_fills, ]+list(imlist[0].shape))), axis=0)
-        imlist = mipy.transpose_arbitrary(
+        imlist = transpose_arbitrary(
             imlist, idx_startpos=[0, ], idx_endpos=[-2], direction='forward')
         imlist = np.reshape(imlist, list(
             imlist.shape[:-2])+[imlist.shape[-2]//cols, imlist.shape[-1]*cols])
-        imlist = mipy.transpose_arbitrary(
+        imlist = transpose_arbitrary(
             imlist, idx_startpos=[0, ], idx_endpos=[-1], direction='forward')
         imlist = np.reshape(imlist, list(imlist.shape[:-2])+[imlist.shape[-2]*imlist.shape[-1]])
         imlist = np.transpose(imlist, np.roll(np.arange(imlist.ndim), -1))
 
     # done?
     return imlist
-    
-def format_list(alist,formatting):
-    format_string=["{:"+formatting+"}",]*len(alist)
-    format_string=",".join(format_string)
+
+
+def format_list(alist, formatting):
+    format_string = ["{:"+formatting+"}", ]*len(alist)
+    format_string = ",".join(format_string)
     return "["+format_string.format(*alist)+"]"
 
 # %% ------------------------------------------------------

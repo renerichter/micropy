@@ -1,5 +1,5 @@
 '''
-The ISM processing toolbox. 
+The ISM processing toolbox.
 '''
 # %% imports
 import numpy as np
@@ -27,7 +27,7 @@ def otf_fill(otf, fill_method='rot'):
     :PARAMS:
     ========
     :otf:           3D OTF of shape [Z,Y,X]
-    :fill_method:   method used to fill upper support. 'rot', 'ax' are implemented.  
+    :fill_method:   method used to fill upper support. 'rot', 'ax' are implemented.
 
     OUT:
     ====
@@ -78,7 +78,7 @@ def otf_fill(otf, fill_method='rot'):
 
 def otf_get_mask(otf, center_pinhole, mode='rft', eps=1e-5, bool_mask=False, closing=None):
     '''
-    Calculate necessary mask for unmixing. 
+    Calculate necessary mask for unmixing.
     In principal better to construct mash with geometrical shapes, but for now just guessed it -> maybe only in noise-free case possible.
 
     :PARAM:
@@ -132,25 +132,29 @@ def otf_get_mask(otf, center_pinhole, mode='rft', eps=1e-5, bool_mask=False, clo
     else:
         my_mask_filled = my_mask
 
-    # old mode???? WHAT IS HAPPENING HERE???
-    # if mode == 'old':
-    #    zoff = otf.shape[1]//2  # z-offset
-    #    proj_mask = my_mask_filled[zoff:].sum(axis=0)
-    # else:
+    # make image
+    my_mask = nip.image(my_mask)
+    my_mask_filled = nip.image(my_mask_filled)
+
     zoff = np.zeros(otf.shape[-2:], dtype=int)
     proj_mask = my_mask_filled.sum(axis=0)
     # if mode == 'rft' else nip.catE((my_mask_filled.shape[0]//2-my_mask_filled[:my_mask_filled.shape[0]//2].sum(axis=0), my_mask_filled.sum(axis=0)))
 
     if bool_mask:
-        my_mask_filled = np.array(my_mask_filled, dtype=bool)
-        my_mask = np.array(my_mask, dtype=bool)
+        my_mask_filled = my_mask_filled.astype('bool')
+        my_mask = my_mask.astype('bool')
+
+    # add pixelsize
+    my_mask.pixelsize = otf.pixelsize[-my_mask.ndim:]
+    my_mask_filled.pixelsize = otf.pixelsize[-my_mask.ndim:]
+
     # done?
     return my_mask, my_mask_filled, proj_mask, zoff, center_pinhole
 
 
 def test_otf_symmetry(otf):
     '''
-    Tests the symmetry properties (within numerical tolerances) of the OTF. 
+    Tests the symmetry properties (within numerical tolerances) of the OTF.
 
     :PARAM:
     =======
@@ -210,7 +214,7 @@ def pinv_unmix(a, svdlim=1e-15, svdnum=None, eps_reg=0, eps_reg_rel=0, use_own=T
                 large = s > cutoff
 
         else:
-            #cutoff = s[:svdnum] if svdnum < len(s) else s
+            # cutoff = s[:svdnum] if svdnum < len(s) else s
             large = s > s[svdnum] if svdnum < len(s) else np.ones(s.shape, dtype=bool)
 
         if eps_reg == 0:
@@ -221,7 +225,7 @@ def pinv_unmix(a, svdlim=1e-15, svdnum=None, eps_reg=0, eps_reg_rel=0, use_own=T
                       out=s) if eps_reg else np.divide(1, s, where=large, out=s)
         s[~large] = 0
 
-        #res = np.matmul(np.transpose(vt), np.multiply(s[..., np.newaxis], np.transpose(u)))
+        # res = np.matmul(np.transpose(vt), np.multiply(s[..., np.newaxis], np.transpose(u)))
         res = np.transpose(np.dot(u*s, vt))
 
         # return results
@@ -279,18 +283,18 @@ def unmix_matrix(otf, mode='rft', eps_mask=5e-4, eps_reg=1e-17, eps_reg_rel=0, s
     ========
     :PSF_eff:   (IMAGE)     Multi-Pinhole PSF of shape [pinhole_dim,Z,Y,X]
     :eps:       (FLOAT)     thresh-value for calculating the non-zero support (and hence the used kx,ky frequencies)
-    :mode:      (STRING)    mode of used FTs -> 'old': manual stitching; 'rft': RFT-based 
+    :mode:      (STRING)    mode of used FTs -> 'old': manual stitching; 'rft': RFT-based
     :svdrel:    (FlOAT)     minimum relative size of the smallest SVD-value to the biggest for the matrix inversion (limits the non-empty SVD-matrix-size)
     :svdlim:    (INT)       maximum number of included singular values -> note: if svdlim is set, svdrel is ignored
     :hermitian: (BOOL)      input hermitian? (typically: False, because of (at least) numerical differences)
     :use_own:   (BOOL)        whether to use own inversion-implementation
     :closing:   (INT/ARRAY) closing mask (chosen by int) or shape (ARRAY) to be used
-    :center_pinhole: (INT)  position of central pinhole to be used for calculation of OTF-support  
+    :center_pinhole: (INT)  position of central pinhole to be used for calculation of OTF-support
 
     :OUT:
     ====
     :otf_unmix:         (IMAGE) the (inverted=) unmix OTF of shape [z/2,pinhole_dim,Y,X]
-    :otf_unmix_full:    (IMAGE) <DEPRECATED>!! -> for old reconstruction: unmix was done on half-space using FFT, hence full OTF had to be constructed manually -> not needed anymore because reconstruction is now done via RFT       
+    :otf_unmix_full:    (IMAGE) <DEPRECATED>!! -> for old reconstruction: unmix was done on half-space using FFT, hence full OTF had to be constructed manually -> not needed anymore because reconstruction is now done via RFT
     :my_mask:           (IMAGE) mask used for defining limits of OTF-support
     :proj_mask:         (IMAGE) sum of mask along z-axis (used for inversion-range)
     '''
@@ -383,7 +387,7 @@ def unmix_image_ft(im_unmix_ft, recon_shape=None, mode='rft', show_phases=False,
             nip.v5(stack2tiles(unmix_im), showPhases=True)
 
         # per definition does a RFT transform on the last axis given and normal fft along the others
-        #unmix_im = np.fft.irfft(unmix_im,n=recon_shape,axes=0)
+        # unmix_im = np.fft.irfft(unmix_im,n=recon_shape,axes=0)
         unmix_im = nip.image(np.fft.fftshift(np.fft.irfft(
             unmix_im, n=recon_shape[-3], axis=-3), axes=-3), im_unmix_ft.pixelsize)
     elif mode == 'rft':
@@ -400,12 +404,12 @@ def unmix_image_ft(im_unmix_ft, recon_shape=None, mode='rft', show_phases=False,
 
 def unmix_recover_thickslice(unmixer, im, unmixer_full=None, verbose=True):
     '''
-    Does the recovery multiplication step. Need to apply unmix matrix for every kx and ky individually. 
+    Does the recovery multiplication step. Need to apply unmix matrix for every kx and ky individually.
 
     :PARAM:
     =======
     :otf_unmix:     4D unmix OTF -> [kZ, pinhole_dim, kx,ky]
-    :ism_im:        N * 2D ft-images (resembling the pinholes) 
+    :ism_im:        N * 2D ft-images (resembling the pinholes)
 
     :OUT:
     ====
@@ -432,54 +436,10 @@ def unmix_recover_thickslice(unmixer, im, unmixer_full=None, verbose=True):
 #                   ISM-Reconstruction
 # ---------------------------------------------------------------
 
-@deprecated(version='0.1.3', reason='Interface not updated to 1D-list yet.')
-def ismR_shiftmask2D(im, pinsize, mask_shape, pincenter, pinshape):
-    '''
-    ISM-Reconstruction Toolbox. 
-    Calculates shift-mask for 2D-detector aray. Assumes that 1st two dimensions are detector-dimensions.
-
-    TODO: catch error by boundary-hit
-
-    PARAM:
-    ======
-    ...
-
-    OUTPUT:
-    ======
-    shiftmask
-
-    '''
-    #
-    if pinshape == 'circle':
-        pins = np.min(pinsize)
-        # nip.extract((nip.rr((mask_shape)) <= pins)*1,mask_shape,mask_shift)
-        shiftmask = (nip.rr(mask_shape) <= pins)*1
-        shiftmaskc = np.array(mask_shape//2, np.int)
-    elif pinshape == 'rect':
-        pinsize = pinsize*2 if not(len(pinsize) == 2) else pinsize
-        shiftmask = ((nip.yy(mask_shape, placement='positive') <
-                      pinsize[0]) * (nip.xx(mask_shape, placement='positive') < pinsize[1]))*1
-        shiftmaskc = np.array(np.array(pinsize)//2, np.int)
-        pincenter = [pincenter[m]-shiftmaskc[m] for m in range(len(pincenter))]
-    else:
-        raise ValueError("Given pinshape not implemented yet.")
-
-    # shift mask ->needs negative shift-vectors for shift2Dby function
-    pincenter = [-m for m in pincenter]
-    shiftmask = nip.shift2Dby(shiftmask, pincenter)
-
-    # clean mask
-    shiftmask = np.abs(shiftmask)
-    shiftmask[shiftmask > 0.5] = 1
-    shiftmask[shiftmask < 0.5] = 0
-
-    return shiftmask
-
-
-def recon_genShiftmap(im, pincenter, nbr_det=None, pinmask=None, shift_method='nearest', shiftval_theory=None, roi=None, printmap=False):
-    """Generates Shiftmap for ISM SheppardSUM-reconstruction. 
+def recon_genShiftmap(im, pincenter, nbr_det=None, pinmask=None, shift_method='nearest', shiftval_theory=None, roi=None, shift_axes=None, printmap=False):
+    """Generates Shiftmap for ISM SheppardSUM-reconstruction.
     Assumes shape: [Pinhole-Dimension , M] where M stands for arbitrary mD-image.
-    Fills shift_map from right-most dimension to left, hence errors could be evoked in case of only shifts along dim=[1,2] applied, but array has spatial dim=[1,2,3]. Hence shifts will be applied along [2,3] with their respective period factors. 
+    Fills shift_map from right-most dimension to left, hence errors could be evoked in case of only shifts along dim=[1,2] applied, but array has spatial dim=[1,2,3]. Hence shifts will be applied along [2,3] with their respective period factors.
 
     Parameters
     ----------
@@ -495,7 +455,7 @@ def recon_genShiftmap(im, pincenter, nbr_det=None, pinmask=None, shift_method='n
         Method to be used for shift-calculation. , by default 'nearest'
             'nearest': compare center pinhole together with 1 pix-below and 1 pix-to-the-right pinhole; assumes rect detector-grid for now and needs nbr_det
             'mask': all pinholes that reside within mask ; needs pinmask
-            'complete': calculate shifts for all detectors 
+            'complete': calculate shifts for all detectors
             'theory': generates shifts from shiftval_theory provided
     shiftval_theory: list, optional
         if shift_method 'theory' is active, generates shiftmap from these factors. In pixel-dimensions und unit-vector notation,  hence eg [[-0.5,0],[0,-0.5]] generates "back-shift" for pixel-reassignments by half the distance to the pincenter, by default None
@@ -522,8 +482,14 @@ def recon_genShiftmap(im, pincenter, nbr_det=None, pinmask=None, shift_method='n
     ----
     1) fix dimensionality problem of factors generation (eg by taking in a 'shift_axis' parameter)
     """
+    # sanity
+    if shift_axes is None:
+        shift_axes = np.arange(1, im.ndim)
+    if not type(shift_axes) == np.ndarray:
+        shift_axes = np.mod(np.array(shift_axes), im.ndim)
+
     if roi is not None:
-        im = subslice_arbitrary(im, roi)
+        im = subslice_arbitrary(im, roi, axes=np.arange(im.ndim))
 
     if shift_method in ['nearest', 'theory']:
         # convert pincenter to det-space
@@ -549,6 +515,7 @@ def recon_genShiftmap(im, pincenter, nbr_det=None, pinmask=None, shift_method='n
 
         # generate shiftvec -> eg [eZ,eY,eX] where eZ=[eZ1,eZ2,eZ3]
         shiftvec = np.array(shiftvec)
+        shiftvec = np.array([shiftvec[:, m] for m in shift_axes-1]).T
         factors = np.array(factors).T
 
         # sanity for arbitrary dimensionality -> find non-shifted dimensions and add to factors --> need to check logic again
@@ -562,7 +529,7 @@ def recon_genShiftmap(im, pincenter, nbr_det=None, pinmask=None, shift_method='n
 
     elif shift_method == 'mask':
         imh = im[pinmask]
-        #shift_map = np.array([[0, ]*im.ndim]*im.shape[0])
+        # shift_map = np.array([[0, ]*im.ndim]*im.shape[0])
         shift_maph = []
         for m in range(imh.shape[0]):
             shifth, _, _, _ = findshift(im[pincenter],
@@ -596,7 +563,7 @@ def recon_genShiftmap(im, pincenter, nbr_det=None, pinmask=None, shift_method='n
 
 
 def recon_sheppardShift(im, shift_map, method='parallel', use_copy=False):
-    """Does shifting for ISM-SheppardSum. 
+    """Does shifting for ISM-SheppardSum.
 
     Parameters
     ----------
@@ -639,7 +606,7 @@ def recon_sheppardShift(im, shift_map, method='parallel', use_copy=False):
 
 
 def recon_sheppardSUMming(im, pinmask=None, sum_method='normal'):
-    """Does the actual summing operation for the sheppard sum routine. 
+    """Does the actual summing operation for the sheppard sum routine.
 
     Parameters
     ----------
@@ -687,7 +654,7 @@ def recon_sheppardSUMming(im, pinmask=None, sum_method='normal'):
 
 def recon_widefield(im, detaxes):
     '''
-    Scanned widefield reconstruction of ISM-data. 
+    Scanned widefield reconstruction of ISM-data.
 
     PARAM:
     =====
@@ -696,7 +663,7 @@ def recon_widefield(im, detaxes):
 
     OUTPUT:
     =======
-    :out:        
+    :out:
 
     EXAMPLE:
     =======
@@ -710,9 +677,9 @@ def recon_widefield(im, detaxes):
 def recon_confocal(im, detdist, pinsize=0, pincenter=None, pinmask=None):
     """Confocal Processing of ISM-Data. Assumes ISM-Direction as 0th-dimension and nD-afterwards for arbitrary image data.
 
-    Ways for further change in the implementation:  
-    1) Pair different regions before shifting (ismR_pairRegions), then find regional-shifts (ismR_getShiftmap) and finally sheppardSum them. 
-    2) sheppardSUM only until/from a limit to do different reconstruction on other part (eg Deconvolve within deconvMASK and apply sheppardSUM on outside) 
+    Ways for further change in the implementation:
+    1) Pair different regions before shifting (ismR_pairRegions), then find regional-shifts (ismR_getShiftmap) and finally sheppardSum them.
+    2) sheppardSUM only until/from a limit to do different reconstruction on other part (eg Deconvolve within deconvMASK and apply sheppardSUM on outside)
 
 
     Parameters
@@ -761,12 +728,12 @@ def recon_confocal(im, detdist, pinsize=0, pincenter=None, pinmask=None):
 
 def ism_recon(im, method='wf', **kwargs):
     '''
-    General ISM-reconstruction wrapper. Takes care of necesary preprocessing for the different techniques. 
+    General ISM-reconstruction wrapper. Takes care of necesary preprocessing for the different techniques.
 
     :PARAM:
     =======
     :im:            (IMAGE)     Input image; assume nD for now, but structure should be like(pinholeDim=pd) [pd,...(n-3)-extraDim...,Y,X]
-    :method:        (STRING)    method to be used for reconstruction, options are: 
+    :method:        (STRING)    method to be used for reconstruction, options are:
                                 'wf':       reconstructs as laser-widefield
                                 'conf':     confocal reconstruction
                                 'shepp':    sheppardSUM
@@ -822,13 +789,13 @@ def ism_recon(im, method='wf', **kwargs):
     return pinsize
 
 
-def recon_sheppardSUM(im, nbr_det, pincenter, shift_method='nearest', shift_map=[], shift_roi=None, shiftval_theory=None, pinmask=None, pinfo=False, sum_method='normal'):
+def recon_sheppardSUM(im, nbr_det, pincenter, shift_method='nearest', shift_map=[], shift_roi=None, shiftval_theory=None, shift_axes=None, pinmask=None, pinfo=False, sum_method='normal', shift_style='parallel', shift_use_copy=True):
     """Calculates sheppardSUM on image (for arbitrary detector arrangement). The 0th-Dimension is assumed as detector-dimension and hence allows for arbitrary, but flattened detector geometries.
 
-    The algorithm does: 
-    1) find center of pinhole for all scans using max-image-peak (on center should have brightest signal) if not particularly given 
+    The algorithm does:
+    1) find center of pinhole for all scans using max-image-peak (on center should have brightest signal) if not particularly given
     2) define mask/pinhole
-    3) find shifts between all different detectors within mask ->  result used in sample-coordinates 
+    3) find shifts between all different detectors within mask ->  result used in sample-coordinates
     4) shift back
 
     Parameters
@@ -869,30 +836,35 @@ def recon_sheppardSUM(im, nbr_det, pincenter, shift_method='nearest', shift_map=
 
     See Also
     --------
-    recon_genShiftmap, recon_sheppardShift, recon_sheppardSUMming, 
+    recon_genShiftmap, recon_sheppardShift, recon_sheppardSUMming,
     """
     # find shift-list -> Note: 'nearest' is standard
     if shift_map == []:
         shift_map, figS, axS = recon_genShiftmap(
-            im=im, pincenter=pincenter, nbr_det=nbr_det, pinmask=pinmask, shift_method=shift_method, shiftval_theory=shiftval_theory, roi=shift_roi)
+            im=im, pincenter=pincenter, nbr_det=nbr_det, pinmask=pinmask, shift_method=shift_method, shiftval_theory=shiftval_theory, roi=shift_roi, shift_axes=shift_axes)
 
     # apply shifts
-    ims = recon_sheppardShift(im, shift_map, method='parallel', use_copy=True)
+    ims = recon_sheppardShift(im, shift_map, method=shift_style, use_copy=shift_use_copy)
 
     # different summing methods
     imshepp, weights = recon_sheppardSUMming(im=ims, pinmask=pinmask, sum_method=sum_method)
 
     # info for check of energy conservation
     if pinfo:
+        print("~~~~~\t Results of SheppardSUM-routine:\t~~~~~")
         print(
             f"SUM(im)={np.sum(im)}\nim.shape={im.shape}\nSUM(imshifted)-SUM(im)={np.sum(ims)-np.sum(im)}\nSUM(imshepp)-SUM(im[pinmask])={np.sum(imshepp)-np.sum(im[pinmask])}\nShift-Operations={np.sum(pinmask)}")
+        print("~~~~~\t\t\t\t\t\t~~~~~")
+
+    res_dict = {'shift_map': shift_map, 'pinmask': pinmask,
+                'pincenter': pincenter, 'weights': weights}
 
     # return created results
-    return imshepp, shift_map, pinmask, pincenter, weights
+    return imshepp, res_dict
 
 
 def recon_weightedAveraging_testmodes(**kwargs):
-    """Wrapper to test all options of weighted Averaging routine. 
+    """Wrapper to test all options of weighted Averaging routine.
 
     Returns
     -------
@@ -923,9 +895,9 @@ def recon_weightedAveraging_testmodes(**kwargs):
     return ismWAl, weightsnl, ismWANl
 
 
-def recon_weightedAveraging(imfl, otfl, pincenter, noise_norm=True, wmode='conj', fmode='fft', fshape=None, closing=2, suppcomp=False, mask_eps=1e-4, div_eps=1e-5):
-    """Weighted Averaging for multi-view reconstruction. List implementation so that it can be applied to multiple Data-sets. Needs list of PSFs (list) for different images (=views). 
-    Note, make sure that:  
+def recon_weightedAveraging(imfl, otfl, pincenter, noise_norm=True, wmode='conj', fmode='fft', fshape=None, closing=2, use_mask=True, mask_eps=1e-4, reg_reps=0, reg_aeps=0, add_ext_noise=False):
+    """Weighted Averaging for multi-view reconstruction. List implementation so that it can be applied to multiple Data-sets. Needs list of PSFs (list) for different images (=views).
+    Note, make sure that:
         -> applied FT is the same in both cases
         -> sum of all PSFs (views) is 1
         -> symmetric Fourier-transform [normalization 1/sqrt(N_image)] is used
@@ -971,6 +943,15 @@ def recon_weightedAveraging(imfl, otfl, pincenter, noise_norm=True, wmode='conj'
     ismWAN : image
         noise normalized image (if noise_norm was set to true)
 
+    Example
+    -------
+    obj=nip.extract(mipy.generate_spokes_target([124,124],pixelsize=[40,40]),[128,128])
+    ashift=mipy.gen_shift(method='uvec', uvec=[[2,0.5],[0.5,2]],nbr=[1,3])
+    psf=nip.psf(obj)
+    psfs,_=mipy.shiftby_list(psf,ashift)
+    im=nip.poisson(nip.convolve(obj,psfs),NPhot=10)
+    ismWA, weights, ismWAN=mipy.recon_weightedAveraging(nip.ft2d(im),nip.ft2d(psfs),pincenter=1)
+
     See Also
     --------
     recon_sheppardSUM
@@ -982,15 +963,17 @@ def recon_weightedAveraging(imfl, otfl, pincenter, noise_norm=True, wmode='conj'
     3) add covariance-terms
 
     """
-    # parameter
-    dims = list(range(1, otfl.ndim, 1))
-    validmask, _, _, _, _ = otf_get_mask(
-        otfl, center_pinhole=pincenter, mode='fmode', eps=mask_eps, bool_mask=True, closing=closing)
-    ismWAN = []
-
     # In approximation of Poisson-Noise the Variance in Fourier-Space is the sum of the Mean-Values in Real-Space -> hence: MidVal(OTF); norm-OTF by sigma**2 = normalizing OTF to 1 and hence each PSF to individual sum=1
+    dims = list(range(1, otfl.ndim, 1))
     sigma2_otfl = midVallist(otfl, dims, keepdims=True).real
     weights = otfl / sigma2_otfl
+
+    # get OTF-support(=validmask)
+    if use_mask:
+        _, validmask, _, _, _ = otf_get_mask(
+            weights, center_pinhole=pincenter, mode='fmode', eps=mask_eps, bool_mask=True, closing=closing)
+    else:
+        validmask = np.ones(weights.shape, dtype=bool)
 
     if wmode == 'real':
         weights = weights.real
@@ -1004,45 +987,56 @@ def recon_weightedAveraging(imfl, otfl, pincenter, noise_norm=True, wmode='conj'
         pass
 
     # set weights outside of support to 0
-    weightsn = nip.image(np.copy(weights))
-    weightsn[~nip.extract(validmask[np.newaxis], weightsn.shape)] = 0
-
-    # 1/OTF might strongly diverge outside OTF-support -> put Mask
-    aeps = np.max(weightsn*div_eps)
-    aeps = aeps * (1+1j) if weights.dtype == np.complex else aeps
-    wsum = np.ones(weightsn[0].shape, dtype=weights.dtype)
-    wsum = np.divide(np.ones(weightsn[0].shape, dtype=weightsn.dtype), np.sum(
-        weightsn, axis=0) + aeps, where=validmask, out=wsum)
-    #wsum = 1.0/np.sum(weightsn+eps,axis=0)
-    # wsum[~validmask]=0
+    if not validmask.shape == weights.shape:
+        validmask = add_multi_newaxis(validmask, newax_pos=[0, ]*(weights.ndim-validmask.ndim))
+        rep_factors = np.array(weights.shape)//np.array(validmask.shape)
+        validmask = nip.repmat(validmask, rep_factors)
+    #weights[~validmask] = 0
 
     # apply weights
-    ismWA = wsum * np.sum(imfl * weightsn, axis=0)
+    ismWA = np.sum(imfl * weights, axis=0)
 
     # noise normalize
     if noise_norm:
+        # 1/OTF might strongly diverge outside OTF-support -> put Mask
+        sigma_nn = np.sqrt(np.sum(weights * np.conj(weights) * sigma2_otfl, axis=0))
+        if reg_aeps == 0:
+            reg_aeps = np.max(sigma_nn)*reg_reps
+            reg_aeps = reg_aeps * (1+1j) if weights.dtype == np.complex else reg_aeps
+        # wsum = np.ones(weights[0].shape, dtype=weights.dtype)
+        # wsum = np.divide(wsum, np.sum(weights, axis=0) + reg_aeps, where=validmask[0], out=wsum)
+
         # noise normalize
-        sigma_nn = np.sqrt(np.sum(weightsn * weightsn * sigma2_otfl, axis=0))
-        ismWAN = np.ones(ismWA.shape, dtype=ismWA.dtype)
-        ismWAN = np.divide(ismWA, sigma_nn + np.max(sigma_nn)*eps, where=validmask, out=ismWAN)
-        #nip.v5(nip.catE(ismWA, ismWAN))
-        # get poisson noise for freqencies outside of support
-        #im_waR = np.real(nip.ift(ismWAN))
-        #im_waR /= np.var(im_waR, keepdims=True)
-        #im_waFT = nip.ft2d(im_waR)*(1-validmask)
-        ismWAN = nip.ift(ismWAN).real
+        ismWAN = np.zeros(ismWA.shape, dtype=ismWA.dtype)
+        ismWAN = np.divide(ismWA, sigma_nn + reg_aeps, where=validmask[0], out=ismWAN)
+
+        otfWAN = np.sqrt(np.sum(otfl*np.conj(otfl)/sigma2_otfl, axis=0))
+
+        # nip.v5(nip.catE(ismWA, ismWAN))
+        # ismWAN_rs=np.abs(nip.ift(ismWAN))
+
+        # get poisson noise for freqencies outside of support -> not working!
+        # if add_ext_noise:
+        #    ismWAN_syn=nip.poisson(ismWAN_rs.astype('int')).astype('float')
+        #    ismWAN_syn=nip.ft(ismWAN_syn)
+        #    ismWAN_syn /= midVallist(ismWAN_syn, np.arange(ismWAN_syn.ndim), keepdims=True).real
+        #    ismWAN_syn1=np.zeros(ismWAN.shape, dtype=ismWAN.dtype)
+        #    ismWAN_syn1[validmask[0]]=ismWAN[validmask[0]]
+        #    ismWAN_syn1[~validmask[0]]=ismWAN_syn[~validmask[0]]
+        #    ismWAN=np.abs(nip.ift(ismWAN_syn1))
+        # else:
+        #    ismWAN=ismWAN_rs
+        ismWAN = np.abs(nip.ift(ismWAN))
+        psfWAN = np.abs(nip.ift(otfWAN))
+    else:
+        ismWAN = None
+        psfWAN = None
 
     # return in real-space
-    ismWA = nip.ift(ismWA).real
-
-    # print
-    if suppcomp:
-        import matplotlib.pyplot as plt
-        a = plt.figure()
-        plt.plot(x, y,)
+    ismWA = np.abs(nip.ift(ismWA))
 
     # done?
-    return ismWA, weightsn, ismWAN
+    return ismWA, weights, ismWAN, psfWAN
 
 
 def recon_drawshift(shift_map, useaxes=[-2, -1]):
@@ -1053,7 +1047,7 @@ def recon_drawshift(shift_map, useaxes=[-2, -1]):
     fig, ax = plt.subplots()
     V = np.squeeze(np.array(shift_map)[:, :, -2, useaxes[0]:useaxes[1]])
     U = np.squeeze(np.array(shift_map)[:, :, -1, useaxes[0]:useaxes[1]])
-    #U, V = np.meshgrid(X, Y)
+    # U, V = np.meshgrid(X, Y)
     q = ax.quiver(U, V, cmap='inferno')  # X, Y,
     ax.quiverkey(q, X=0.3, Y=1.1, U=1,
                  label='Quiver key, length = 1', labelpos='E')
@@ -1066,11 +1060,11 @@ def recon_drawshift(shift_map, useaxes=[-2, -1]):
 # ---                         DEPRECATED                         ---
 # ------------------------------------------------------------------
 
-@deprecated(version='0.1.3', reason='Updated general interface to 1D-list. See recon_sheppardSUMming for new operation.')
+@ deprecated(version='0.1.3', reason='Updated general interface to 1D-list. See recon_sheppardSUMming for new operation.')
 def ismR_sheppardSUMming(im, mask, sum_method='all'):
     '''
-    Ways for summing the shifted parts together. Idea behind: 
-    1) Pair different regions before shifting (ismR_pairRegions), then find regional-shifts (ismR_getShiftmap) and finally sheppardSum them. 
+    Ways for summing the shifted parts together. Idea behind:
+    1) Pair different regions before shifting (ismR_pairRegions), then find regional-shifts (ismR_getShiftmap) and finally sheppardSum them.
     2) sheppardSUM only until/from a limit to do different reconstruction on other part (eg Deconvolve within deconvMASK and apply sheppardSUM on outside)
 
     TODO: --------------------------------------------
@@ -1102,7 +1096,7 @@ def ismR_sheppardSUMming(im, mask, sum_method='all'):
     return ismR
 
 
-@deprecated(version='0.1.3', reason='Interface was updated to 1D-list. Check recon_genShiftmap.')
+@ deprecated(version='0.1.3', reason='Interface was updated to 1D-list. Check recon_genShiftmap.')
 def ismR_genShiftmap(im, mask, pincenter, shift_method='nearest'):
     '''
     Generates Shiftmap for ISM SheppardSUM-reconstruction. Assumes shape: [LIST,pinhole_y,pinhole_x]
@@ -1158,10 +1152,10 @@ def ismR_genShiftmap(im, mask, pincenter, shift_method='nearest'):
     return shift_map, figS, axS
 
 
-@deprecated(version='0.1.3', reason='Interface was updated to 1D-list. Check recon_sheppardShift.')
+@ deprecated(version='0.1.3', reason='Interface was updated to 1D-list. Check recon_sheppardShift.')
 def ismR_sheppardShift(im, shift_map, method='iter', use_copy=False):
     '''
-    Does shifting for ISM-SheppardSum. 
+    Does shifting for ISM-SheppardSum.
 
     :PARAMS:
     ========
@@ -1193,19 +1187,19 @@ def ismR_sheppardShift(im, shift_map, method='iter', use_copy=False):
     return imh
 
 
-@deprecated(version='0.1.3', reason='General Interface was changed to 1D-list-operations. Check recon_confocal.')
+@ deprecated(version='0.1.3', reason='General Interface was changed to 1D-list-operations. Check recon_confocal.')
 def ismR_confocal(im, pinsize=None, pinshape='circle', pincenter=None, store_masked=False):
     '''
     **!!THIS FUNCTION IS DEPRECATED!!**
 
     Confocal reconstruction of ISM-data. For now: only implemented for 2D-pinhole/detector plane (assumed as (0,1) position).
 
-    TODO: 
-        1) Add for arbitrary (node) structure. 
+    TODO:
+        1) Add for arbitrary (node) structure.
         2) arbitrary detector-axes
 
     PARAM:
-    =====   
+    =====
     :im:            input nD-image
     :detaxes:       (TUPLE) axes of detector (for summing)
     :pinsize:        (LIST) pinhole-size
@@ -1220,7 +1214,7 @@ def ismR_confocal(im, pinsize=None, pinshape='circle', pincenter=None, store_mas
     EXAMPLE:
     =======
     im = mipy.shiftby_list(nip.readim(),shifts=np.array([[1,1],[2,2],[5,5]]))
-    #imconf = mipy.ismR_confocal(im,axes=(0),pinsize=None,pinshape='circle',pincenter=None)
+    # imconf = mipy.ismR_confocal(im,axes=(0),pinsize=None,pinshape='circle',pincenter=None)
 
     '''
     if pincenter == None:
@@ -1248,27 +1242,27 @@ def ismR_confocal(im, pinsize=None, pinshape='circle', pincenter=None, store_mas
     return imconfs
 
 
-@deprecated(version='0.1.3', reason='General Interface was changed to 1D-list-operations. Check recon_sheppardSUM.')
+@ deprecated(version='0.1.3', reason='General Interface was changed to 1D-list-operations. Check recon_sheppardSUM.')
 def ismR_sheppardSUM(im, shift_map=[], shift_method='nearest', pincenter=None, pinsize=None, pindim=None, pinshape=None):
     '''
-    Calculates sheppardSUM on image (for arbitrary detector arrangement), meaning: 
-    1) find center of pinhole for all scans using max-image-peak (on center should have brightest signal) if not particularly given 
+    Calculates sheppardSUM on image (for arbitrary detector arrangement), meaning:
+    1) find center of pinhole for all scans using max-image-peak (on center should have brightest signal) if not particularly given
     2) define mask/pinhole
     3) find shifts between all different detectors within mask, result in sample coordinates, shift back
     4) further processing?
 
-    TODO: 
+    TODO:
     1) catch User-input-error!
 
     :PARAM:
     =======
     :im:            (IMAGE)     Input image; assume nD for now, but structure should be like(pinholeDim=pd) [pd,...(n-3)-extraDim...,Y,X]
     :shift_map:     (LIST)      list for shifts to be applied on channels -> needs to have same structure as pd
-    :shift_method:  (STRING)    Method to be used to find the shifts between the single detector and the center pixel -> 1) 'nearest': compare center pinhole together with 1 pix-below and 1 pix-to-the-right pinhole 2) 'mask': all pinholes that reside within mask (created by pinsize)  3) 'complete': calculate shifts for all detectors 
+    :shift_method:  (STRING)    Method to be used to find the shifts between the single detector and the center pixel -> 1) 'nearest': compare center pinhole together with 1 pix-below and 1 pix-to-the-right pinhole 2) 'mask': all pinholes that reside within mask (created by pinsize)  3) 'complete': calculate shifts for all detectors
     :pincenter:     (INT)       center-pinhole position (e.g. if pindim=[5,6], then eg pincenter=14)
     :pinsize:       (LIST)      Diameter of the pinhole-mask to be used for calculations, eg "[5,]" to have a circular pinhole or "[3,8]" for rect
     :pindim:        (LIST)      Dimensions of pinhole, eg [9,9] if rectangular
-    :pinshape:      (STRING)    shape the pinhole should be generated with, options: 
+    :pinshape:      (STRING)    shape the pinhole should be generated with, options:
                                 'circ' : circular pinhole
                                 'rect' : rectangular pinhole
 
@@ -1296,7 +1290,7 @@ def ismR_sheppardSUM(im, shift_map=[], shift_method='nearest', pincenter=None, p
     return ismR, shift_map, mask, pincenter
 
 
-@deprecated(version='0.1.3', reason='General Interface was changed to 1D-list-operations. Check recon_sheppardSUM.')
+@ deprecated(version='0.1.3', reason='General Interface was changed to 1D-list-operations. Check recon_sheppardSUM.')
 def ismR_drawshift(shift_map):
     '''
     Vector-drawing of applied shifts.
@@ -1305,7 +1299,7 @@ def ismR_drawshift(shift_map):
     fig, ax = plt.subplots()
     V = np.array(shift_map)[:, :, 0]
     U = np.array(shift_map)[:, :, 1]
-    #U, V = np.meshgrid(X, Y)
+    # U, V = np.meshgrid(X, Y)
     q = ax.quiver(U, V, cmap='inferno')  # X, Y,
     ax.quiverkey(q, X=0.3, Y=1.1, U=1,
                  label='Quiver key, length = 1', labelpos='E')
@@ -1314,11 +1308,11 @@ def ismR_drawshift(shift_map):
     return fig, ax
 
 
-@deprecated(version='0.1.3', reason='General ISM interface changed to 1D and naming convention changed. Check recon_weightedAveraging for more info.')
+@ deprecated(version='0.1.3', reason='General ISM interface changed to 1D and naming convention changed. Check recon_weightedAveraging for more info.')
 def ismR_weightedAveraging(imfl, otfl, noise_norm=True, wmode='leave', fmode='fft', fshape=None, closing=2, suppcomp=False):
     '''
-    Weighted Averaging for multi-view reconstruction. List implementation so that it can be applied to multiple Data-sets. Needs list of PSFs (list) for different images (=views). 
-    Note, make sure that:  
+    Weighted Averaging for multi-view reconstruction. List implementation so that it can be applied to multiple Data-sets. Needs list of PSFs (list) for different images (=views).
+    Note, make sure that:
         -> applied FT is the same in both cases
         -> sum of all PSFs (views) was normalized to 1
         -> symmetric Fourier-transform [normalization 1/sqrt(N_image)] is used
@@ -1332,8 +1326,8 @@ def ismR_weightedAveraging(imfl, otfl, noise_norm=True, wmode='leave', fmode='ff
     :PARAM:
     =======
     :imfl:          (NDARRAY) of Fourier-transformed images to work on -> Shape: [VIEWDIM,otherDIMS]
-    :otfl:          (NDARRAY) of OTFs 
-    :noise_norm:    (BOOL)  
+    :otfl:          (NDARRAY) of OTFs
+    :noise_norm:    (BOOL)
     :wmode:         (STRING) Which mode to use for OTF in weights -> options: 'real', 'conj', 'abs', 'leave' (DEFAULT)
     :fmode:         (STRING) Transformation used for transformed input images
     :fshape:        (LIST)  Original Shape of Fourier-Transformed image to do right back-transformation in case of noise-normalization
@@ -1353,10 +1347,10 @@ def ismR_weightedAveraging(imfl, otfl, noise_norm=True, wmode='leave', fmode='ff
     # In approximation of Poisson-Noise the Variance in Fourier-Space is the sum of the Mean-Values in Real-Space -> hence: MidVal(OTF); norm-OTF by sigma**2 = normalizing OTF to 1 and hence each PSF to individual sum=1
     sigma2_otfl = midVallist(otfl, dims, keepdims=True).real
     weights = otfl / sigma2_otfl
-    #weightsn[~validmask] = 0
+    # weightsn[~validmask] = 0
 
     # norm max of OTF to 1 = norm sumPSF to 1;
-    #sigma2_imfl = mipy.midVallist(imfl,dims,keepdims=True).real
+    # sigma2_imfl = mipy.midVallist(imfl,dims,keepdims=True).real
     if wmode == 'real':
         weights = weights.real
     elif wmode == 'conj':
@@ -1365,7 +1359,7 @@ def ismR_weightedAveraging(imfl, otfl, noise_norm=True, wmode='leave', fmode='ff
         weights = np.abs(weights)
     else:
         pass
-    #weights = otfl / sigma2_imfl
+    # weights = otfl / sigma2_imfl
     weightsn = nip.image(np.copy(weights))
     weightsn[~np.repeat(validmask[np.newaxis],
                         repeats=otfl.shape[0], axis=-otfl.ndim)] = 0
@@ -1374,7 +1368,7 @@ def ismR_weightedAveraging(imfl, otfl, noise_norm=True, wmode='leave', fmode='ff
     wsum = np.array(weightsn[0])
     wsum = np.divide(np.ones(weightsn[0].shape, dtype=weightsn.dtype), np.sum(
         weightsn+eps, axis=0), where=validmask, out=wsum)
-    #wsum = 1.0/np.sum(weightsn+eps,axis=0)
+    # wsum = 1.0/np.sum(weightsn+eps,axis=0)
     # wsum[~validmask]=0
 
     # apply weights
@@ -1405,3 +1399,47 @@ def ismR_weightedAveraging(imfl, otfl, noise_norm=True, wmode='leave', fmode='ff
 
     # done?
     return ismWA, ismWAN
+
+
+@deprecated(version='0.1.3', reason='Interface not updated to 1D-list yet.')
+def ismR_shiftmask2D(im, pinsize, mask_shape, pincenter, pinshape):
+    '''
+    ISM-Reconstruction Toolbox.
+    Calculates shift-mask for 2D-detector aray. Assumes that 1st two dimensions are detector-dimensions.
+
+    TODO: catch error by boundary-hit
+
+    PARAM:
+    ======
+    ...
+
+    OUTPUT:
+    ======
+    shiftmask
+
+    '''
+    #
+    if pinshape == 'circle':
+        pins = np.min(pinsize)
+        # nip.extract((nip.rr((mask_shape)) <= pins)*1,mask_shape,mask_shift)
+        shiftmask = (nip.rr(mask_shape) <= pins)*1
+        shiftmaskc = np.array(mask_shape//2, np.int)
+    elif pinshape == 'rect':
+        pinsize = pinsize*2 if not(len(pinsize) == 2) else pinsize
+        shiftmask = ((nip.yy(mask_shape, placement='positive') <
+                      pinsize[0]) * (nip.xx(mask_shape, placement='positive') < pinsize[1]))*1
+        shiftmaskc = np.array(np.array(pinsize)//2, np.int)
+        pincenter = [pincenter[m]-shiftmaskc[m] for m in range(len(pincenter))]
+    else:
+        raise ValueError("Given pinshape not implemented yet.")
+
+    # shift mask ->needs negative shift-vectors for shift2Dby function
+    pincenter = [-m for m in pincenter]
+    shiftmask = nip.shift2Dby(shiftmask, pincenter)
+
+    # clean mask
+    shiftmask = np.abs(shiftmask)
+    shiftmask[shiftmask > 0.5] = 1
+    shiftmask[shiftmask < 0.5] = 0
+
+    return shiftmask
