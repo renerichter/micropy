@@ -4,7 +4,7 @@
 	@author René Lachmann
 	@email herr.rene.richter@gmail.com
 	@create date 2019 11:53:25
-	@modify date 2021-11-12 09:21:58
+	@modify date 2021-11-20 15:05:04
 	@desc Utility package
 
 ---------------------------------------------------------------------------------------------------

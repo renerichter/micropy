@@ -7,7 +7,7 @@ import numpy as np
 import NanoImagingPack as nip
 
 # intern
-from .utility import get_coords_from_markers, center_of_mass, findshift
+from .utility import get_coords_from_markers, center_of_mass, findshift, normNoff
 from .transformations import lp_norm
 from .inout import stack2tiles
 
@@ -126,7 +126,8 @@ def extract_multiPSF(im, markers=None, im_axes=(-2, -1), bead_roi=[16, 16], comp
 
     TODO
     ----
-    1)  catch user-errors
+    1) implement residuum
+    2) catch user-errors
     """
     # parameter
     roi_center = np.array(bead_roi)//2
@@ -163,20 +164,38 @@ def extract_multiPSF(im, markers=None, im_axes=(-2, -1), bead_roi=[16, 16], comp
 
     beadf = nip.shift(bead_sum, roi_center-bead_sum_com, axes=im_axes, dampOutside=False)
 
+    # sum-normalize to 1
+    normNoff(beadf, method='sum', atol=0, direct=True)
+
     # fit 2D-Gauss -> para =(amplitude, center_x, center_y, sigma_x, sigma_y, rotation, offset)
-    para, gaussfit = nip.fit_gauss2D(beadf)
+    if beadf.ndim == 2:
+        para, gaussfit = nip.fit_gauss2D(beadf)
+        para = [para, ]
+    else:
 
-    # residuum
-    residuum = gaussfit - beadf
+        # simple work-around for 3D --> need proper fit with rotations etc!
+        para = []
+        gaussfit = []
+        slicing = [slice(m) for m in beadf.shape]
+        for m in range(beadf.ndim):
+            slice_copy = slicing[m]
+            slicing[m] = beadf.shape[m]//2
+            parah, gaussfith = nip.fit_gauss2D(beadf[slicing])
+            para.append(parah)
+            gaussfit.append(gaussfith)
+            slicing[m] = slice_copy
 
-    # convert parameters to FWHM
-    if len(im_axes) == 2:
-        FWHM_x = 2*(para[3] * np.sqrt(-np.log(0.5)*2))
-        FWHM_y = 2*(para[4] * np.sqrt(-np.log(0.5)*2))
-        para = list(para)
-        para.append([FWHM_x, FWHM_y])
-        para = np.array(para)
-        # print(f"FWHMx={FWHM_x}\nFWHMy={FWHM_y}")
+        gaussfit = gaussfit[0][np.newaxis]*gaussfit[1][:, np.newaxis]*gaussfit[2][:, :, np.newaxis]
+        gaussfit *= (np.max(beadf)/np.max(gaussfit))
+
+    residuum = np.abs(np.array(gaussfit) - beadf)
+
+    # convert to two-2D
+    for m, mpara in enumerate(para):
+        FWHM_x = 2*(mpara[3] * np.sqrt(-np.log(0.5)*2))
+        FWHM_y = 2*(mpara[4] * np.sqrt(-np.log(0.5)*2))
+        para[m] = list(mpara)+[FWHM_x, FWHM_y]
+    para = np.array(para)
 
     bead_comp = []
     if compare:
@@ -185,5 +204,9 @@ def extract_multiPSF(im, markers=None, im_axes=(-2, -1), bead_roi=[16, 16], comp
         v2 = nip.v5(compare_beads[:, np.newaxis])
         bead_comp = [v1, v2]
 
+    # combine to result
+    res_dict = {'gaussfit': gaussfit, 'residuum': residuum, 'beads': beads,
+                'mpara': mpara, 'markers': markers, 'bead_comp': bead_comp}
+
     # done?
-    return gaussfit, residuum, beads, para, markers, bead_comp
+    return beadf, res_dict

@@ -6,6 +6,8 @@ This module shall only be installed/used if really needed as it requires Tensorf
 import numpy as np
 import NanoImagingPack as nip
 import InverseModelling as invmod
+from tiler import Tiler, Merger
+from typing import Union
 
 
 def ismR_deconvolution(imfl, psfl, method='multi', regl=None, lambdal=None, NIter=100, tflog_name=None):
@@ -47,12 +49,23 @@ def ismR_deconvolution(imfl, psfl, method='multi', regl=None, lambdal=None, NIte
     return res
 
 
-def default_dict_tiling(im):
-    tdd = {'data_shape': im.shape,
-           'tile_shape': np.array([im.shape[0], 128, 128]),
-           'overlap_rel': np.array([0, 0.2, 0.2]),
-           'window': 'hann'}
+def default_dict_tiling(im: Union[tuple, list, np.ndarray],
+                        basic_shape: list = [128, 128],
+                        basic_roverlap: list = [0.2, 0.2]):
+    imshape = im if type(im) in [list, tuple] else im.shape
+
+    # generate dict
+    tdd = {'data_shape': imshape,
+           'tile_shape': np.array(list(imshape[:-(len(basic_shape))]) + basic_shape),
+           'overlap_rel': np.array([0.0, ]*(len(imshape)-len(basic_shape))+basic_roverlap),
+           'window': 'hann',
+           'diffdim_im_psf': None,
+           'atol': 1e-10}
+
+    # calculate overlap
     tdd['overlap'] = np.asarray(tdd['overlap_rel']*tdd['tile_shape'], 'int')
+
+    # done?
     return tdd
 
 
@@ -60,13 +73,17 @@ def default_dict_deconv():
 
     deconv_dict = {
         # deconv defaults
-        'NIter': 12,
-        'regl': ['GR', ],  # ['TV', 'GR', 'GS']
-        'lambdal': [1e-2, ],  # [2e-4, 1e-3, 2e-4]
+        'NIter': 40,
+        'regl': ['TV', ],  # ['TV', 'GR', 'GS']
+        'lambdal': [10**(-2.5), ],  # [2e-4, 1e-3, 2e-4]
         'regEps': 1e-5,
         'BorderRegion': 0.1,
         'optimizer': 'L-BFGS-B',
         'forcePos': 'Model',
+        'lossFkt': 'Poisson',
+        'multiview_dim': -4,
+        'log_name': None,
+        'retStats': True,
 
         # damping defaults
         'rwdith': 0.1,
@@ -75,12 +92,23 @@ def default_dict_deconv():
     return deconv_dict
 
 
+def deconv_atom(im, psf, dd):
+    multiview_dim = dd['multiview_dim'] if 'multiview_dim' in dd else None
+
+    processed_tile = invmod.Deconvolve(nimg=im, psf=psf, NIter=dd['NIter'], lossFkt=dd['lossFkt'], regularization=dd['regl'], mylambda=dd['lambdal'],
+                                       regEps=dd['regEps'], BorderRegion=dd['BorderRegion'], optimizer=dd['optimizer'], forcePos=dd['forcePos'], multiview_dim=multiview_dim, tflog_name=dd['log_name'], retStats=dd['retStats'])
+    return processed_tile
+
+
 def tiled_processing(tile, psf, tile_id, dd, merger):
     # damped_tile = nip.DampEdge(tile, rwidth=dd['rwdith'], method=dd['damp_method'])
-
-    processed_tile = invmod.Deconvolve(nimg=tile, psf=psf, NIter=dd['NIter'], regularization=dd['regl'], mylambda=dd['lambdal'],
-                                       regEps=dd['regEps'], BorderRegion=dd['BorderRegion'], optimizer=dd['optimizer'], forcePos=dd['forcePos'])
+    processed_tile = deconv_atom(tile, psf, dd)
+    retStats = None
+    if dd['retStats']:
+        retStats = processed_tile[1]
+        processed_tile = np.squeeze(processed_tile[0])
     merger.add(tile_id, processed_tile)
+    return retStats
 
 
 def tiled_deconv(im, psf, tiling_dict=None, deconv_dict=None, verbose=True):
@@ -89,12 +117,25 @@ def tiled_deconv(im, psf, tiling_dict=None, deconv_dict=None, verbose=True):
     # sanity
     td = default_dict_tiling(im) if tiling_dict is None else tiling_dict
     dd = default_dict_deconv() if deconv_dict is None else deconv_dict
+    retStats = []
 
     # prepare psf
     psf_tile = nip.DampEdge(nip.extract(psf, td['tile_shape']),
                             rwidth=dd['rwdith'], method=dd['damp_method'])
 
     # create tiling structure
+    if not tiling_dict['diffdim_im_psf'] is None:
+        repeats = [1, ]*im.ndim
+        repeats[tiling_dict['diffdim_im_psf']] = psf_tile.shape[tiling_dict['diffdim_im_psf']]
+        im = nip.repmat(im, repeats)
+        diffdim_sel = []
+        tile_shape_final = psf_tile.shape[1:]
+        for m, pshape in enumerate(psf_tile.shape):
+            if m == tiling_dict['diffdim_im_psf']:
+                diffdim_sel.append(slice(pshape//2, pshape//2+1))
+            else:
+                diffdim_sel.append(slice(0, pshape))
+
     tiler = Tiler(data_shape=td['data_shape'], tile_shape=td['tile_shape'],
                   overlap=tuple(td['overlap']), get_padding=True)
     if verbose:
@@ -102,13 +143,29 @@ def tiled_deconv(im, psf, tiling_dict=None, deconv_dict=None, verbose=True):
     im_padded = tiler.pad_outer(im, tiler.pads)
 
     # prepare merging strategy and weighting
-    merger = Merger(tiler=tiler, window=td['window'])
+    if tiling_dict['diffdim_im_psf'] is None:
+        if len(td['data_shape']) > 3:
+            final_shape = im.shape[1:] if all(
+                np.array(im.shape[1:]) > np.array(psf.shape[1:])) else psf.shape[1:]
+            tiler_final = Tiler(data_shape=final_shape, tile_shape=psf_tile.shape[1:], overlap=tuple(
+                td['overlap'])[1:], get_padding=True)
+        else:
+            tiler_final = tiler
+    else:
+        tiler_final = Tiler(data_shape=psf.shape[1:], tile_shape=tile_shape_final, overlap=tuple(
+            td['overlap'])[1:], get_padding=True)
+    if verbose and tiling_dict['diffdim_im_psf']:
+        print(tiler_final)
+    merger = Merger(tiler=tiler_final, window=td['window'], atol=td['atol'])
 
     # run for each created tile
     for tile_id, tile in tiler(im_padded, progress_bar=verbose):
-        tiled_processing(tile, psf_tile, tile_id, dd, merger)
+        if not tiling_dict['diffdim_im_psf'] is None:
+            tile = nip.image(tile[diffdim_sel])
+            tile.pixelsize = psf_tile.pixelsize
+        retStats.append(tiled_processing(tile, psf_tile, tile_id, dd, merger))
 
     im_deconv = nip.image(merger.merge(data_orig_shape=td['data_shape'],))
     im_deconv.pixelsize = im.pixelsize
 
-    return im_deconv
+    return im_deconv, retStats

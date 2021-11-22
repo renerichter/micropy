@@ -76,7 +76,7 @@ def otf_fill(otf, fill_method='rot'):
     return otfh
 
 
-def otf_get_mask(otf, center_pinhole, mode='rft', eps=1e-5, bool_mask=False, closing=None):
+def otf_get_mask(otf, center_pinhole, mode='rft', eps=1e-5, bool_mask=False, closing=None, pixelsize=None):
     '''
     Calculate necessary mask for unmixing.
     In principal better to construct mash with geometrical shapes, but for now just guessed it -> maybe only in noise-free case possible.
@@ -145,8 +145,8 @@ def otf_get_mask(otf, center_pinhole, mode='rft', eps=1e-5, bool_mask=False, clo
         my_mask = my_mask.astype('bool')
 
     # add pixelsize
-    my_mask.pixelsize = otf.pixelsize[-my_mask.ndim:]
-    my_mask_filled.pixelsize = otf.pixelsize[-my_mask.ndim:]
+    my_mask.pixelsize = pixelsize if not pixelsize is None else otf.pixelsize[-my_mask.ndim:]
+    my_mask_filled.pixelsize = pixelsize if not pixelsize is None else otf.pixelsize[-my_mask.ndim:]
 
     # done?
     return my_mask, my_mask_filled, proj_mask, zoff, center_pinhole
@@ -519,10 +519,12 @@ def recon_genShiftmap(im, pincenter, nbr_det=None, pinmask=None, shift_method='n
         factors = np.array(factors).T
 
         # sanity for arbitrary dimensionality -> find non-shifted dimensions and add to factors --> need to check logic again
-        shiftfree_dim = list(
-            np.where(np.sum(abs(shiftvec), axis=0) == 0)[0][::-1])
-        if len(shiftfree_dim) >= 1:
-            factors = add_multi_newaxis(factors, shiftfree_dim)
+        #shiftsums = np.sum(abs(shiftvec), axis=0)
+        #shiftfree_dim = shift_axes[list(np.where(shiftsums == 0)[0])]
+        #zero_shifts = np.arange(1,im.ndim)
+        # zero_shifts[shift_axes-1]
+        # if len(zero_shifts) > 0:
+        #    factors = add_multi_newaxis(factors, zero_shifts)
 
         # generate shifts for whole array (elementwise-multiplication)
         shift_map = np.matmul(factors, shiftvec)
@@ -600,6 +602,7 @@ def recon_sheppardShift(im, shift_map, method='parallel', use_copy=False):
     else:
         imshifted = nip.image(
             np.array([nip.shift(im[m], shift_map[m]) for m in range(shift_map.shape[0])]))
+        imshifted.pixelsize = im.pixelsize
 
     # done
     return imshifted
@@ -789,7 +792,7 @@ def ism_recon(im, method='wf', **kwargs):
     return pinsize
 
 
-def recon_sheppardSUM(im, nbr_det, pincenter, shift_method='nearest', shift_map=[], shift_roi=None, shiftval_theory=None, shift_axes=None, pinmask=None, pinfo=False, sum_method='normal', shift_style='parallel', shift_use_copy=True):
+def recon_sheppardSUM(im, nbr_det, pincenter, shift_method='nearest', shift_map=[], shift_roi=None, shiftval_theory=None, shift_axes=None, pinmask=None, pinfo=False, sum_method='normal', shift_style='parallel', shift_use_copy=True, ret_nonSUM=False):
     """Calculates sheppardSUM on image (for arbitrary detector arrangement). The 0th-Dimension is assumed as detector-dimension and hence allows for arbitrary, but flattened detector geometries.
 
     The algorithm does:
@@ -859,6 +862,9 @@ def recon_sheppardSUM(im, nbr_det, pincenter, shift_method='nearest', shift_map=
     res_dict = {'shift_map': shift_map, 'pinmask': pinmask,
                 'pincenter': pincenter, 'weights': weights}
 
+    if ret_nonSUM:
+        res_dict['ims'] = ims
+
     # return created results
     return imshepp, res_dict
 
@@ -895,7 +901,7 @@ def recon_weightedAveraging_testmodes(**kwargs):
     return ismWAl, weightsnl, ismWANl
 
 
-def recon_weightedAveraging(imfl, otfl, pincenter, noise_norm=True, wmode='conj', fmode='fft', fshape=None, closing=2, use_mask=True, mask_eps=1e-4, reg_reps=0, reg_aeps=0, add_ext_noise=False):
+def recon_weightedAveraging(imfl, otfl, pincenter, noise_norm=True, wmode='conj', fmode='fft', fshape=None, closing=2, use_mask=True, mask_eps=1e-4, reg_reps=0, reg_aeps=0, add_ext_noise=False, pixelsize=None, backtransform=True, norm='ortho'):
     """Weighted Averaging for multi-view reconstruction. List implementation so that it can be applied to multiple Data-sets. Needs list of PSFs (list) for different images (=views).
     Note, make sure that:
         -> applied FT is the same in both cases
@@ -965,13 +971,17 @@ def recon_weightedAveraging(imfl, otfl, pincenter, noise_norm=True, wmode='conj'
     """
     # In approximation of Poisson-Noise the Variance in Fourier-Space is the sum of the Mean-Values in Real-Space -> hence: MidVal(OTF); norm-OTF by sigma**2 = normalizing OTF to 1 and hence each PSF to individual sum=1
     dims = list(range(1, otfl.ndim, 1))
-    sigma2_otfl = midVallist(otfl, dims, keepdims=True).real
-    weights = otfl / sigma2_otfl
+    #sigma2_otfl = midVallist(otfl, dims, keepdims=True).real
+    sigma2_imfl = midVallist(imfl, dims, keepdims=True).real
+
+    # noise-normalize otfs
+    #otfl = otfl / np.sqrt(sigma2_otfl)
+    weights = otfl / sigma2_imfl  # / np.sqrt(sigma2_otfl)
 
     # get OTF-support(=validmask)
     if use_mask:
         _, validmask, _, _, _ = otf_get_mask(
-            weights, center_pinhole=pincenter, mode='fmode', eps=mask_eps, bool_mask=True, closing=closing)
+            weights, center_pinhole=pincenter, mode='fmode', eps=mask_eps, bool_mask=True, closing=closing, pixelsize=pixelsize)
     else:
         validmask = np.ones(weights.shape, dtype=bool)
 
@@ -991,7 +1001,7 @@ def recon_weightedAveraging(imfl, otfl, pincenter, noise_norm=True, wmode='conj'
         validmask = add_multi_newaxis(validmask, newax_pos=[0, ]*(weights.ndim-validmask.ndim))
         rep_factors = np.array(weights.shape)//np.array(validmask.shape)
         validmask = nip.repmat(validmask, rep_factors)
-    #weights[~validmask] = 0
+    weights[~validmask] = 0
 
     # apply weights
     ismWA = np.sum(imfl * weights, axis=0)
@@ -999,7 +1009,7 @@ def recon_weightedAveraging(imfl, otfl, pincenter, noise_norm=True, wmode='conj'
     # noise normalize
     if noise_norm:
         # 1/OTF might strongly diverge outside OTF-support -> put Mask
-        sigma_nn = np.sqrt(np.sum(weights * np.conj(weights) * sigma2_otfl, axis=0))
+        sigma_nn = np.sqrt(np.sum(weights * np.conj(weights), axis=0))
         if reg_aeps == 0:
             reg_aeps = np.max(sigma_nn)*reg_reps
             reg_aeps = reg_aeps * (1+1j) if weights.dtype == np.complex else reg_aeps
@@ -1010,7 +1020,8 @@ def recon_weightedAveraging(imfl, otfl, pincenter, noise_norm=True, wmode='conj'
         ismWAN = np.zeros(ismWA.shape, dtype=ismWA.dtype)
         ismWAN = np.divide(ismWA, sigma_nn + reg_aeps, where=validmask[0], out=ismWAN)
 
-        otfWAN = np.sqrt(np.sum(otfl*np.conj(otfl)/sigma2_otfl, axis=0))
+        otfWAN = np.sqrt(np.sum(otfl*np.conj(otfl)/sigma2_imfl, axis=0))  # /sigma2_otfl
+        otfWAN[~validmask[0]] = 0.0
 
         # nip.v5(nip.catE(ismWA, ismWAN))
         # ismWAN_rs=np.abs(nip.ift(ismWAN))
@@ -1026,14 +1037,18 @@ def recon_weightedAveraging(imfl, otfl, pincenter, noise_norm=True, wmode='conj'
         #    ismWAN=np.abs(nip.ift(ismWAN_syn1))
         # else:
         #    ismWAN=ismWAN_rs
-        ismWAN = np.abs(nip.ift(ismWAN))
-        psfWAN = np.abs(nip.ift(otfWAN))
+        if backtransform:
+            ismWAN = np.abs(nip.ift(ismWAN, norm=norm))
+            psfWAN = np.abs(nip.ift(otfWAN, norm=norm))
+        else:
+            psfWAN = otfWAN
     else:
         ismWAN = None
         psfWAN = None
 
     # return in real-space
-    ismWA = np.abs(nip.ift(ismWA))
+    if backtransform:
+        ismWA = np.abs(nip.ift(ismWA, norm=norm))
 
     # done?
     return ismWA, weights, ismWAN, psfWAN
