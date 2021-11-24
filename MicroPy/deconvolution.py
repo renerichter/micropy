@@ -49,10 +49,12 @@ def ismR_deconvolution(imfl, psfl, method='multi', regl=None, lambdal=None, NIte
     return res
 
 
-def default_dict_tiling(im: Union[tuple, list, np.ndarray],
+def default_dict_tiling(imshape: Union[tuple, list, np.ndarray],
                         basic_shape: list = [128, 128],
-                        basic_roverlap: list = [0.2, 0.2]):
-    imshape = im if type(im) in [list, tuple] else im.shape
+                        basic_roverlap: list = [0.2, 0.2], 
+                        **kwargs):
+    # sanity
+    imshape = imshape if type(imshape) in [list, tuple] else imshape.shape
 
     # generate dict
     tdd = {'data_shape': imshape,
@@ -65,11 +67,15 @@ def default_dict_tiling(im: Union[tuple, list, np.ndarray],
     # calculate overlap
     tdd['overlap'] = np.asarray(tdd['overlap_rel']*tdd['tile_shape'], 'int')
 
+    for key in kwargs:
+        if key in tdd:
+            tdd[key]=kwargs[key]
+
     # done?
     return tdd
 
 
-def default_dict_deconv():
+def default_dict_deconv(**kwargs):
 
     deconv_dict = {
         # deconv defaults
@@ -88,6 +94,11 @@ def default_dict_deconv():
         # damping defaults
         'rwdith': 0.1,
         'damp_method': 'damp'}  # 'zero'
+
+    # take input into account
+    for key in kwargs:
+        if key in deconv_dict:
+            deconv_dict[key]=kwargs[key]
 
     return deconv_dict
 

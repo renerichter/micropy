@@ -152,7 +152,7 @@ def dct2(im, forward=True, axes=[-2, -1]):
 # ------------------------------------------------------------------
 #               NORMS
 # ------------------------------------------------------------------
-def lp_norm(data:np.ndarray, p:float=2, normaxis:tuple=None, keepdims:bool=False):
+def lp_norm(data: np.ndarray, p: float = 2, normaxis: tuple = None, keepdims: bool = False):
     """Calculates the LP-norm.
 
     Parameters
@@ -233,12 +233,13 @@ def normalized_cross_correlation(im1: np.ndarray, im2: np.ndarray, axes: tuple =
 
 def get_cross_correlations(imlist_rows, imlist_cols, rows=None, cols=None, rlatex=True, triang=False):
     '''Calculates NCC for all combinations of a list'''
+
     # prepare
-    ncc_list = np.zeros([len(imlist_rows), len(imlist_cols)])
+    ncc_list = np.zeros([len(imlist_cols), len(imlist_cols[0])])
 
     # calculate normalized cross-correlation for all images of the list
     for n, imr in enumerate(imlist_rows):
-        for m, imc in enumerate(imlist_cols):
+        for m, imc in enumerate(imlist_cols[n]):
             ncc_list[n, m] = normalized_cross_correlation(imr, imc)
 
     if triang:

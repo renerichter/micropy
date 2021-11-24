@@ -237,7 +237,7 @@ def pinv_unmix(a, svdlim=1e-15, svdnum=None, eps_reg=0, eps_reg_rel=0, use_own=T
 
 def unmix_svd_stat(svd_range, sing_vals, eps_reg, kk, jj):
     s = svd_range['biggest_ratio']
-    if (sing_vals[0]/sing_vals[-1]) > s['ratio']:
+    if not len(sing_vals) == 0 and (sing_vals[0]/sing_vals[-1]) > s['ratio']:
         s['ratio'] = sing_vals[0]/sing_vals[-1]
         s['max'] = sing_vals[0]
         s['min'] = sing_vals[-1]
@@ -246,14 +246,14 @@ def unmix_svd_stat(svd_range, sing_vals, eps_reg, kk, jj):
         s['kk'] = kk
         s['jj'] = jj
     s = svd_range['smallest_sv']
-    if (sing_vals[-1] < s['sv']):
+    if not len(sing_vals) == 0 and (sing_vals[-1] < s['sv']):
         s['sv'] = sing_vals[-1]
         s['s_list'] = sing_vals
         s['eps_reg'] = eps_reg
         s['kk'] = kk
         s['jj'] = jj
     s = svd_range['biggest_sv']
-    if (sing_vals[0] > s['sv']):
+    if not len(sing_vals) == 0 and (sing_vals[0] > s['sv']):
         s['sv'] = sing_vals[0]
         s['s_list'] = sing_vals
         s['eps_reg'] = eps_reg
@@ -305,9 +305,9 @@ def unmix_matrix(otf, mode='rft', eps_mask=5e-4, eps_reg=1e-17, eps_reg_rel=0, s
         np.zeros(otf.shape, dtype=np.complex_), [1, 0, 2, 3])
     svd_counter = np.zeros(otf_unmix.shape, dtype=np.int16)
     svd_lim_counter = np.zeros(otf_unmix.shape, dtype=np.int16)
-    svd_range = {'biggest_ratio': {'ratio': 0.0, 'max': 0.0, 'min': 0.0, 's_list': [], 'kk': 0, 'jj': 0, },
-                 'smallest_sv': {'sv': 1e7, 's_list': [], 'kk': 0, 'jj': 0},
-                 'biggest_sv': {'sv': 0, 's_list': [], 'kk': 0, 'jj': 0}}
+    svd_range = {'biggest_ratio': {'ratio': 0.0, 'max': 0.0, 'min': 0.0, 's_list': [], 'eps_reg': eps_reg, 'kk': 0, 'jj': 0, },
+                 'smallest_sv': {'sv': 1e7, 's_list': [], 'eps_reg': eps_reg, 'kk': 0, 'jj': 0},
+                 'biggest_sv': {'sv': 0, 's_list': [], 'eps_reg': eps_reg, 'kk': 0, 'jj': 0}}
 
     if center_pinhole is None:
         center_pinhole = otf.shape[0]//2
