@@ -231,22 +231,25 @@ def normalized_cross_correlation(im1: np.ndarray, im2: np.ndarray, axes: tuple =
     return norm_fac*np.sum(im1_norm*im2_norm, axis=axes)
 
 
-def get_cross_correlations(imlist_rows, imlist_cols, rows=None, cols=None, rlatex=True, triang=False):
+def get_cross_correlations(imlist_rows, imlist_cols, rows=None, cols=None, rlatex=True, triang=False, ncc_pd=None):
     '''Calculates NCC for all combinations of a list'''
+    # sanity
+    ncc_list_latex = None
 
     # prepare
-    ncc_list = np.zeros([len(imlist_cols), len(imlist_cols[0])])
+    if ncc_pd is None:
+        ncc_list = np.zeros([len(imlist_cols), len(imlist_cols[0])])
 
-    # calculate normalized cross-correlation for all images of the list
-    for n, imr in enumerate(imlist_rows):
-        for m, imc in enumerate(imlist_cols[n]):
-            ncc_list[n, m] = normalized_cross_correlation(imr, imc)
+        # calculate normalized cross-correlation for all images of the list
+        for n, imr in enumerate(imlist_rows):
+            for m, imc in enumerate(imlist_cols[n]):
+                ncc_list[n, m] = normalized_cross_correlation(imr, imc)
 
-    if triang:
-        nccsel = (1-np.triu(np.ones(ncc_list.shape))).astype('bool')
-        ncc_list[nccsel] = 'NaN'
+        if triang:
+            nccsel = (1-np.triu(np.ones(ncc_list.shape))).astype('bool')
+            ncc_list[nccsel] = 'NaN'
 
-    ncc_pd = DataFrame(ncc_list, columns=cols, index=rows)
+        ncc_pd = DataFrame(ncc_list, columns=cols, index=rows)
 
     if rlatex:
         ncc_list_latex = ncc_pd.to_latex(float_format=lambda x: '%0.2f' %

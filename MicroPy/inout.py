@@ -9,10 +9,11 @@ import matplotlib.pyplot as plt
 import matplotlib as mpl
 import mpl_toolkits as mptk
 from mpl_toolkits.axes_grid1 import make_axes_locatable, AxesGrid
+from matplotlib.patches import Arrow
 from matplotlib.ticker import FormatStrFormatter
 from tifffile import imread as tifimread
 from typing import Optional, Tuple, List, Union, Generator, Callable
-from .utility import normNoff, add_multi_newaxis, transpose_arbitrary
+from .utility import normNoff, add_multi_newaxis, transpose_arbitrary, fill_dict_with_default
 # mipy imports
 
 # %% -------------------------------------------
@@ -583,9 +584,27 @@ def paths_from_dict(path_dict):
 # ---                        Plotting                   ---
 # ---------------------------------------------------------
 #
+def add_coordinate_axis(ax, apos=[[120, 10], [120, 10]], alen=[[-40, 0], [0, 40]], acolor=[1, 1, 1], text=['y', 'x'], tcolor=[1, 1, 1], tsize=None):
+    for p, pos in enumerate(apos):
+        alenA = alen[p]
+        patch_size = np.sum(abs(np.array(alenA)))//4
+        tsize = 5*patch_size if tsize is None else tsize
+        ax.add_patch(Arrow(y=pos[0], x=pos[1], dy=alenA[0],
+                           dx=alenA[1], width=patch_size, color=acolor))
+        ax.text(x=pos[1]+1.1*alenA[1], y=pos[0]+1.1*alenA[0],
+                s=text[p], color=tcolor, fontsize=tsize)
 
 
-def print_stack2subplot(imstack, imdir='row', inplace=False, plt_raster=[4, 4], plt_format=[8, 6], title=None, titlestack=True, colorbar=True, axislabel=True, laytight=True, nbrs=True, nbrs_color=[1, 1, 1], nbrs_size=None, nbrs_offsets=None, xy_norm=None, aspect=None, use_axis=None, plt_show=False, gridspec_kw=None, yx_ticks=None, axticks_format=None, grid_param=None):
+def default_grid_param(plt_raster):
+    return {'pos': 111, 'nrows_ncols': (
+        plt_raster[0], plt_raster[1]), 'axes_pad': 0.4, 'cbar_mode': 'single', 'cbar_location': 'right', 'cbar_pad': 0.1}
+
+
+def default_coord_axis():
+    return {'ax': 0, 'apos': [[120, 10], [120, 10]], 'alen': [[-40, 0], [0, 40]], 'acolor': [1, 1, 1], 'text': ['y', 'x'], 'tcolor': [1, 1, 1], 'tsize': None}
+
+
+def print_stack2subplot(imstack, imdir='row', inplace=False, plt_raster=[4, 4], plt_format=[8, 6], title=None, titlestack=True, colorbar=True, axislabel=True, laytight=True, nbrs=True, nbrs_color=[1, 1, 1], nbrs_size=None, nbrs_offsets=None, xy_norm=None, aspect=None, use_axis=None, plt_show=False, gridspec_kw=None, yx_ticks=None, axticks_format=None, grid_param=None, norm_imstack=True, coord_axis=[]):
     '''
     Plots an 3D-Image-stack as set of subplots
     Based on this: https://stackoverflow.com/a/46616645
@@ -623,18 +642,11 @@ def print_stack2subplot(imstack, imdir='row', inplace=False, plt_raster=[4, 4], 
     # create figure (fig), and array of axes (ax)-> gridspec_kw = {'height_ratios':[2,2,1,1]}
     if colorbar == 'global':
         # sanity
-        grid_param_default = {'pos': 111, 'nrows_ncols': (
-            plt_raster[0], plt_raster[1]), 'axes_pad': 0.4, 'cbar_mode': 'single', 'cbar_location': 'right', 'cbar_pad': 0.1}
-
-        if grid_param is None:
-            grid_param = grid_param_default
-        else:
-            for m in grid_param_default:
-                if not m in grid_param:
-                    grid_param[m] = grid_param_default[m]
+        grid_param_default = default_grid_param(plt_raster)
+        gp = grid_param = grid_param_default if grid_param is None else fill_dict_with_default(
+            grid_param, grid_param_default)
 
         # generate grid
-        gp = grid_param
         fig = plt.figure(figsize=plt_format)
         grid = AxesGrid(fig, gp['pos'],
                         nrows_ncols=gp['nrows_ncols'],
@@ -644,8 +656,9 @@ def print_stack2subplot(imstack, imdir='row', inplace=False, plt_raster=[4, 4], 
                         cbar_pad=gp['cbar_pad']
                         )
         ax = np.array(grid.axes_all)
-        imstack -= np.min(imstack, axis=(-2, -1), keepdims=True)
-        imstack /= np.max(imstack, axis=(-2, -1), keepdims=True)
+
+        if norm_imstack:
+            imstack = normNoff(imstack, dims=(-2, -1), method='max', direct=False,)
 
         # assure proper results
         imstack[np.isnan(imstack)] = 0
@@ -760,6 +773,13 @@ def print_stack2subplot(imstack, imdir='row', inplace=False, plt_raster=[4, 4], 
                     # axm.set_ylabel('')
             else:
                 pass
+
+        # add coordinate axis
+        if not coord_axis == []:
+            for ca in coord_axis:
+                if ca['ax'] == m:
+                    ca['ax'] = axm
+                    add_coordinate_axis(**ca)
 
         if m >= imstack_len-1:
             break
@@ -1150,10 +1170,14 @@ def concat_list(imlist, cols=4, normal=False, gammal=None, method='np', dims=(-3
     return imlist
 
 
-def format_list(alist, formatting):
-    format_string = ["{:"+formatting+"}", ]*len(alist)
-    format_string = ",".join(format_string)
-    return "["+format_string.format(*alist)+"]"
+def format_list(alist, formatting, as_one=True):
+    if as_one:
+        format_string = ["{:"+formatting+"}", ]*len(alist)
+        format_string = ",".join(format_string)
+        format_string = "["+format_string.format(*alist)+"]"
+    else:
+        format_string = [("{:"+formatting+"}").format(m) for m in alist]
+    return format_string
 
 # %% ------------------------------------------------------
 # ---                        Time                      ---

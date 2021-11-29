@@ -12,6 +12,7 @@ from deprecated import deprecated
 from .transformations import irft3dz
 from .utility import findshift, midVallist, pinhole_shift, pinhole_getcenter, add_multi_newaxis, shiftby_list, subslice_arbitrary, mask_from_dist
 from .inout import stack2tiles, format_list
+from typing import Union
 
 
 # %%
@@ -76,7 +77,7 @@ def otf_fill(otf, fill_method='rot'):
     return otfh
 
 
-def otf_get_mask(otf, center_pinhole, mode='rft', eps=1e-5, bool_mask=False, closing=None, pixelsize=None):
+def otf_get_mask(otf, center_pinhole, mode='rft', eps=1e-5, bool_mask=False, closing=None, pixelsize=None, multiview=True):
     '''
     Calculate necessary mask for unmixing.
     In principal better to construct mash with geometrical shapes, but for now just guessed it -> maybe only in noise-free case possible.
@@ -100,12 +101,15 @@ def otf_get_mask(otf, center_pinhole, mode='rft', eps=1e-5, bool_mask=False, clo
     :zoff:              z-position of 0 frequency in fourier-space
     :center_pinhole:    central pinhole from input pinhole stack (by numbers, not by correlation)
     '''
+    # otfref
+    otf_ref = otf[center_pinhole] if multiview else otf
+
     # get parameters
-    center_max = np.max(np.abs(otf[center_pinhole]))
+    center_max = np.max(np.abs(otf_ref))
     epsabs = center_max * eps
 
     # calculate mask
-    my_mask = (np.abs(otf[center_pinhole]) > epsabs).astype(np.float32)
+    my_mask = (np.abs(otf_ref) > epsabs).astype(np.float32)
 
     # close using the chosen structuring element
     if closing is not None:
@@ -1052,6 +1056,40 @@ def recon_weightedAveraging(imfl, otfl, pincenter, noise_norm=True, wmode='conj'
 
     # done?
     return ismWA, weights, ismWAN, psfWAN
+
+
+def recon_wiener(imFT: nip.image, otf: nip.image, use_generalized: bool = True, use_mask: bool = False, eps_mask: float = 1e-8, closing: Union[int, np.ndarray] = 2, reg_aeps: float = 0.0, reg_reps: float = 1e-5, faxes: tuple = (-2, -1), pincenter: int = None, multiview_dim: int = 0):
+    # use_mask
+    if use_mask:
+        _, validmask, _, _, _ = otf_get_mask(
+            otf, center_pinhole=pincenter, mode='fmode', eps=eps_mask, bool_mask=True, closing=closing, pixelsize=imFT.pixelsize)
+    else:
+        validmask = np.ones(otf.shape, dtype=bool)
+
+    # get filter size
+    otf2 = np.abs(otf*np.conj(otf))
+
+    # get regularization
+    if use_generalized:
+        regval = np.max(otf2)*reg_reps if reg_aeps == 0 else reg_aeps
+    else:
+        regval = 1
+        print("NOT IMPLEMENTED YET!")
+
+    # calculate filter
+    filter_func = np.zeros(otf.shape, dtype=otf.dtype)
+    filter_func = np.divide(np.conj(otf), otf2 + regval, where=validmask, out=filter_func)
+
+    # apply
+    im_filtered = nip.ift(filter_func*imFT, axes=faxes)
+    res_dict = {'filter_func': filter_func, 'validmask': validmask,
+                'reg_aeps': reg_aeps, 'reg_reps': reg_reps, 'mask_eps': eps_mask}
+
+    if not pincenter is None:
+        im_filtered = np.sum(im_filtered, axis=multiview_dim)
+
+    # done?
+    return im_filtered, res_dict
 
 
 def recon_drawshift(shift_map, useaxes=[-2, -1]):

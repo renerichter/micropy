@@ -4,7 +4,7 @@
 	@author René Lachmann
 	@email herr.rene.richter@gmail.com
 	@create date 2019 11:53:25
-	@modify date 2021-11-20 15:05:04
+	@modify date 2021-11-27 17:01:42
 	@desc Utility package
 
 ---------------------------------------------------------------------------------------------------
@@ -1485,6 +1485,13 @@ def split_nd(im, tile_sizes=[8, 8], split_axes=[-1, -2]):
 
     # done?
     return im, sal
+
+def fill_dict_with_default(din,ddefault):
+    for m in ddefault:
+        if not m in din:
+            din[m] = ddefault[m]
+
+    return din
 
 # %% -----------------------------------------------------
 # ----              NOISE AND STATISTIC-ANALYSIS
