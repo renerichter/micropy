@@ -440,7 +440,7 @@ def unmix_recover_thickslice(unmixer, im, unmixer_full=None, verbose=True):
 #                   ISM-Reconstruction
 # ---------------------------------------------------------------
 
-def recon_genShiftmap(im, pincenter, nbr_det=None, pinmask=None, shift_method='nearest', shiftval_theory=None, roi=None, shift_axes=None, printmap=False):
+def recon_genShiftmap(im, pincenter, im_ref=None, nbr_det=None, pinmask=None, shift_method='nearest', shiftval_theory=None, roi=None, shift_axes=None, printmap=False):
     """Generates Shiftmap for ISM SheppardSUM-reconstruction.
     Assumes shape: [Pinhole-Dimension , M] where M stands for arbitrary mD-image.
     Fills shift_map from right-most dimension to left, hence errors could be evoked in case of only shifts along dim=[1,2] applied, but array has spatial dim=[1,2,3]. Hence shifts will be applied along [2,3] with their respective period factors.
@@ -492,6 +492,8 @@ def recon_genShiftmap(im, pincenter, nbr_det=None, pinmask=None, shift_method='n
     if not type(shift_axes) == np.ndarray:
         shift_axes = np.mod(np.array(shift_axes), im.ndim)
 
+    im_ref = im[pincenter] if im_ref is None else im_ref
+
     if roi is not None:
         im = subslice_arbitrary(im, roi, axes=np.arange(im.ndim))
 
@@ -507,7 +509,7 @@ def recon_genShiftmap(im, pincenter, nbr_det=None, pinmask=None, shift_method='n
             # calculate shift, but be aware to not leave the array
             if shift_method == 'nearest':
                 period = int(np.prod(np.array(nbr_det[(m+1):])))
-                shifth, _, _, _ = findshift(im[pincenter],
+                shifth, _, _, _ = findshift(im_ref,
                                             im[np.mod(pincenter+period, im.shape[0])],  100)
             else:
                 shifth = shiftval_theory[m]
@@ -532,13 +534,15 @@ def recon_genShiftmap(im, pincenter, nbr_det=None, pinmask=None, shift_method='n
 
         # generate shifts for whole array (elementwise-multiplication)
         shift_map = np.matmul(factors, shiftvec)
+        if not pinmask is None:
+            shift_map = shift_map[pinmask]
 
     elif shift_method == 'mask':
         imh = im[pinmask]
         # shift_map = np.array([[0, ]*im.ndim]*im.shape[0])
         shift_maph = []
         for m in range(imh.shape[0]):
-            shifth, _, _, _ = findshift(im[pincenter],
+            shifth, _, _, _ = findshift(im_ref,
                                         imh[m], 100)
             shift_maph.append(shifth)
         shift_maph = np.array(shift_maph)
@@ -548,7 +552,7 @@ def recon_genShiftmap(im, pincenter, nbr_det=None, pinmask=None, shift_method='n
     elif shift_method == 'complete':
         shift_map = []
         for m in range(im.shape[0]):
-            shift_maph, _, _, _ = findshift(im[pincenter],
+            shift_maph, _, _, _ = findshift(im_ref,
                                             im[m], 100)
             shift_map.append(shift_maph)
         shift_map = np.array(shift_map)
@@ -796,7 +800,7 @@ def ism_recon(im, method='wf', **kwargs):
     return pinsize
 
 
-def recon_sheppardSUM(im, nbr_det, pincenter, shift_method='nearest', shift_map=[], shift_roi=None, shiftval_theory=None, shift_axes=None, pinmask=None, pinfo=False, sum_method='normal', shift_style='parallel', shift_use_copy=True, ret_nonSUM=False):
+def recon_sheppardSUM(im, nbr_det, pincenter, im_ref=None, shift_method='nearest', shift_map=[], shift_roi=None, shiftval_theory=None, shift_axes=None, pinmask=None, pinfo=False, sum_method='normal', shift_style='parallel', shift_use_copy=True, ret_nonSUM=False):
     """Calculates sheppardSUM on image (for arbitrary detector arrangement). The 0th-Dimension is assumed as detector-dimension and hence allows for arbitrary, but flattened detector geometries.
 
     The algorithm does:
@@ -848,19 +852,20 @@ def recon_sheppardSUM(im, nbr_det, pincenter, shift_method='nearest', shift_map=
     # find shift-list -> Note: 'nearest' is standard
     if shift_map == []:
         shift_map, figS, axS = recon_genShiftmap(
-            im=im, pincenter=pincenter, nbr_det=nbr_det, pinmask=pinmask, shift_method=shift_method, shiftval_theory=shiftval_theory, roi=shift_roi, shift_axes=shift_axes)
+            im=im, im_ref=im_ref, pincenter=pincenter, nbr_det=nbr_det, pinmask=pinmask, shift_method=shift_method, shiftval_theory=shiftval_theory, roi=shift_roi, shift_axes=shift_axes)
 
     # apply shifts
+    im = im[pinmask] if not pinmask is None else im
     ims = recon_sheppardShift(im, shift_map, method=shift_style, use_copy=shift_use_copy)
 
     # different summing methods
-    imshepp, weights = recon_sheppardSUMming(im=ims, pinmask=pinmask, sum_method=sum_method)
+    imshepp, weights = recon_sheppardSUMming(im=ims, pinmask=None, sum_method=sum_method)
 
     # info for check of energy conservation
     if pinfo:
         print("~~~~~\t Results of SheppardSUM-routine:\t~~~~~")
         print(
-            f"SUM(im)={np.sum(im)}\nim.shape={im.shape}\nSUM(imshifted)-SUM(im)={np.sum(ims)-np.sum(im)}\nSUM(imshepp)-SUM(im[pinmask])={np.sum(imshepp)-np.sum(im[pinmask])}\nShift-Operations={np.sum(pinmask)}")
+            f"SUM(im)={np.sum(im)}\nim.shape={im.shape}\nSUM(imshifted)-SUM(im)={np.sum(ims)-np.sum(im)}\nSUM(imshepp)-SUM(im[pinmask])={np.sum(imshepp)-np.sum(im)}\nShift-Operations={np.sum(pinmask)}")
         print("~~~~~\t\t\t\t\t\t~~~~~")
 
     res_dict = {'shift_map': shift_map, 'pinmask': pinmask,
@@ -1081,7 +1086,7 @@ def recon_wiener(imFT: nip.image, otf: nip.image, use_generalized: bool = True, 
     filter_func = np.divide(np.conj(otf), otf2 + regval, where=validmask, out=filter_func)
 
     # apply
-    im_filtered = nip.ift(filter_func*imFT, axes=faxes)
+    im_filtered = np.abs(nip.ift(filter_func*imFT, axes=faxes))
     res_dict = {'filter_func': filter_func, 'validmask': validmask,
                 'reg_aeps': reg_aeps, 'reg_reps': reg_reps, 'mask_eps': eps_mask}
 

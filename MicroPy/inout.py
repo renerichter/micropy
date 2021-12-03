@@ -600,11 +600,11 @@ def default_grid_param(plt_raster):
         plt_raster[0], plt_raster[1]), 'axes_pad': 0.4, 'cbar_mode': 'single', 'cbar_location': 'right', 'cbar_pad': 0.1}
 
 
-def default_coord_axis():
-    return {'ax': 0, 'apos': [[120, 10], [120, 10]], 'alen': [[-40, 0], [0, 40]], 'acolor': [1, 1, 1], 'text': ['y', 'x'], 'tcolor': [1, 1, 1], 'tsize': None}
+def default_coord_axis(imshape):
+    return {'ax': 0, 'apos': [[int(imshape[-2]*0.95), int(imshape[-1]*0.05)], ]*2, 'alen': [[-imshape[-2]//3, 0], [0, imshape[-2]//3]], 'acolor': [1, 1, 1], 'text': ['y', 'x'], 'tcolor': [1, 1, 1], 'tsize': None}
 
 
-def print_stack2subplot(imstack, imdir='row', inplace=False, plt_raster=[4, 4], plt_format=[8, 6], title=None, titlestack=True, colorbar=True, axislabel=True, laytight=True, nbrs=True, nbrs_color=[1, 1, 1], nbrs_size=None, nbrs_offsets=None, xy_norm=None, aspect=None, use_axis=None, plt_show=False, gridspec_kw=None, yx_ticks=None, axticks_format=None, grid_param=None, norm_imstack=True, coord_axis=[]):
+def print_stack2subplot(imstack, im_minmax=[None, None], imdir='row', inplace=False, plt_raster=[4, 4], plt_format=[8, 6], title=None, titlestack=True, colorbar=True, axislabel=True, laytight=True, nbrs=True, nbrs_color=[1, 1, 1], nbrs_size=None, nbrs_offsets=None, xy_norm=None, aspect=None, use_axis=None, plt_show=False, gridspec_kw=None, yx_ticks=None, axticks_format=None, grid_param=None, norm_imstack=True, coord_axis=[]):
     '''
     Plots an 3D-Image-stack as set of subplots
     Based on this: https://stackoverflow.com/a/46616645
@@ -700,7 +700,7 @@ def print_stack2subplot(imstack, imdir='row', inplace=False, plt_raster=[4, 4], 
     # plot simple raster image on each sub-plot
     for m, axm in enumerate(ax.flat):
         ima = axm.imshow(imstack[m], alpha=1.0,
-                         interpolation='none', extent=xy_extent, aspect=aspect)  # alpha=0.25)
+                         interpolation='none', extent=xy_extent, aspect=aspect, vmin=im_minmax[0], vmax=im_minmax[1])  # alpha=0.25)
         # write row/col indices as axes' title for identification
         if colorbar == True:
             divider = make_axes_locatable(axm)
@@ -923,7 +923,7 @@ def print_stack2subplot(imstack, imdir='row', inplace=False, plt_raster=[4, 4], 
 #
 
 
-def stack2plot(x, ystack, refs=None, title=None, xlabel=None, ylabel=None, colors=None, mmarker='', mlinestyle='-', mlinewidth=None, legend=[1, 1.05], xlims=None, ylims=None, ax_inside=None, figsize=(8, 8), show_plot=True, ptight=True, ax=None, nbrs=True, nbrs_color=[1, 1, 1], nbrs_size=None, nbrs_text=None, err_bar=None, err_capsize=3):
+def stack2plot(x, ystack, refs=None, title=None, xl=None, xlabel=None, ylabel=None, colors=None, mmarker='', mlinestyle='-', mlinewidth=None, legend=[1, 1.05], xlims=None, ylims=None, ax_inside=None, figsize=(8, 8), show_plot=True, ptight=True, ax=None, nbrs=True, nbrs_color=[1, 1, 1], nbrs_size=None, nbrs_text=None, err_bar=None, err_capsize=3):
     '''
     Prints a 1d-"ystack" into 1 plot and assigns legends + titles.
     '''
@@ -931,11 +931,9 @@ def stack2plot(x, ystack, refs=None, title=None, xlabel=None, ylabel=None, color
     if not mlinewidth is None and not type(mlinewidth) in [np.ndarray, list, tuple]:
         mlinewidth = [mlinewidth, ]*len(ystack)
 
-    if type(x[0]) in [str, np.str_]:
-        xl = np.array(x)
+    if xl == None and type(x[0]) in [str, np.str_]:
+        xl = [np.arange(len(x)), np.array(x)]
         x = np.arange(len(x))
-    else:
-        xl = None
 
     # get figure
     if ax is None:
@@ -969,8 +967,8 @@ def stack2plot(x, ystack, refs=None, title=None, xlabel=None, ylabel=None, color
 
     ax.set_xlabel(xlabel)
     if not xl is None:
-        ax.set_xticks(x)
-        ax.set_xticklabels(xl)
+        ax.set_xticks(xl[0])
+        ax.set_xticklabels(xl[1])
     ax.set_ylabel(ylabel)
     ax.set_title(title)
 
