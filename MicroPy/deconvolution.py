@@ -51,7 +51,7 @@ def ismR_deconvolution(imfl, psfl, method='multi', regl=None, lambdal=None, NIte
 
 def default_dict_tiling(imshape: Union[tuple, list, np.ndarray],
                         basic_shape: list = [128, 128],
-                        basic_roverlap: list = [0.2, 0.2], 
+                        basic_roverlap: list = [0.2, 0.2],
                         **kwargs):
     # sanity
     imshape = imshape if type(imshape) in [list, tuple] else imshape.shape
@@ -69,7 +69,7 @@ def default_dict_tiling(imshape: Union[tuple, list, np.ndarray],
 
     for key in kwargs:
         if key in tdd:
-            tdd[key]=kwargs[key]
+            tdd[key] = kwargs[key]
 
     # done?
     return tdd
@@ -90,6 +90,7 @@ def default_dict_deconv(**kwargs):
         'multiview_dim': -4,
         'log_name': None,
         'retStats': True,
+        'oparam': {"learning_rate": 1.5, 'disp': True},
 
         # damping defaults
         'rwdith': 0.1,
@@ -98,7 +99,7 @@ def default_dict_deconv(**kwargs):
     # take input into account
     for key in kwargs:
         if key in deconv_dict:
-            deconv_dict[key]=kwargs[key]
+            deconv_dict[key] = kwargs[key]
 
     return deconv_dict
 

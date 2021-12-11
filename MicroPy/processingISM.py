@@ -305,8 +305,7 @@ def unmix_matrix(otf, mode='rft', eps_mask=5e-4, eps_reg=1e-17, eps_reg_rel=0, s
     if verbose:
         print("Calculating unmixing matrix.")
     # parameters/preparation
-    otf_unmix = np.transpose(
-        np.zeros(otf.shape, dtype=np.complex_), [1, 0, 2, 3])
+    otf_unmix = np.transpose(np.zeros(otf.shape, dtype=otf.dtype), [1, 0, 2, 3])
     svd_counter = np.zeros(otf_unmix.shape, dtype=np.int16)
     svd_lim_counter = np.zeros(otf_unmix.shape, dtype=np.int16)
     svd_range = {'biggest_ratio': {'ratio': 0.0, 'max': 0.0, 'min': 0.0, 's_list': [], 'eps_reg': eps_reg, 'kk': 0, 'jj': 0, },
@@ -406,7 +405,7 @@ def unmix_image_ft(im_unmix_ft, recon_shape=None, mode='rft', show_phases=False,
     return unmix_im, recon_shape
 
 
-def unmix_recover_thickslice(unmixer, im, unmixer_full=None, verbose=True):
+def unmix_recover_thickslice(unmixer, im, verbose=True, dtype=None):
     '''
     Does the recovery multiplication step. Need to apply unmix matrix for every kx and ky individually.
 
@@ -423,13 +422,7 @@ def unmix_recover_thickslice(unmixer, im, unmixer_full=None, verbose=True):
     if verbose:
         print("Recovering Thickslice using Einstein-Summation.")
     # the real thing
-    im_unmix = nip.image(np.einsum('ijkl,jkl->ikl', unmixer, im))
-
-    # only for backward-compatibility of reconstructed full-PSF
-    if unmixer_full is not None:
-        im_unmix_full = nip.image(
-            np.einsum('ijkl,jkl->ikl', unmixer_full, im))
-        im_unmix = [im_unmix, im_unmix_full]
+    im_unmix = nip.image(np.einsum('ijkl,jkl->ikl', unmixer, im, dtype=dtype))
 
     # done?
     return im_unmix
