@@ -9,7 +9,7 @@ from scipy.ndimage import binary_closing
 from deprecated import deprecated
 
 # mipy imports
-from .transformations import irft3dz
+from .transformations import irft3dz, ft_correct
 from .utility import findshift, midVallist, pinhole_shift, pinhole_getcenter, add_multi_newaxis, shiftby_list, subslice_arbitrary, mask_from_dist
 from .inout import stack2tiles, format_list
 from typing import Union
@@ -565,7 +565,7 @@ def recon_genShiftmap(im, pincenter, im_ref=None, nbr_det=None, pinmask=None, sh
     return shift_map, figS, axS
 
 
-def recon_sheppardShift(im, shift_map, method='parallel', use_copy=False):
+def recon_sheppardShift(im, shift_map, method='parallel', use_copy=False, shift_pad=True):
     """Does shifting for ISM-SheppardSum.
 
     Parameters
@@ -597,6 +597,10 @@ def recon_sheppardShift(im, shift_map, method='parallel', use_copy=False):
     # work on copy to keep original?
     imshifted = nip.image(np.copy(im)) if use_copy else im
 
+    # pad image before shifting
+    if shift_pad:
+        pass
+
     # method to be used
     if method == 'parallel':
         imshifted, _ = shiftby_list(im, shifts=shift_map, listaxis=0)
@@ -604,6 +608,10 @@ def recon_sheppardShift(im, shift_map, method='parallel', use_copy=False):
         imshifted = nip.image(
             np.array([nip.shift(im[m], shift_map[m]) for m in range(shift_map.shape[0])]))
         imshifted.pixelsize = im.pixelsize
+
+    # unpad
+    if shift_pad:
+        pass
 
     # done
     return imshifted
@@ -903,7 +911,7 @@ def recon_weightedAveraging_testmodes(**kwargs):
     return ismWAl, weightsnl, ismWANl
 
 
-def recon_weightedAveraging(imfl, otfl, pincenter, noise_norm=True, wmode='conj', fmode='fft', fshape=None, closing=2, use_mask=True, mask_eps=1e-4, reg_reps=0, reg_aeps=0, add_ext_noise=False, pixelsize=None, backtransform=True, norm='ortho'):
+def recon_weightedAveraging(imfl, otfl, pincenter, noise_norm=True, wmode='conj', fmode='fft', fshape=None, faxes=(-2, -1), dtype_im=np.float32, closing=2, use_mask=True, mask_eps=1e-4, reg_reps=0, reg_aeps=0, add_ext_noise=False, pixelsize=None, backtransform=True, norm='ortho'):
     """Weighted Averaging for multi-view reconstruction. List implementation so that it can be applied to multiple Data-sets. Needs list of PSFs (list) for different images (=views).
     Note, make sure that:
         -> applied FT is the same in both cases
@@ -1040,8 +1048,11 @@ def recon_weightedAveraging(imfl, otfl, pincenter, noise_norm=True, wmode='conj'
         # else:
         #    ismWAN=ismWAN_rs
         if backtransform:
-            ismWAN = np.abs(nip.ift(ismWAN, norm=norm))
-            psfWAN = np.abs(nip.ift(otfWAN, norm=norm))
+
+            ismWAN = ft_correct(ismWAN, faxes, im_shape=fshape, mode=fmode,
+                                dir='bwd', dtype=dtype_im, norm=norm, use_abs=True)
+            psfWAN = ft_correct(otfWAN, faxes, im_shape=fshape, mode=fmode,
+                                dir='bwd', dtype=dtype_im, norm=norm, use_abs=True)
         else:
             psfWAN = otfWAN
     else:
@@ -1050,7 +1061,8 @@ def recon_weightedAveraging(imfl, otfl, pincenter, noise_norm=True, wmode='conj'
 
     # return in real-space
     if backtransform:
-        ismWA = np.abs(nip.ift(ismWA, norm=norm))
+        ismWA = ft_correct(ismWA, faxes, im_shape=fshape, mode=fmode,
+                           dir='bwd', dtype=dtype_im, norm=norm, use_abs=True)
 
     # done?
     return ismWA, weights, ismWAN, psfWAN

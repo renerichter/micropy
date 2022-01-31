@@ -8,7 +8,7 @@ import NanoImagingPack as nip
 
 # intern
 from .utility import get_coords_from_markers, center_of_mass, findshift, normNoff
-from .transformations import lp_norm
+from .transformations import lp_norm, dampEdge
 from .inout import stack2tiles
 
 # %%
@@ -82,7 +82,7 @@ def extract_PSFlist(im, ref=None, markers=None, list_dim=0, im_axes=(-2, -1), be
     return gaussfits, residuums, beadls, paras, markers
 
 
-def extract_multiPSF(im, markers=None, im_axes=(-2, -1), bead_roi=[16, 16], compare=False):
+def extract_multiPSF(im, markers=None, im_axes=(-2, -1), bead_roi=[16, 16], compare=False, damp=None, shift_subpix=True):
     """ Extracts PSF from image. 
     Extracts ROI from Marker-Positions, aligns selections and fits Gauss to them.
     Implemented for 2D and 3D.
@@ -99,6 +99,8 @@ def extract_multiPSF(im, markers=None, im_axes=(-2, -1), bead_roi=[16, 16], comp
         region of interest for bead extraction, by default [16, 16]
     compare : bool, optional
         whether a small comparison of the results shall be displayed, by default False
+    damp: dict, optional
+        params for mipy.dampEdge function to apply damping to beads
 
     Returns
     -------
@@ -140,6 +142,14 @@ def extract_multiPSF(im, markers=None, im_axes=(-2, -1), bead_roi=[16, 16], comp
     beads = nip.multiROIExtract(im=im, centers=np.array(
         markers, dtype=int), ROIsize=bead_roi, origin='corner')
 
+    # damp Selections
+    if not damp is None:
+        beads = dampEdge(beads, **damp)
+
+    # get rid of NaNs
+    beads -= np.min(beads, keepdims=True)
+    beads[np.isnan(beads)] = 0
+
     # get center of mass and distances
     com = center_of_mass(beads, com_axes=im_axes, im_axes=im_axes, placement='corner')
     com_mean = np.mean(com, axis=-1, keepdims=True)
@@ -153,7 +163,8 @@ def extract_multiPSF(im, markers=None, im_axes=(-2, -1), bead_roi=[16, 16], comp
         if not m == bead_ref:
             myshift, _, _, _ = findshift(beads[bead_ref], bead)
             #nip.v5(nip.catE(bead,nip.shift2Dby(bead, myshift),beads[bead_ref]))
-            beads[m] = nip.shift(bead, myshift, axes=im_axes, dampOutside=False)
+            myshift = myshift if shift_subpix else np.round(myshift, 0)
+            beads[m] = nip.shift(bead, myshift, axes=im_axes, dampOutside=True)
 
     # sum to mean
     bead_sum = np.mean(beads, axis=0)
@@ -162,6 +173,7 @@ def extract_multiPSF(im, markers=None, im_axes=(-2, -1), bead_roi=[16, 16], comp
     #bead_sum_com = np.mean(center_of_mass(bead_sum, com_axes=im_axes,im_axes=im_axes, placement='corner'), axis=-1, keepdims=True)
     bead_sum_com = center_of_mass(bead_sum, com_axes=im_axes, im_axes=im_axes, placement='corner')
 
+    beadf_shift = roi_center-bead_sum_com if shift_subpix else np.round(roi_center-bead_sum_com, 0)
     beadf = nip.shift(bead_sum, roi_center-bead_sum_com, axes=im_axes, dampOutside=False)
 
     # sum-normalize to 1

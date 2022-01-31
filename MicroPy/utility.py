@@ -4,7 +4,7 @@
 	@author René Lachmann
 	@email herr.rene.richter@gmail.com
 	@create date 2019 11:53:25
-	@modify date 2021-11-27 17:01:42
+	@modify date 2021-12-17 15:58:17
 	@desc Utility package
 
 ---------------------------------------------------------------------------------------------------
@@ -1113,7 +1113,7 @@ def normto(im, dims=(), method='max', direct=True):
     if not method in func_dict:
         raise ValueError(
             "Normalization method not existent or not chosen properly.")
-    if not im.dtype == float and direct:
+    if not np.issubdtype(im.dtype, np.floating) and direct:
         raise ValueError("Cannot in-place calculate as division process needs different dtype!")
 
     # apply normalization
@@ -1486,7 +1486,8 @@ def split_nd(im, tile_sizes=[8, 8], split_axes=[-1, -2]):
     # done?
     return im, sal
 
-def fill_dict_with_default(din,ddefault):
+
+def fill_dict_with_default(din, ddefault):
     for m in ddefault:
         if not m in din:
             din[m] = ddefault[m]
@@ -1559,6 +1560,36 @@ def get_avg_variance_ft(im_ft: np.ndarray, bbox: list = [10, 10], switch_axes=Tr
         avg_variance = [avg_variance, sel_region]
 
     return avg_variance
+
+
+def calc_pad_from_shifts(shifts, secfac=2):
+    bounded_shifts = np.ceil(np.abs(shifts))
+    shift_signs = np.sign(shifts)
+    pads = []
+    for m, bs in enumerate(bounded_shifts):
+        padh = []
+        for n, bsl in enumerate(bs):
+            padsize = int(np.ceil(secfac*bsl)) if type(secfac) == float else secfac
+            padhh = [padsize, 0] if shift_signs[m, n] <= 0 else [0, padsize]
+            padh.append(padhh)
+        pads.append(padh)
+    return pads
+
+
+def pad_secure_shift(im: nip.image, shifts: np.array, secfac: float = 2):
+    pads = calc_pad_from_shifts(shifts, secfac=secfac)
+    im = pad_boundaries(im, pads)
+    return im, pads
+
+
+def pad_boundaries(im, pad_width):
+    return np.pad(im, pad_width=pad_width, mode='constant', constant_values=0)
+
+
+def unpad(im, pads):
+    '''Not finished yet!'''
+    for m in pads:
+        pass
 
 # %% -----------------------------------------------------
 # ----              VIEWER INTERACTION

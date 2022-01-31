@@ -14,6 +14,35 @@ from .utility import midVallist
 # ------------------------------------------------------------------
 
 
+def ft_correct(im, faxes, im_shape=None, mode='fft', dir='fwd', dtype=None, norm='ortho', use_abs=False):
+    '''
+    In case of RFT: real axis is automatically the first of faxes.
+    '''
+    # create functions for calls
+    #nip.irft(im=x, s=s, axes=faxes[::-1], norm='ortho')
+    #nip.rft(im=x, axes=faxes[::-1], norm='ortho')
+    func_dict = {'bwd': {
+        'rft': lambda x, s: irftnd(im=x, s=s, raxis=faxes[0], faxes=faxes[1:], norm=norm),
+        'fft': lambda x, s: nip.ift(im=x, axes=faxes, norm=norm)},
+        'fwd': {
+        'rft': lambda x, s: rftnd(im=x, raxis=faxes[0], faxes=faxes[1:], norm=norm),
+        'fft': lambda x, s: nip.ft(im=x, axes=faxes, norm=norm)}, }
+
+    # call
+    im_ft = func_dict[dir][mode](x=im, s=im_shape)
+
+    # abs?
+    if use_abs:
+        im_ft = np.abs(im_ft)
+
+    # dtype
+    if not dtype is None:
+        im_ft = im_ft.astype(dtype)
+
+    # done?
+    return im_ft
+
+
 def rft_getshape(im, raxis=None, faxes=None):
     '''
     Returns RFT-and FFT dimensions from input.
@@ -578,3 +607,40 @@ def reduce_shape(im: np.ndarray, lim_dim: int = -2) -> np.ndarray:
     True
     """
     return np.reshape(im, [np.prod(im.shape[:lim_dim]), ]+list(im.shape[lim_dim:]))
+
+# %%
+# ------------------------------------------------------------------
+#                     DAMPING
+# ------------------------------------------------------------------
+def dampEdge(im, rwidth, func=nip.cossqr, func_args=None, ret_mask=False, norm_range=False, in_place=False):
+    norm_range = True if func == np.power else norm_range
+
+    # get mask
+    mask = np.ones(im.shape)
+    damp_region = np.mod(np.round((np.array(im.shape)*np.array(rwidth))),im.shape).astype('int')
+    for d in range(im.ndim):
+        if damp_region[d] > 0:
+            rawrange = np.arange(damp_region[d])
+            rawrange = rawrange/np.max(rawrange) if norm_range else rawrange
+            if func_args is None:
+                if func == nip.cossqr:
+                    func_args = {'length': damp_region[d], 'x0': damp_region[d]}
+                elif func == nip.gaussf:
+                    func_args = {'kernelSigma': damp_region[d]}
+                elif func == np.power:
+                    func_args = [10, ]
+            mask.swapaxes(0, d)[:damp_region[d]] *= np.reshape(
+                func(rawrange, *func_args), [damp_region[d], ]+[1, ]*(mask.ndim-1))
+            mask.swapaxes(0, d)[-damp_region[d]:] *= np.reshape(func(rawrange[::-1],
+                                                                     *func_args), [damp_region[d], ]+[1, ]*(mask.ndim-1))
+
+    # apply mask in-place
+    if in_place:
+        im *= mask
+    else:
+        im = im*mask
+
+    if ret_mask:
+        return im, mask
+    else:
+        return im

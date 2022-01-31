@@ -58,8 +58,8 @@ def default_dict_tiling(imshape: Union[tuple, list, np.ndarray],
 
     # generate dict
     tdd = {'data_shape': imshape,
-           'tile_shape': np.array(list(imshape[:-(len(basic_shape))]) + basic_shape),
-           'overlap_rel': np.array([0.0, ]*(len(imshape)-len(basic_shape))+basic_roverlap),
+           'tile_shape': np.array(list(imshape[:-(len(basic_shape))]) + list(basic_shape)),
+           'overlap_rel': np.array([0.0, ]*(len(imshape)-len(basic_shape))+list(basic_roverlap)),
            'window': 'hann',
            'diffdim_im_psf': None,
            'atol': 1e-10}

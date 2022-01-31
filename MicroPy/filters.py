@@ -4,7 +4,7 @@
 	@author René Lachmann
 	@email herr.rene.richter@gmail.com
 	@create date 2019-11-25 10:26:14
-	@modify date 2021-08-03 15:37:10
+	@modify date 2021-12-11 08:55:13
 	@desc The Filters are build such that they assume to receive an nD-stack, but they only operate in a 2D-manner (meaning: interpreting the stack as a (n-2)D series of 2D-images). Further, they assume that the last two dimensions (-2,-1) are the image-dimensions. The others are just for stacking.
 
 ---------------------------------------------------------------------------------------------------
@@ -442,13 +442,13 @@ def stf_basic(im, faxes=(-2, -1), printout=False, **kwargs):
     im_res = list()
     im_res.append(stf_max(im, faxes=faxes)[0])
     im_res.append(stf_min(im, faxes=faxes)[0])
+    im_res.append(np.sum(im, axis=tuple(faxes)))
     im_res.append(stf_mean(im, faxes=faxes)[0])
     im_res.append(stf_median(im, faxes=faxes)[0])
     im_res.append(stf_var(im, faxes=faxes)[0])
     im_res.append(stf_normvar(im, faxes=faxes)[0])
     if printout == True:
-        print("Basic analysis yields:\nMAX=\t{}\nMIN=\t{}\nMEAN=\t{}\nMEDIAN=\t{}\nVAR=\t{}\nNVAR=\t{}".format(
-            im_res[0], im_res[1], im_res[2], im_res[3], im_res[4], im_res[5]))
+        print("Basic analysis yields:\nMAX=\t{}\nMIN=\t{}\nSUM=\t{}\nMEAN=\t{}\nMEDIAN=\t{}\nVAR=\t{}\nNVAR=\t{}".format(*im_res))
     return np.array(im_res), [None, ]
 
 
