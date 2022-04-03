@@ -14,6 +14,7 @@ from matplotlib.ticker import FormatStrFormatter
 from tifffile import imread as tifimread
 from typing import Optional, Tuple, List, Union, Generator, Callable
 from .utility import normNoff, add_multi_newaxis, transpose_arbitrary, fill_dict_with_default
+import subprocess
 # mipy imports
 
 # %% -------------------------------------------
@@ -604,7 +605,7 @@ def default_coord_axis(imshape):
     return {'ax': 0, 'apos': [[int(imshape[-2]*0.95), int(imshape[-1]*0.05)], ]*2, 'alen': [[-imshape[-2]//3, 0], [0, imshape[-2]//3]], 'acolor': [1, 1, 1], 'text': ['y', 'x'], 'tcolor': [1, 1, 1], 'tsize': None}
 
 
-def print_stack2subplot(imstack, im_minmax=[None, None], imdir='row', inplace=False, plt_raster=[4, 4], plt_format=[8, 6], title=None, titlestack=True, colorbar=True, axislabel=True, laytight=True, nbrs=True, nbrs_color=[1, 1, 1], nbrs_size=None, nbrs_offsets=None, xy_norm=None, aspect=None, use_axis=None, plt_show=False, gridspec_kw=None, yx_ticks=None, axticks_format=None, grid_param=None, norm_imstack=True, coord_axis=[]):
+def print_stack2subplot(imstack, im_minmax=[None, None], imdir='row', inplace=False, plt_raster=[4, 4], plt_format=[8, 6], title=None, titlestack=True, colorbar=True, axislabel=True, laytight=True, nbrs=True, nbrs_list=97, nbrs_color=[1, 1, 1], nbrs_size=None, nbrs_offsets=None, xy_norm=None, aspect=None, use_axis=None, plt_show=False, gridspec_kw=None, yx_ticks=None, axticks_format=None, grid_param=None, norm_imstack=True, coord_axis=[]):
     '''
     Plots an 3D-Image-stack as set of subplots
     Based on this: https://stackoverflow.com/a/46616645
@@ -627,17 +628,21 @@ def print_stack2subplot(imstack, im_minmax=[None, None], imdir='row', inplace=Fa
         title = datetime.now().strftime("%d.%m.%Y %H:%M:%S")
 
     # imstack alignment in final image
-    if imdir == 'col':
-        nbrs_list = np.transpose(np.reshape(
-            np.arange(np.prod(plt_raster)), plt_raster[::-1])).flatten()+97
+    if type(nbrs_list) == int:
+        use_gen_nbrs_list = True
+        if imdir == 'col':
+            nbrs_list = np.transpose(np.reshape(
+                np.arange(np.prod(plt_raster)), plt_raster[::-1])).flatten()+nbrs_list
 
-    elif type(imdir) == Union[list, tuple, np.ndarray]:
-        # rethink this option!
-        # for m, imd in enumerate(imdir):
-        #    imstack_list.append(imstack[imd])
-        nbrs_list = np.array(imdir)
+        elif type(imdir) in [list, tuple, np.ndarray]:
+            # rethink this option!
+            # for m, imd in enumerate(imdir):
+            #    imstack_list.append(imstack[imd])
+            nbrs_list = np.array(imdir)
+        else:
+            nbrs_list = np.arange(np.prod(plt_raster))+nbrs_list
     else:
-        nbrs_list = np.arange(np.prod(plt_raster))+97
+        use_gen_nbrs_list = False
 
     # create figure (fig), and array of axes (ax)-> gridspec_kw = {'height_ratios':[2,2,1,1]}
     if colorbar == 'global':
@@ -739,7 +744,8 @@ def print_stack2subplot(imstack, im_minmax=[None, None], imdir='row', inplace=Fa
         if nbrs:
             # xoff = int(x_offset/imstack[0].shape[-1]*imstack[m].shape[-1])
             # yoff = int(y_offset/imstack[0].shape[-2]*imstack[m].shape[-2])
-            axm.text(x_offset, y_offset, chr(nbrs_list[m])+')', fontsize=nbrs_psize,
+            aletter = chr(nbrs_list[m]) if use_gen_nbrs_list else nbrs_list[m]
+            axm.text(x_offset, y_offset, aletter+')', fontsize=nbrs_psize,
                      color=nbrs_color, fontname='Helvetica', weight='normal')
 
         if not axticks_format is None:
@@ -923,9 +929,18 @@ def print_stack2subplot(imstack, im_minmax=[None, None], imdir='row', inplace=Fa
 #
 
 
-def stack2plot(x, ystack, refs=None, title=None, xl=None, xlabel=None, ylabel=None, colors=None, mmarker='', mlinestyle='-', mlinewidth=None, legend=[1, 1.05], xlims=None, ylims=None, ax_inside=None, figsize=(8, 8), show_plot=True, ptight=True, ax=None, nbrs=True, nbrs_color=[1, 1, 1], nbrs_size=None, nbrs_text=None, err_bar=None, err_capsize=3):
+def stack2plot(x:np.ndarray, ystack:Union[list,np.ndarray], refs:list=None, title:str=None, xl:list=None, xlabel:str=None, ylabel:str=None, colors:list=None, mmarker:str='', mlinestyle:str='-', mlinewidth:list=None, legend:Union[str,list]=[1, 1.05], xlims:Union[list,np.ndarray]=None, ylims:Union[list,np.ndarray]=None, ax_inside:dict=None, figsize:tuple=(8, 8), show_plot:bool=True, ptight:bool=True, ax=None, nbrs:bool=True, nbrs_color:list=[1, 1, 1], nbrs_size:float=None, nbrs_text:str=None, err_bar:Union[list,np.ndarray]=None, err_capsize:int=3, fonts_labels:list=[None,],fonts_sizes:list=[None,]) -> tuple:
     '''
     Prints a 1d-"ystack" into 1 plot and assigns legends + titles.
+
+    returns fig,ax
+
+    Example:
+    =======
+    fig_size=(8,8)
+    fonts_size = np.max(fig_size)*2
+    fonts_labels = ['title', 'x', 'y', 'xtick', 'ytick']
+    fonts_sizes = [fonts_size,fonts_size,fonts_size,[fonts_size*0.75,]*9,[fonts_size*0.75,]*9]
     '''
     # sanity
     if not mlinewidth is None and not type(mlinewidth) in [np.ndarray, list, tuple]:
@@ -941,6 +956,9 @@ def stack2plot(x, ystack, refs=None, title=None, xl=None, xlabel=None, ylabel=No
         ax = plt.subplot(111)
     else:
         fig1 = ax.get_figure()
+
+    # parameters
+    legend_font_size = None
 
     # plot
     for m in range(len(ystack)):
@@ -960,11 +978,8 @@ def stack2plot(x, ystack, refs=None, title=None, xl=None, xlabel=None, ylabel=No
         if not mlinewidth is None:
             line.set_linewidth(mlinewidth[m])
         line.set_antialiased(False)
-    if type(legend) == list:
-        ax.legend(bbox_to_anchor=legend)
-    elif type(legend) == str:
-        ax.legend(loc=legend)
 
+    # set labels and ticks
     ax.set_xlabel(xlabel)
     if not xl is None:
         ax.set_xticks(xl[0])
@@ -978,6 +993,27 @@ def stack2plot(x, ystack, refs=None, title=None, xl=None, xlabel=None, ylabel=No
     ylims_dist = ylims[1]-ylims[0]
     ax.set_xlim(xlims)
     ax.set_ylim(ylims)
+
+    # font sizes
+    if not fonts_labels[0] is None:
+        if not fonts_sizes[0] is None:
+            fonts_dict={'title':ax.title, 'x':ax.xaxis.label, 'y': ax.yaxis.label, 'xtick':
+                    ax.get_xticklabels(),'ytick': ax.get_yticklabels(), 'legend':'legend'}
+            if len(fonts_sizes)<len(fonts_labels):
+                fonts_sizes=[fonts_sizes[0],]*len(fonts_labels)
+            for m,item in enumerate(fonts_labels):
+                if type(fonts_dict[item])==list:
+                    for n,itemitem in enumerate(fonts_dict[item]):
+                        if type(fonts_sizes[m])==list:
+                            fs = fonts_sizes[m][len(fonts_sizes[m])-1] if len(fonts_sizes[m])< n else fonts_sizes[m][n]
+                            itemitem.set_fontsize(fs)
+                        else: 
+                            itemitem.set_fontsize(fonts_sizes[m]*0.75)
+                else:
+                    if item == 'legend':
+                        legend_font_size=fonts_sizes[m]*0.75
+                    else:
+                        fonts_dict[item].set_fontsize(fonts_sizes[m])
 
     if not ax_inside is None:
         # example: ax_inside={"x":-15,"y":"-22"}
@@ -994,6 +1030,12 @@ def stack2plot(x, ystack, refs=None, title=None, xl=None, xlabel=None, ylabel=No
         nbrs_text = chr(97+np.random.randint(26))+')' if nbrs_text is None else nbrs_text
         ax.text(x_offset, y_offset, nbrs_text, fontsize=nbrs_psize,
                 color=nbrs_color, fontname='Helvetica', weight='normal')
+ 
+    # legend
+    if not legend is None:
+        legs=[None,legend] if type(legend) == list else [legend,None]
+        ax.legend(loc=legs[0],bbox_to_anchor=legs[1], fontsize=legend_font_size)
+
     if ptight:
         plt.tight_layout()
 
@@ -1079,10 +1121,43 @@ def plot_save(ppointer, save_name, save_format='png', dpi=300):
                      dpi=dpi, bbox_inches='tight', format=save_format)
 
 
+def crop_pdf(file_path, crop_param=None, file_path_cropped=None):
+    print(f"Cropping file: {file_path}")
+    call_list = []
+
+    # add cropper
+    call_list.append("/usr/bin/pdfcrop")
+
+    # add margin-params
+    if not crop_param is None:
+        if 'margins' in crop_param:
+            call_list.append("--margins '" + " ".join(crop_param['margins']) + "' ")
+
+    # add file_path
+    call_list.append(file_path)
+
+    # add name of output or overwrite
+    if file_path_cropped is None:
+        call_list.append(file_path)
+    else:
+        call_list.append(file_path_cropped)
+
+    # eval
+    subprocess.run(call_list, stdin=None,
+                   stdout=None, stderr=None, shell=False)
+
+
+def save_n_crop(fig, fname:str, dpi:int=300, crop_me:bool=True, crop_param:str=None, file_path_cropped:str=None):
+    fig.savefig(fname=fname, format=fname[-3:], dpi=dpi)
+    if crop_me:
+        crop_pdf(fname, crop_param=crop_param, file_path_cropped=file_path_cropped)
+
 # %% ------------------------------------------------------
 # ---            RESHAPE FOR COOL DISPLAY               ---
 # ---------------------------------------------------------
 #
+
+
 def get_tiling(im, form='quadratic'):
     '''
         Gets the 2D-tiling-shape to concate an input image.
