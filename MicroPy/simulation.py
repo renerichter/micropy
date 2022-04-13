@@ -626,6 +626,8 @@ def calculatePSF(obj, psf_params=None, method='brightfield', amplitude=False, **
 
     '''
     psfp = False
+    do_norm = None if not 'do_norm' in kwargs else kwargs['do_norm']
+    
     if psf_params == None:
         psf_params = nip.PSF_PARAMS()
         psf_params.wavelength = 488
@@ -674,7 +676,7 @@ def calculatePSF(obj, psf_params=None, method='brightfield', amplitude=False, **
 
         # calculate resulting ISM-PSF
         psf_eff, otf_eff, psfdet_array, shifts = calculatePSF_ism(
-            psfex=psfex, psfdet=psfdet, psfdet_array=psfdet_array, shift_offset=shift_offset, nbr_det=nbr_det, center=center, fmodel=fmodel, pinhole=pinhole, faxes=faxes)
+            psfex=psfex, psfdet=psfdet, psfdet_array=psfdet_array, shift_offset=shift_offset, nbr_det=nbr_det, center=center, fmodel=fmodel, pinhole=pinhole, faxes=faxes,do_norm=do_norm)
         return psf_eff, otf_eff, psfex, psfdet_array, shifts
 
     elif method == 'sax':

@@ -605,7 +605,7 @@ def default_coord_axis(imshape):
     return {'ax': 0, 'apos': [[int(imshape[-2]*0.95), int(imshape[-1]*0.05)], ]*2, 'alen': [[-imshape[-2]//3, 0], [0, imshape[-2]//3]], 'acolor': [1, 1, 1], 'text': ['y', 'x'], 'tcolor': [1, 1, 1], 'tsize': None}
 
 
-def print_stack2subplot(imstack, im_minmax=[None, None], imdir='row', inplace=False, plt_raster=[4, 4], plt_format=[8, 6], title=None, titlestack=True, colorbar=True, axislabel=True, laytight=True, nbrs=True, nbrs_list=97, nbrs_color=[1, 1, 1], nbrs_size=None, nbrs_offsets=None, xy_norm=None, aspect=None, use_axis=None, plt_show=False, gridspec_kw=None, yx_ticks=None, axticks_format=None, grid_param=None, norm_imstack=True, coord_axis=[]):
+def print_stack2subplot(imstack, im_minmax=[None, None], imdir='row', inplace=False, plt_raster=[4, 4], plt_format=[8, 6], title=None, titlestack=True, colorbar=True, axislabel=True, laytight=True, nbrs=True, nbrs_list=97, nbrs_color=[1, 1, 1], nbrs_size=None, nbrs_offsets=None, xy_norm=None, aspect=None, use_axis=None, plt_show=False, gridspec_kw=None, yx_ticks=None, axticks_format=None, grid_param=None, norm_imstack=True, coord_axis=[],ax_ret=False):
     '''
     Plots an 3D-Image-stack as set of subplots
     Based on this: https://stackoverflow.com/a/46616645
@@ -809,7 +809,11 @@ def print_stack2subplot(imstack, im_minmax=[None, None], imdir='row', inplace=Fa
 
     if plt_show:
         plt.show()
-    return fig
+    
+    if ax_ret:
+        return fig,ax
+    else:
+        return fig
 
 # not finished yet and maybe even a bad idea...
 # class Draw():
@@ -929,7 +933,7 @@ def print_stack2subplot(imstack, im_minmax=[None, None], imdir='row', inplace=Fa
 #
 
 
-def stack2plot(x:np.ndarray, ystack:Union[list,np.ndarray], refs:list=None, title:str=None, xl:list=None, xlabel:str=None, ylabel:str=None, colors:list=None, mmarker:str='', mlinestyle:str='-', mlinewidth:list=None, legend:Union[str,list]=[1, 1.05], xlims:Union[list,np.ndarray]=None, ylims:Union[list,np.ndarray]=None, ax_inside:dict=None, figsize:tuple=(8, 8), show_plot:bool=True, ptight:bool=True, ax=None, nbrs:bool=True, nbrs_color:list=[1, 1, 1], nbrs_size:float=None, nbrs_text:str=None, err_bar:Union[list,np.ndarray]=None, err_capsize:int=3, fonts_labels:list=[None,],fonts_sizes:list=[None,]) -> tuple:
+def stack2plot(x:np.ndarray, ystack:Union[list,np.ndarray], refs:list=None, title:str=None, xl:list=None, xlabel:str=None, ylabel:str=None, colors:list=None, mmarker:str='', mlinestyle:str='-', mlinewidth:list=None, legend:Union[str,list]=[1, 1.05], legend_col:int=1,xlims:Union[list,np.ndarray]=None, ylims:Union[list,np.ndarray]=None, ax_inside:dict=None, figsize:tuple=(8, 8), show_plot:bool=True, ptight:bool=True, ax=None, nbrs:bool=True, nbrs_color:list=[1, 1, 1], nbrs_size:float=None, nbrs_text:str=None, err_bar:Union[list,np.ndarray]=None, err_capsize:int=3, fonts_labels:list=[None,],fonts_sizes:list=[None,]) -> tuple:
     '''
     Prints a 1d-"ystack" into 1 plot and assigns legends + titles.
 
@@ -945,6 +949,10 @@ def stack2plot(x:np.ndarray, ystack:Union[list,np.ndarray], refs:list=None, titl
     # sanity
     if not mlinewidth is None and not type(mlinewidth) in [np.ndarray, list, tuple]:
         mlinewidth = [mlinewidth, ]*len(ystack)
+    if not type(mlinestyle) in [np.ndarray, list, tuple]:
+        mlinestyle = [mlinestyle, ]*len(ystack)
+    if not type(mmarker) in [np.ndarray, list, tuple]:
+        mmarker = [mmarker, ]*len(ystack)
 
     if xl == None and type(x[0]) in [str, np.str_]:
         xl = [np.arange(len(x)), np.array(x)]
@@ -969,11 +977,11 @@ def stack2plot(x:np.ndarray, ystack:Union[list,np.ndarray], refs:list=None, titl
         title = datetime.now().strftime("%Y%M%D") if title is None else title
         if err_bar is None:
             line, = ax.plot(x, ystack[m], label=label, color=colorse,
-                            marker=mmarker, linestyle=mlinestyle)
+                            marker=mmarker[m], linestyle=mlinestyle[m])
             line.set_clip_on(False)
         else:
             line = ax.errorbar(x, ystack[m], err_bar[m], label=label, color=colorse,
-                               marker=mmarker, linestyle=mlinestyle, capsize=err_capsize)
+                               marker=mmarker[m], linestyle=mlinestyle[m], capsize=err_capsize)
             line.set_clip_on(False)
         if not mlinewidth is None:
             line.set_linewidth(mlinewidth[m])
@@ -1034,7 +1042,7 @@ def stack2plot(x:np.ndarray, ystack:Union[list,np.ndarray], refs:list=None, titl
     # legend
     if not legend is None:
         legs=[None,legend] if type(legend) == list else [legend,None]
-        ax.legend(loc=legs[0],bbox_to_anchor=legs[1], fontsize=legend_font_size)
+        ax.legend(loc=legs[0],bbox_to_anchor=legs[1], fontsize=legend_font_size,ncol=legend_col)
 
     if ptight:
         plt.tight_layout()

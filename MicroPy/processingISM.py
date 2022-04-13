@@ -595,6 +595,7 @@ def recon_sheppardShift(im, shift_map, method='parallel', use_copy=False, shift_
     1) implement iterative shifting for nD-images by assuring shiftmap has same dimensionality as image.
     """
     # work on copy to keep original?
+    im_origshape=np.copy(im.shape)
     imshifted = nip.image(np.copy(im)) if use_copy else im
 
     # pad image before shifting
@@ -603,12 +604,26 @@ def recon_sheppardShift(im, shift_map, method='parallel', use_copy=False, shift_
 
     # method to be used
     if method == 'parallel':
-        imshifted, _ = shiftby_list(im, shifts=shift_map, listaxis=0)
+        imshifted, _ = shiftby_list(im, shifts=shift_map, listaxis=0)       
     else:
-        imshifted = nip.image(
-            np.array([nip.shift(im[m], shift_map[m]) for m in range(shift_map.shape[0])]))
-        imshifted.pixelsize = im.pixelsize
+        #prepare arrays
+        shift_axes=tuple(np.arange(-shift_map.shape[1],0))
+        im=np.squeeze(im)
+        imshifted=np.squeeze(imshifted)
+        dimdiff = im.ndim-1 - shift_map.shape[-1]
+        if dimdiff > 0:
+            shifts = np.zeros(list(shift_map.shape[:-1])+[shift_map.shape[-1]+dimdiff,])
+            shifts[:,-shift_map.shape[-1]:]=shift_map
+        else:
+            shifts=shift_map
+            
+        #shift
+        for m in range(shift_map.shape[0]):
+            imshifted[m] = nip.shift(im=im[m],delta=shifts[m])#shifts,axes=shift_axes#shift_map
 
+        # fixup shape
+        imshifted = np.reshape(imshifted,im_origshape)
+        imshifted.pixelsize = im.pixelsize
     # unpad
     if shift_pad:
         pass

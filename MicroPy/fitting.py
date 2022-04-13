@@ -119,8 +119,8 @@ def extract_multiPSF(im, markers=None, im_axes=(-2, -1), bead_roi=[16, 16], comp
 
     Example
     -------
-    >>> obj = mipy.generate_obj_beads([128,128], [2,5], 20, 10)
-    >>> gaussfit, residuum, beads, para, markers = extract_multiPSF(obj, markers=None, im_axes=(-2, -1), bead_roi=[16, 16], compare=False)
+    >>> obj = mipy.generate_obj_beads([128,128], [2,5], 20, 10).astype('float32')
+    >>> beadf, res_dict = mipy.extract_multiPSF(obj, markers=None, im_axes=(-2, -1), bead_roi=[16, 16], compare=False)
 
     See Also
     --------
@@ -193,6 +193,9 @@ def extract_multiPSF(im, markers=None, im_axes=(-2, -1), bead_roi=[16, 16], comp
             slice_copy = slicing[m]
             slicing[m] = beadf.shape[m]//2
             parah, gaussfith = nip.fit_gauss2D(beadf[slicing])
+            #make sure sigmas are positive
+            parah[3]=np.abs(parah[3])
+            parah[4]=np.abs(parah[4])
             para.append(parah)
             gaussfit.append(gaussfith)
             slicing[m] = slice_copy
@@ -218,7 +221,7 @@ def extract_multiPSF(im, markers=None, im_axes=(-2, -1), bead_roi=[16, 16], comp
 
     # combine to result
     res_dict = {'gaussfit': gaussfit, 'residuum': residuum, 'beads': beads,
-                'mpara': mpara, 'markers': markers, 'bead_comp': bead_comp}
+                'para': para, 'markers': markers, 'bead_comp': bead_comp}
 
     # done?
     return beadf, res_dict

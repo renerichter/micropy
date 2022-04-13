@@ -306,6 +306,32 @@ def noise_normalize(im, mode='fft'):
     # done?
     return im
 
+def noise_ft_floorval(im_ft:nip.image,axes:tuple=(-2,-1),roi:list=[4,4]):
+    '''
+    Calculate noise floor from average of region around corners of image.
+    Implemented for 2d for now
+    '''
+    # assure array order
+    axes=np.sort(axes)[::-1]
+    for m,ax in enumerate(axes):
+        im_ft=np.swapaxes(im_ft,-(m+1),ax)
+    
+    # get shapes
+    ishape = np.array(im_ft.shape)[-len(roi):]
+    roi = np.array(roi).astype('int')
+
+    #from itertools import combinations
+    #[0,0]+list(combinations(([0,ishape[0]],[0,ishape[1]]),2))
+    
+    # for 2D for now -> extract regions and calculate mean
+    roih=roi//2
+    floorval = np.mean([nip.extract(im_ft,roi,ishape-roih),
+            nip.extract(im_ft,roi,roih),
+            nip.extract(im_ft,roi,[roih[0],ishape[1]-roih[1]]),
+            nip.extract(im_ft,roi,[ishape[0]-roih[0],roih[1]])],axis=tuple([0,]+list(axes)))
+    
+    return floorval
+
 
 def energy_regain(recon, groundtruth, atol=1e-20, snorm=True, use_indiv_abs=False, mode='fft'):
     # make sure distance between two images cannot be bigger than 1

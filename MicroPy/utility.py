@@ -4,7 +4,7 @@
 	@author René Lachmann
 	@email herr.rene.richter@gmail.com
 	@create date 2019 11:53:25
-	@modify date 2021-12-17 15:58:17
+	@modify date 2022-04-12 14:56:40
 	@desc Utility package
 
 ---------------------------------------------------------------------------------------------------
@@ -199,7 +199,7 @@ def image_getshift(im, im_ref, prec=100):
     return shift
 
 
-def findshift_stack(im1, imstack, prec=100, use_pcc=True, printout=False):
+def findshift_stack(im1, imstack, prec=100, use_pcc=True, printout=False, verbose=True):
     """Wrapper for findshift-routine  for stacks. Assumes 0th-dimension to be stack dimension. 
 
     Parameters
@@ -245,7 +245,10 @@ def findshift_stack(im1, imstack, prec=100, use_pcc=True, printout=False):
         diffphases.append(diffphase)
         tends.append(tend)
 
-    return shifts, errors, diffphases, tends
+    if verbose:
+        return shifts, errors, diffphases, tends
+    else: 
+        return shifts
 
 
 def findshift(im1, im2, prec=100, use_pcc=True, printout=False):
@@ -295,7 +298,7 @@ def findshift(im1, im2, prec=100, use_pcc=True, printout=False):
     return shift, error, diffphase, tend
 
 
-def shiftby_list(psf, shifts=None, shift_offset=[1, 1], shift_method='uvec', shift_axes=[-2, -1], nbr_det=[3, 3], center=None, retreal=True, listaxis=None):
+def shiftby_list(im, shifts=None, shift_offset=[1, 1], shift_method='uvec', shift_axes=[-2, -1], nbr_det=[3, 3], center=None, retreal=True, listaxis=None,pad_shifts=True):
     """Shifts an image by a list of shift-vectors.
     If shifts not given, calculates an equally spaced rect-2D-array for nbr_det (array) of  with shift_offset spacing in pixels between them.
     If shifts given, uses the shape (nbr_det) to calculate the distances between detectors.
@@ -303,8 +306,8 @@ def shiftby_list(psf, shifts=None, shift_offset=[1, 1], shift_method='uvec', shi
 
     Parameters
     ----------
-    psf : image
-        3D-(Detection)PSF
+    im : image
+        3D-(Detection)im
     shifts : np.ndarray, optional
         shifts to be applied, by default []
     shift_axes : list, optional
@@ -316,15 +319,15 @@ def shiftby_list(psf, shifts=None, shift_offset=[1, 1], shift_method='uvec', shi
     shift_method : str, optional
         see gen_shift function for more info, by default 'uvec'
     retreal : bool, optional
-        whether result should be real or complex, by default True
+        whether result should be real (via abs) or complex, by default True
     listaxis: int, optional
         list-axis -> if given, uses existing image dimension and does not create a now axis for listing, by default None
 
 
     Returns
     -------
-    psf_res : nip.image
-        list of N+1 DIM of shifted PSF
+    im_res : nip.image
+        list of N+1 DIM of shifted im
     shifts : list
         shifts applied
 
@@ -342,6 +345,7 @@ def shiftby_list(psf, shifts=None, shift_offset=[1, 1], shift_method='uvec', shi
     """
     # parameters
     asta = 0 if listaxis is not None else 1
+    im_origshape = np.copy(im.shape)
 
     # sanity - calculate shifts if not provided
     if shifts is None:
@@ -358,44 +362,56 @@ def shiftby_list(psf, shifts=None, shift_offset=[1, 1], shift_method='uvec', shi
         if shift_method in ['uvec', 'uveci']:
             shift_offset = np.array(shift_offset)
             if shift_offset.ndim is not 2:
-                shifth = np.identity(psf.ndim)
+                shifth = np.identity(im.ndim)
                 shifti = []
                 for n, axes in enumerate(shift_axes):
                     shifti.append(shifth[axes]*shift_offset[n])
                 shift_offset = np.array(shifti)
 
         # generate shift
-        shifts = gen_shift(method=shift_method, uvec=shift_offset, nbr=nbr_det, center=center)
+        shifts = gen_shift(method=shift_method, uvec=shift_offset, nbr=nbr_det, center=center).astype(im.dtype)
+    else:
+        shifts = shifts.astype(im.dtype)
 
     # assure use of positive numbers
     shift_axes = np.array(shift_axes)
-    shift_axes[shift_axes < 0] += psf.ndim
-    dimdiff = psf.ndim - len(shifts[0])
+    shift_axes[shift_axes < 0] += im.ndim
+    dimdiff = im.ndim - len(shifts[0])
+
+    # add padding
+    if pad_shifts:
+        im, pads = pad_secure_shift(im,shifts=shifts,secfac=2)
 
     # pre-allocate for speed-up
-    prl_shape = (len(shifts),)+psf.shape if listaxis is None else psf.shape
-    phase_ramp_list = np.ones(prl_shape, dtype=np.complex_)
+    prl_shape = (len(shifts),)+im.shape if listaxis is None else im.shape
+    phase_ramp_dtype = np.complex64 if im.dtype=='float32' else np.complex128
+    phase_ramp_list = np.ones(prl_shape,dtype=phase_ramp_dtype) 
+    
     # calculate shifts
     for m in shift_axes:
         eshifts = add_multi_newaxis(
-            shifts[:, m-dimdiff], [-1, ] * (psf.ndim-1+asta))
+            shifts[:, m-dimdiff], [-1, ] * (im.ndim-1+asta))
         phase_ramp_list *= np.exp(-1j*2*np.pi * eshifts *
-                                  r1d(psf.shape, m, psf.pixelsize, add_stackaxis=asta))
+                                  r1d(im.shape, m, im.pixelsize, add_stackaxis=asta).astype(im.dtype))
 
     # apply shifts in FT-space and transform back
-    psf_res = nip.ift(nip.ft(psf, axes=shift_axes) *
-                      phase_ramp_list, axes=shift_axes+asta)
+    im_res = nip.ift(nip.ft(im, axes=shift_axes).astype(phase_ramp_list.dtype) *
+                      phase_ramp_list, axes=shift_axes+asta).astype(phase_ramp_list.dtype)
 
     if retreal:
-        psf_res = psf_res.real
+        im_res = np.abs(im_res) #.real
+
+    # undo padding and extract core
+    if pad_shifts:
+        im_res = nip.extract(im_res,im_origshape) if retreal else nip.extractFt(im,im_origshape)
 
     # correct pixelsizes
-    if hasattr(psf_res, 'pixelsize'):
-        if psf_res.pixelsize is not None:
-            psf_res.pixelsize[1:] = psf.pixelsize if not psf_res.pixelsize[1:
-                                                                           ] == psf.pixelsize else psf_res.pixelsize[1:]
+    if hasattr(im_res, 'pixelsize'):
+        if im_res.pixelsize is not None:
+            im_res.pixelsize[1:] = im.pixelsize if not im_res.pixelsize[1:
+                                                                           ] == im.pixelsize else im_res.pixelsize[1:]
 
-    return psf_res, shifts
+    return im_res, shifts
 
 
 def r1d(im_shape, ramp_dim, pixelsize, add_stackaxis=1):
@@ -1562,27 +1578,39 @@ def get_avg_variance_ft(im_ft: np.ndarray, bbox: list = [10, 10], switch_axes=Tr
     return avg_variance
 
 
-def calc_pad_from_shifts(shifts, secfac=2):
+def calc_pad_from_shifts(imdim,shifts, secfac=2.0):
+    '''
+    Assumes shift axes are the last axes.
+    '''
     bounded_shifts = np.ceil(np.abs(shifts))
     shift_signs = np.sign(shifts)
     pads = []
     for m, bs in enumerate(bounded_shifts):
         padh = []
         for n, bsl in enumerate(bs):
-            padsize = int(np.ceil(secfac*bsl)) if type(secfac) == float else secfac
+            padsize = int(np.ceil(secfac*bsl)) if type(secfac) in [float,int] else secfac
             padhh = [padsize, 0] if shift_signs[m, n] <= 0 else [0, padsize]
             padh.append(padhh)
+        padh=[[0,0],]*(imdim-len(padh))+padh
         pads.append(padh)
     return pads
 
 
-def pad_secure_shift(im: nip.image, shifts: np.array, secfac: float = 2):
-    pads = calc_pad_from_shifts(shifts, secfac=secfac)
-    im = pad_boundaries(im, pads)
+def pad_secure_shift(im: nip.image, shifts: np.array, secfac: float = 2.0):
+    pixelsize=im.pixelsize
+    pads = np.array(calc_pad_from_shifts(im.ndim,shifts, secfac=secfac))
+    im = nip.image(pad_boundaries(im, pads))
+    im.pixelsize=pixelsize
     return im, pads
 
 
 def pad_boundaries(im, pad_width):
+
+    # take global pads
+    if pad_width.ndim > 2:
+        pad_width = np.reshape(pad_width,[np.prod(pad_width.shape[:-2]),]+list(pad_width.shape[-2:]))
+        pad_width = np.max(pad_width,axis=0)
+    
     return np.pad(im, pad_width=pad_width, mode='constant', constant_values=0)
 
 
