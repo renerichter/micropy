@@ -309,19 +309,42 @@ def loadPrepent(file_list, idx=0, channel=1, prepent_path=False, exp_path=None):
 class SPEloader(object):
     '''
     From:  https://scipy-cookbook.readthedocs.io/items/Reading_SPE_files.html
+    extended with: https://github.com/stuwilkins/pyspec/blob/7300a7f9753f28b504ce5e2dab9c0762a6b36008/pyspec/ccd/files.py#L175
     '''
+
+    _datastart = 4100
+    _datemax = 10
+    _timemax = 7
 
     def __init__(self, fname):
         self._fid = open(fname, 'rb')
         self._load_size()
+        #self._load_date_time()
 
     def _load_size(self):
         self._xdim = np.int64(self.read_at(42, 1, np.int16)[0])
         self._ydim = np.int64(self.read_at(656, 1, np.int16)[0])
-
+        self._zdim = np.int64(self.read_at(1446, 1, np.uint32)[0])
+        dxdim = np.int64(self.read_at(6, 1, np.int16)[0])
+        dydim = np.int64(self.read_at(18, 1, np.int16)[0])
+        vxdim = np.int64(self.read_at(14, 1, np.int16)[0])
+        vydim = np.int64(self.read_at(16, 1, np.int16)[0])
+        self._size = (self._zdim, self._ydim, self._xdim)
+        self._chipSize = (dydim, dxdim)
+        self._vChipSize = (vydim, vxdim)
+        dt = np.int16(self.read_at(108, 1, np.int16)[0])
+        data_types = (np.float32, np.int32, np.int16, np.uint16)
+        if (dt > 3) or (dt < 0):
+            raise Exception("Unknown data type")
+        self._dataType = data_types[dt]
+    
+    def _readAtString(self, pos, size):
+        self._fid.seek(pos)
+        return self._fid.read(size).rstrip(chr(0))
+    
     def _load_date_time(self):
-        rawdate = self.read_at(20, 9, np.int8)
-        rawtime = self.read_at(172, 6, np.int8)
+        rawdate = self.read_at(20, self._datemax, np.int8)
+        rawtime = self.read_at(172, self._timemax, np.int8)
         strdate = ''
         for ch in rawdate:
             strdate += chr(ch)
@@ -330,15 +353,28 @@ class SPEloader(object):
         self._date_time = time.strptime(strdate, "%d%b%Y%H%M%S")
 
     def get_size(self):
-        return (self._xdim, self._ydim)
+        return self._size
+
+    def get_datetime(self):
+        return self._date_time
 
     def read_at(self, pos, size, ntype):
         self._fid.seek(pos)
         return np.fromfile(self._fid, ntype, size)
 
+    def _readArray(self):
+        self._fid.seek(self._datastart)
+        self._array = np.fromfile(self._fid, dtype = self._dataType, count = -1)
+        size_diff=np.abs(len(self._array)-np.prod(self._size))
+        if size_diff>0:
+            self._array_leftover=self._array[-size_diff:]
+            self._array=self._array[:-size_diff]
+
+        self._array = self._array.reshape(self._size)
+
     def load_img(self):
-        img = self.read_at(4100, self._xdim * self._ydim, np.uint16)
-        return img.reshape((self._ydim, self._xdim))
+        img = self.read_at(4100, self._xdim * self._ydim * self._zdim, np.uint16)
+        return img.reshape((self._zdim,self._ydim, self._xdim))
 
     def close(self):
         self._fid.close()
@@ -354,7 +390,7 @@ def load_SPE(fname):
     return nip.image(img)
 
 
-def osaka_load_2Dscan(im_path, imd=[128, 128], overscan=[1, 1.25], nbr_det=[16, 16], reader=2):
+def osaka_load_2Dscan(im_path='',im=None,imd=[128, 128], overscan=[1, 1.25], nbr_det=[16, 16], reader=2):
     """Takes Scan-overhead into account. As SPE-is not working right now, assumes TIF-stacks.
 
     Parameters
@@ -382,10 +418,11 @@ def osaka_load_2Dscan(im_path, imd=[128, 128], overscan=[1, 1.25], nbr_det=[16, 
     convert2matlab_Osaka
     """
     # which reader to use?
-    if reader == 1:
-        im = np.squeeze(nip.readim(im_path))
-    else:
-        im = nip.image(tifimread(im_path))
+    if im is None:
+        if reader == 1:
+            im = np.squeeze(nip.readim(im_path))
+        else:
+            im = nip.image(tifimread(im_path))
 
     # take overscan into account and throw out
     imshape = [imd[0]*overscan[0],
