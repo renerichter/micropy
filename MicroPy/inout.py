@@ -15,6 +15,8 @@ from tifffile import imread as tifimread
 from typing import Optional, Tuple, List, Union, Generator, Callable
 from .utility import normNoff, add_multi_newaxis, transpose_arbitrary, fill_dict_with_default
 import subprocess
+from io import StringIO
+import untangle
 # mipy imports
 
 # %% -------------------------------------------
@@ -310,6 +312,7 @@ class SPEloader(object):
     '''
     From:  https://scipy-cookbook.readthedocs.io/items/Reading_SPE_files.html
     extended with: https://github.com/stuwilkins/pyspec/blob/7300a7f9753f28b504ce5e2dab9c0762a6b36008/pyspec/ccd/files.py#L175
+    meta-data and parsing from: https://github.com/ashirsch/spe2py/blob/cf5534bb997774e5edf2fa4f7385214ea835cd8b/spe2py.py#L134
     '''
 
     _datastart = 4100
@@ -321,10 +324,17 @@ class SPEloader(object):
         self._load_size()
         #self._load_date_time()
 
+        
+        self._read_footer()
+        self._get_dims()
+        self._get_roi_info()
+        self._get_coords()
+
     def _load_size(self):
         self._xdim = np.int64(self.read_at(42, 1, np.int16)[0])
         self._ydim = np.int64(self.read_at(656, 1, np.int16)[0])
         self._zdim = np.int64(self.read_at(1446, 1, np.uint32)[0])
+        self.nframes =self._zdim
         dxdim = np.int64(self.read_at(6, 1, np.int16)[0])
         dydim = np.int64(self.read_at(18, 1, np.int16)[0])
         vxdim = np.int64(self.read_at(14, 1, np.int16)[0])
@@ -337,11 +347,120 @@ class SPEloader(object):
         if (dt > 3) or (dt < 0):
             raise Exception("Unknown data type")
         self._dataType = data_types[dt]
-    
+
+    def _get_dims(self):
+        """
+        Returns the x and y dimensions for each region as stored in the XML footer
+        """
+        self._xdim_block = [int(block["width"]) for block in self.footer.SpeFormat.DataFormat.DataBlock.DataBlock]
+        self._ydim_block = [int(block["height"]) for block in self.footer.SpeFormat.DataFormat.DataBlock.DataBlock]
+
+        return self._xdim_block, self._ydim_block
+
     def _readAtString(self, pos, size):
         self._fid.seek(pos)
         return self._fid.read(size).rstrip(chr(0))
-    
+
+    def _read_footer(self):
+        """
+        Loads and parses the source file's xml footer metadata to an 'untangle' object.
+        """
+        footer_pos = self.read_at(678, 8, np.uint64)[0]
+
+        self._fid.seek(footer_pos)
+        xmltext = self._fid.read()
+
+        parser = untangle.make_parser()
+        sax_handler = untangle.Handler()
+        parser.setContentHandler(sax_handler)
+
+        parser.parse(StringIO(xmltext.decode('utf-8')))
+
+        self.footer=sax_handler.root
+
+        return self.footer
+
+    def _get_roi_info(self):
+        """
+        Returns region of interest attributes and numbers of regions of interest
+        """
+        try:
+            camerasettings = self.footer.SpeFormat.DataHistories.DataHistory.Origin.Experiment.Devices.Cameras.Camera
+            regionofinterest = camerasettings.ReadoutControl.RegionsOfInterest.CustomRegions.RegionOfInterest
+        except AttributeError:
+            print("XML Footer was not loaded prior to calling _get_roi_info")
+            raise
+
+        if isinstance(regionofinterest, list):
+            self.nroi = len(regionofinterest)
+            self.roi = regionofinterest
+        else:
+            self.nroi = 1
+            self.roi = [regionofinterest]
+
+        self.roi
+
+        return self.roi, self.nroi
+
+    def _get_coords(self):
+        """
+        Returns x and y pixel coordinates. Used in cases where xdim and ydim do not reflect image dimensions
+        (e.g. files containing frames with multiple regions of interest)
+        """
+        xcoord = [[] for _ in range(0, self.nroi)]
+        ycoord = [[] for _ in range(0, self.nroi)]
+
+        for roi_ind in range(0, self.nroi):
+            working_roi = self.roi[roi_ind]
+            ystart = int(working_roi['y'])
+            ybinning = int(working_roi['yBinning'])
+            yheight = int(working_roi['height'])
+            ycoord[roi_ind] = range(ystart, (ystart + yheight), ybinning)
+
+        for roi_ind in range(0, self.nroi):
+            working_roi = self.roi[roi_ind]
+            xstart = int(working_roi['x'])
+            xbinning = int(working_roi['xBinning'])
+            xwidth = int(working_roi['width'])
+            xcoord[roi_ind] = range(xstart, (xstart + xwidth), xbinning)
+
+        self.xcoord = xcoord
+        self.ycoord = ycoord
+
+        return self.xcoord, self.ycoord
+
+    def _read_data(self):
+        """
+        Loads raw image data into an nframes X nroi list of arrays.
+        """
+        self._fid.seek(4100)
+
+        frame_stride = int(self.footer.SpeFormat.DataFormat.DataBlock['stride'])
+        frame_size = int(self.footer.SpeFormat.DataFormat.DataBlock['size'])
+        metadata_size = frame_stride - frame_size
+        if metadata_size != 0:
+            metadata_dtypes, metadata_names = None,None #not implemented now: self._get_meta_dtype()
+            metadata = np.zeros((self.nframes, len(metadata_dtypes)))
+        else:
+            metadata_dtypes, metadata_names = None, None
+            metadata = None
+
+        data = [[0 for _ in range(self.nroi)] for _ in range(self.nframes)]
+        for frame in range(0, self.nframes):
+            for region in range(0, self.nroi):
+                if self.nroi > 1:
+                    data_xdim = len(self.xcoord[region])
+                    data_ydim = len(self.ycoord[region])
+                else:
+                    data_xdim = np.asarray(self._xdim_block[region], np.uint32)
+                    data_ydim = np.asarray(self._ydim_block[region], np.uint32)
+                data[frame][region] = np.fromfile(self._fid, self._dataType, data_xdim * data_ydim).reshape(data_ydim, data_xdim)
+            if metadata_dtypes is not None:
+                for meta_block in range(len(metadata_dtypes)):
+                    metadata[frame, meta_block] = np.fromfile(self._fid, dtype=metadata_dtypes[meta_block], count=1)
+
+        return data, metadata, metadata_names
+
     def _load_date_time(self):
         rawdate = self.read_at(20, self._datemax, np.int8)
         rawtime = self.read_at(172, self._timemax, np.int8)

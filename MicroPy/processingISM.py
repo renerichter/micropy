@@ -871,7 +871,9 @@ def recon_sheppardSUM(im, nbr_det, pincenter, im_ref=None, shift_method='nearest
             im=im, im_ref=im_ref, pincenter=pincenter, nbr_det=nbr_det, pinmask=pinmask, shift_method=shift_method, shiftval_theory=shiftval_theory, roi=shift_roi, shift_axes=shift_axes)
 
     # apply shifts
-    im = im[pinmask] if not pinmask is None else im
+    if not pinmask is None:
+        im = im[pinmask]
+        shift_map = shift_map[pinmask]
     ims = recon_sheppardShift(im, shift_map, method=shift_style, use_copy=shift_use_copy)
 
     # different summing methods
