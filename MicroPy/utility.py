@@ -4,7 +4,7 @@
 	@author René Lachmann
 	@email herr.rene.richter@gmail.com
 	@create date 2019 11:53:25
-	@modify date 2022-04-12 14:56:40
+	@modify date 2022-04-22 07:14:00
 	@desc Utility package
 
 ---------------------------------------------------------------------------------------------------
@@ -1160,8 +1160,8 @@ def avoid_division_by_zero(nom, denom, releps=1e-8):
     validmask = np.copy(denom)
     avm = abs(validmask)
     mvm = np.max(avm)
-    mvma = tuple(np.unravel_index(np.argmax(avm), shape=avm.shape))
-    validmask[avm <= mvm*releps] = denom[mvma]*releps
+    #mvma = tuple(np.unravel_index(np.argmax(avm), shape=avm.shape))
+    validmask[avm <= mvm*releps] = 0#denom[mvma]*releps
     _ = np.divide(nom, denom, where=validmask.astype('bool'), out=res)
     return res
 

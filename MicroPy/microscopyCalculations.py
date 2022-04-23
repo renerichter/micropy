@@ -1,12 +1,12 @@
 '''
 Some easy calculations regarding resolution and magnification for different imaging systems are included here. 
 '''
-
 # %% ------------------------------------------------------
 # ---         RESOLUTION ESTIMATIONS             ---
 # ---------------------------------------------------------
 #
-
+import numpy as np
+from .numbers import harmonic_sum
 
 def calculate_na_fincorr(obj_M_new=5, obj_M=10, obj_NA=0.25, obj_N=1, obj_di=160, roundout=0, printout=False):
     '''
@@ -109,7 +109,7 @@ def calculate_resolution(obj_na=0.25, obj_n=1, wave_em=525, technique='brightfie
         res[2] = wave_em/(obj_n*(1-np.cos(alpha)))
     elif technique == 'confocal':
         # assume to be in incoherent case right now
-        if fluorescene:
+        if fluorescence:
             leff = harmonic_sum(wave_ex, wave_em)
         else:
             leff = wave_em
