@@ -4,7 +4,7 @@
 	@author René Lachmann
 	@email herr.rene.richter@gmail.com
 	@create date 2019-11-25 10:26:14
-	@modify date 2022-02-13 12:53:12
+	@modify date 2022-04-23 14:41:28
 	@desc The Filters are build such that they assume to receive an nD-stack, but they only operate in a 2D-manner (meaning: interpreting the stack as a (n-2)D series of 2D-images). Further, they assume that the last two dimensions (-2,-1) are the image-dimensions. The others are just for stacking.
 
 ---------------------------------------------------------------------------------------------------
@@ -30,6 +30,7 @@ __maintainer__ = "René Lachmann"
 import numpy as np
 import NanoImagingPack as nip
 from scipy.ndimage import binary_closing
+from pandas import DataFrame
 
 from .utility import add_multi_newaxis, transpose_arbitrary, split_nd, avoid_division_by_zero, match_dim
 from .transformations import dct2, lp_norm
@@ -431,7 +432,7 @@ def stf_normvar(im, faxes=(-2, -1), **kwargs):
     return res, [None, ]
 
 
-def stf_basic(im, faxes=(-2, -1), printout=False, **kwargs):
+def stf_basic(im, faxes=(-2, -1), printout=False, cols=[],**kwargs):
     '''
     Collectionfo basic statistical sharpness metrics: MAX,MIN,MEAN,MEDIAN,VAR,NVAR. Reducing the dimensionality of application to 1 value. Implemented for 2D image and called via `filter_sharpness`-interfacing function to assure proper padding and axis orientation.
 
@@ -447,9 +448,17 @@ def stf_basic(im, faxes=(-2, -1), printout=False, **kwargs):
     im_res.append(stf_median(im, faxes=faxes)[0])
     im_res.append(stf_var(im, faxes=faxes)[0])
     im_res.append(stf_normvar(im, faxes=faxes)[0])
-    if printout == True:
-        print("Basic analysis yields:\nMAX=\t{}\nMIN=\t{}\nSUM=\t{}\nMEAN=\t{}\nMEDIAN=\t{}\nVAR=\t{}\nNVAR=\t{}".format(*im_res))
-    return np.array(im_res), [None, ]
+    
+    imstats_index = ['MAX', 'MIN', 'SUM', 'MEAN', 'MEDIAN', 'VAR', 'NVAR']
+    if len(cols)!=len(im_res[0]):
+        cols = np.arange(im_res[0])
+    im_df = DataFrame(im_res, columns=cols, index=imstats_index)
+
+    if printout:
+        #print("Basic analysis yields:\nMAX=\t{}\nMIN=\t{}\nSUM=\t{}\nMEAN=\t{}\nMEDIAN=\t{}\nVAR=\t{}\nNVAR=\t{}".format(*im_res))
+        print(im_df)
+        
+    return im_df, [None, ]
 
 
 def stf_kurtosis(im, faxes=(-2, -1), **kwargs):

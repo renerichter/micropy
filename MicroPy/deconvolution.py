@@ -108,7 +108,7 @@ def deconv_atom(im, psf, dd):
     multiview_dim = dd['multiview_dim'] if 'multiview_dim' in dd else None
 
     processed_tile = invmod.Deconvolve(nimg=im, psf=psf, NIter=dd['NIter'], lossFkt=dd['lossFkt'], regularization=dd['regl'], mylambda=dd['lambdal'],
-                                       regEps=dd['regEps'], BorderRegion=dd['BorderRegion'], optimizer=dd['optimizer'], forcePos=dd['forcePos'], multiview_dim=multiview_dim, tflog_name=dd['log_name'], retStats=dd['retStats'])
+                                       regEps=dd['regEps'], BorderRegion=dd['BorderRegion'], optimizer=dd['optimizer'], forcePos=dd['forcePos'], multiview_dim=multiview_dim, tflog_name=dd['log_name'], retStats=dd['retStats'],oparam=dd['oparam'])
     return processed_tile
 
 

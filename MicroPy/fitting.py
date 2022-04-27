@@ -17,7 +17,7 @@ from .inout import stack2tiles
 # ------------------------------------------------------------------
 
 
-def extract_PSFlist(im, ref=None, markers=None, list_dim=0, im_axes=(-2, -1), bead_roi=[16, 16]):
+def extract_PSFlist(im, ref=None, markers=None, im_axes=(-2, -1), bead_roi=[16,16], **kwargs):
     """Extract PSFs for a list of images, eg a set of Pinholes (ISM).
     For now: only implented in [LIST,Y,X] dimension.
 
@@ -52,37 +52,24 @@ def extract_PSFlist(im, ref=None, markers=None, list_dim=0, im_axes=(-2, -1), be
     ----
     1) add example!
     """
-    # sanity
-    ref = im[0] if ref is None else ref
-
     # get markers from reference
     if markers is None:
+        ref = im[0] if ref is None else ref
         markers, viewer = get_coords_from_markers(ref, viewer=None, cdim=len(im_axes))
 
-    gaussfits = []
-    residuums = []
-    beadls = []
-    paras = []
+    # allocate arrays
+    beadf_list=nip.image(np.zeros([im.shape[0],]+bead_roi,dtype=im.dtype))
+    res_dict_list = [{},]*im.shape[0]
 
     # loop through all list-entries
-    for m in range(im.shape[list_dim]):
-        gaussfit, residuum, beads, para, markers, _ = extract_multiPSF(
-            im[m], markers=markers, im_axes=im_axes, bead_roi=bead_roi, compare=False)
-        gaussfits.append(gaussfit)
-        residuums.append(residuum)
-        beadls.append(beads)
-        paras.append(para)
-
-    # convert to image
-    gaussfits = nip.image(np.array(gaussfits))
-    residuums = nip.image(np.array(residuums))
-    beadls = nip.image(np.array(beadls))
+    for m,mIm in enumerate(im):
+        beadf_list[m], res_dict_list[m] = extract_multiPSF(mIm, markers=markers, im_axes=im_axes, bead_roi=bead_roi, **kwargs)
 
     # done?
-    return gaussfits, residuums, beadls, paras, markers
+    return beadf_list,res_dict_list
 
 
-def extract_multiPSF(im, markers=None, im_axes=(-2, -1), bead_roi=[16, 16], compare=False, damp=None, shift_subpix=True):
+def extract_multiPSF(im, markers:list=[], im_axes:tuple=(-2, -1), bead_roi:list=[16, 16], compare=False, pre_damp:dict={}, post_damp:dict={},shift_subpix:bool=True):
     """ Extracts PSF from image. 
     Extracts ROI from Marker-Positions, aligns selections and fits Gauss to them.
     Implemented for 2D and 3D.
@@ -135,16 +122,16 @@ def extract_multiPSF(im, markers=None, im_axes=(-2, -1), bead_roi=[16, 16], comp
     roi_center = np.array(bead_roi)//2
 
     # select beads
-    if markers is None:
+    if markers == []:
         markers, viewer = get_coords_from_markers(im, viewer=None, cdim=len(im_axes))
 
     # extract ROI
-    beads = nip.multiROIExtract(im=im, centers=np.array(
+    beads = nip.multiROIExtract(im=im-np.min(im), centers=np.array(
         markers, dtype=int), ROIsize=bead_roi, origin='corner')
 
     # damp Selections
-    if not damp is None:
-        beads = dampEdge(beads, **damp)
+    if not pre_damp == {}:
+        beads = dampEdge(beads, **pre_damp)
 
     # get rid of NaNs
     beads -= np.min(beads, keepdims=True)
@@ -169,22 +156,29 @@ def extract_multiPSF(im, markers=None, im_axes=(-2, -1), bead_roi=[16, 16], comp
     # sum to mean
     bead_sum = np.mean(beads, axis=0)
 
-    # shift mean to center
+    # shift mean to center -> cut away offset by borders and bounding effects to find proper center pos
     #bead_sum_com = np.mean(center_of_mass(bead_sum, com_axes=im_axes,im_axes=im_axes, placement='corner'), axis=-1, keepdims=True)
-    bead_sum_com = center_of_mass(bead_sum, com_axes=im_axes, im_axes=im_axes, placement='corner')
+    bss=np.array(bead_sum.shape,dtype='int')
+    bead_sum_com = center_of_mass(nip.extract(nip.extract(bead_sum,bss//2),bss), com_axes=im_axes, im_axes=im_axes, placement='corner')
 
-    beadf_shift = roi_center-bead_sum_com if shift_subpix else np.round(roi_center-bead_sum_com, 0)
-    beadf = nip.shift(bead_sum, roi_center-bead_sum_com, axes=im_axes, dampOutside=False)
+    beadf_shift = roi_center-bead_sum_com if shift_subpix else np.round(roi_center-bead_sum_com, 0).astype('int')
+    beadf = nip.shift(bead_sum, beadf_shift, axes=im_axes, dampOutside=True)
+
+    # damp shift-artefacts and border problems
+    if not post_damp == {}:
+        #beads = dampEdge(beads, **pre_damp)
+        beadf = nip.DampEdge(beadf,**post_damp)
 
     # sum-normalize to 1
-    normNoff(beadf, method='sum', atol=0, direct=True)
+    beadf-=np.min(beadf,keepdims=True)
+    beadf_sum=np.sum(beadf)
+    beadf=normNoff(beadf, method='sum', atol=0, direct=False)
 
     # fit 2D-Gauss -> para =(amplitude, center_x, center_y, sigma_x, sigma_y, rotation, offset)
     if beadf.ndim == 2:
         para, gaussfit = nip.fit_gauss2D(beadf)
         para = [para, ]
     else:
-
         # simple work-around for 3D --> need proper fit with rotations etc!
         para = []
         gaussfit = []
@@ -199,10 +193,8 @@ def extract_multiPSF(im, markers=None, im_axes=(-2, -1), bead_roi=[16, 16], comp
             para.append(parah)
             gaussfit.append(gaussfith)
             slicing[m] = slice_copy
-
         gaussfit = gaussfit[0][np.newaxis]*gaussfit[1][:, np.newaxis]*gaussfit[2][:, :, np.newaxis]
         gaussfit *= (np.max(beadf)/np.max(gaussfit))
-
     residuum = np.abs(np.array(gaussfit) - beadf)
 
     # convert to two-2D
@@ -212,6 +204,7 @@ def extract_multiPSF(im, markers=None, im_axes=(-2, -1), bead_roi=[16, 16], comp
         para[m] = list(mpara)+[FWHM_x, FWHM_y]
     para = np.array(para)
 
+    # do a small comparison
     bead_comp = []
     if compare:
         compare_beads = nip.cat((beads, beadf, gaussfit, residuum), axis=0, destdims=3)
@@ -220,7 +213,7 @@ def extract_multiPSF(im, markers=None, im_axes=(-2, -1), bead_roi=[16, 16], comp
         bead_comp = [v1, v2]
 
     # combine to result
-    res_dict = {'gaussfit': gaussfit, 'residuum': residuum, 'beads': beads,
+    res_dict = {'gaussfit': gaussfit, 'residuum': residuum, 'beads': beads,'beadf_sum':beadf_sum,
                 'para': para, 'markers': markers, 'bead_comp': bead_comp}
 
     # done?
