@@ -1114,6 +1114,10 @@ def stack2plot(x:np.ndarray, ystack:Union[list,np.ndarray], refs:list=None, titl
         xl = [np.arange(len(x)), np.array(x)]
         x = np.arange(len(x))
 
+    if not type(x[0]) in [list,tuple,np.ndarray,nip.image]:
+        x = [x,]*len(ystack)
+    x=np.array(x)
+
     # get figure
     if ax is None:
         fig1 = plt.figure(figsize=figsize)
@@ -1132,11 +1136,11 @@ def stack2plot(x:np.ndarray, ystack:Union[list,np.ndarray], refs:list=None, titl
         ylabel = 'Pixel' if ylabel is None else ylabel
         title = datetime.now().strftime("%Y%M%D") if title is None else title
         if err_bar is None:
-            line, = ax.plot(x, ystack[m], label=label, color=colorse,
+            line, = ax.plot(x[m], ystack[m], label=label, color=colorse,
                             marker=mmarker[m], linestyle=mlinestyle[m])
             line.set_clip_on(False)
         else:
-            line = ax.errorbar(x, ystack[m], err_bar[m], label=label, color=colorse,
+            line = ax.errorbar(x[m], ystack[m], err_bar[m], label=label, color=colorse,
                                marker=mmarker[m], linestyle=mlinestyle[m], capsize=err_capsize)
             line.set_clip_on(False)
         if not mlinewidth is None:
@@ -1152,8 +1156,12 @@ def stack2plot(x:np.ndarray, ystack:Union[list,np.ndarray], refs:list=None, titl
     ax.set_title(title)
 
     # axis limits
-    xlims = [np.min(x), np.max(x)] if xlims is None else xlims
-    ylims = [np.min(ystack), np.max(ystack)] if ylims is None else ylims
+    if xlims is None:
+        xlims=[[np.min(mx), np.max(mx)] for mx in x]
+        xlims=[np.min(xlims),np.max(xlims)]
+    if ylims is None:
+        ylims=[[np.min(my), np.max(my)] for my in ystack]
+        ylims=[np.min(ylims),np.max(ylims)]
     ylims_dist = ylims[1]-ylims[0]
     ax.set_xlim(xlims)
     ax.set_ylim(ylims)

@@ -203,6 +203,7 @@ def extract_multiPSF(im, markers:list=[], im_axes:tuple=(-2, -1), bead_roi:list=
         FWHM_y = 2*(mpara[4] * np.sqrt(-np.log(0.5)*2))
         para[m] = list(mpara)+[FWHM_x, FWHM_y]
     para = np.array(para)
+    para_names=['amplitude', 'center_x', 'center_y', 'sigma_x', 'sigma_y', 'rotation', 'offset','FWHMx','FWHMy']
 
     # do a small comparison
     bead_comp = []
@@ -214,7 +215,7 @@ def extract_multiPSF(im, markers:list=[], im_axes:tuple=(-2, -1), bead_roi:list=
 
     # combine to result
     res_dict = {'gaussfit': gaussfit, 'residuum': residuum, 'beads': beads,'beadf_sum':beadf_sum,
-                'para': para, 'markers': markers, 'bead_comp': bead_comp}
+                'para': para, 'para_names':para_names,'markers': markers, 'bead_comp': bead_comp}
 
     # done?
     return beadf, res_dict
