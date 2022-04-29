@@ -4,7 +4,7 @@
 	@author René Lachmann
 	@email herr.rene.richter@gmail.com
 	@create date 2019 11:53:25
-	@modify date 2022-04-22 07:14:00
+	@modify date 2022-04-29 07:44:22
 	@desc Utility package
 
 ---------------------------------------------------------------------------------------------------
@@ -345,7 +345,7 @@ def shiftby_list(im, shifts=None, shift_offset=[1, 1], shift_method='uvec', shif
     """
     # parameters
     asta = 0 if listaxis is not None else 1
-    im_origshape = np.copy(im.shape)
+    im_origshape = np.array(np.copy(im.shape)).astype('int')
 
     # sanity - calculate shifts if not provided
     if shifts is None:
@@ -403,7 +403,8 @@ def shiftby_list(im, shifts=None, shift_offset=[1, 1], shift_method='uvec', shif
 
     # undo padding and extract core
     if pad_shifts:
-        im_res = nip.extract(im_res,im_origshape) if retreal else nip.extractFt(im,im_origshape)
+        padsm=np.max(pads,axis=0)
+        im_res = nip.extract(im_res,im_origshape,im_origshape//2) if retreal else nip.extractFt(im,im_origshape)
 
     # correct pixelsizes
     if hasattr(im_res, 'pixelsize'):

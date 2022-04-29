@@ -754,14 +754,14 @@ def add_coordinate_axis(ax, apos=[[120, 10], [120, 10]], alen=[[-40, 0], [0, 40]
 
 def default_grid_param(plt_raster):
     return {'pos': 111, 'nrows_ncols': (
-        plt_raster[0], plt_raster[1]), 'axes_pad': 0.4, 'cbar_mode': 'single', 'cbar_location': 'right', 'cbar_pad': 0.1}
+        plt_raster[0], plt_raster[1]), 'axes_pad': 0.4, 'cbar_mode': 'single', 'cbar_location': 'right', 'cbar_pad': 0.1,'cbar_font_size':0.5,'cbar_va':'bottom','cbar_rotation':90,'cbar_label':''}
 
 
 def default_coord_axis(imshape):
     return {'ax': 0, 'apos': [[int(imshape[-2]*0.95), int(imshape[-1]*0.05)], ]*2, 'alen': [[-imshape[-2]//3, 0], [0, imshape[-2]//3]], 'acolor': [1, 1, 1], 'text': ['y', 'x'], 'tcolor': [1, 1, 1], 'tsize': None}
 
 
-def print_stack2subplot(imstack, im_minmax=[None, None], imdir='row', inplace=False, plt_raster=[4, 4], plt_format=[8, 6], title=None, titlestack=True, colorbar=True, axislabel=True, laytight=True, nbrs=True, nbrs_list=97, nbrs_color=[1, 1, 1], nbrs_size=None, nbrs_offsets=None, xy_norm=None, aspect=None, use_axis=None, plt_show=False, gridspec_kw=None, yx_ticks=None, axticks_format=None, grid_param=None, norm_imstack=True, coord_axis=[],ax_ret=False):
+def print_stack2subplot(imstack, im_minmax=[None, None], imdir='row', inplace=False, plt_raster=[4, 4], plt_format=[8, 6], title=None, titlestack=True, colorbar=True, axislabel=True, laytight=True, nbrs=True, nbrs_list=97, nbrs_color=[1, 1, 1], nbrs_size=None, nbrs_offsets=None, xy_norm=None, aspect=None, use_axis=None, plt_show=False, gridspec_kw=None, yx_ticks=None, yx_labels=None,axticks_format=None,ax_extent=False, grid_param=None, norm_imstack=True, coord_axis=[],ax_ret=False):
     '''
     Plots an 3D-Image-stack as set of subplots
     Based on this: https://stackoverflow.com/a/46616645
@@ -836,23 +836,26 @@ def print_stack2subplot(imstack, im_minmax=[None, None], imdir='row', inplace=Fa
 
     xy_norm = xy_norm_h if xy_norm is None else xy_norm
 
-    xy_extent = None if yx_ticks is None else [
-        yx_ticks[1][0], yx_ticks[1][-1], yx_ticks[0][0], yx_ticks[0][-1]]
-    if aspect is None:
-        aspect = 'auto' if xy_extent is None else (
-            xy_extent[1]-xy_extent[0])/(xy_extent[3]-xy_extent[2])
-
+    # rescaling paramateres
+    xy_extent=None
+    if ax_extent:
+        xy_extent = None if yx_ticks is None else [
+            yx_ticks[1][0], yx_ticks[1][-1], yx_ticks[0][0], yx_ticks[0][-1]]
+        if aspect is None:
+            aspect = 'auto' if xy_extent is None else (
+                xy_extent[1]-xy_extent[0])/(xy_extent[3]-xy_extent[2])
+    
     # parameter
+    ax_meas = [ax.flat[0].bbox.width, ax.flat[0].bbox.height]
     if nbrs_offsets is None:
-        ax_meas = [ax.flat[0].bbox.width, ax.flat[0].bbox.height]
         x_offset = np.round(3*ax_meas[0] / xy_norm[1]) .astype('uint16')
         y_offset = np.round(21*ax_meas[1]/xy_norm[1]).astype('uint16')
     else:
         y_offset, x_offset = nbrs_offsets
 
-    # nbrs_psize = ax_meas[1]*0.2 if nbrs_size is None else ax_meas[1]*nbrs_size
+    # prepare variables to rescale graph
     nbrs_psize = 50*0.2 if nbrs_size is None else 50*nbrs_size
-    if not yx_ticks is None:
+    if ax_extent:#if not yx_ticks is None:
         dx = xy_extent[1]-xy_extent[0]
         dy = xy_extent[3]-xy_extent[2]
         x_offset *= dx/ax_meas[0]
@@ -869,13 +872,6 @@ def print_stack2subplot(imstack, im_minmax=[None, None], imdir='row', inplace=Fa
             cbar = fig.colorbar(ima, cax=colorbar_axes)
             imstp = [np.min(imstack[m]), np.max(imstack[m])]
             cbar.set_ticks(np.arange(imstp[0], imstp[1], (imstp[1]-imstp[0])/5))
-            # cbar.set_ticklabels(['low', 'medium', 'high'])
-            # if ax.ndim == 1:
-            #    fig.colorbar(ima, ax=ax[m])
-            # elif ax.ndim == 2:
-            #    fig.colorbar(ima, ax=ax[m // plt_raster[1], m % plt_raster[1]])
-            # else:
-            #    raise ValueError('Too many axes!')
 
         if axislabel == True:
             axm.set_xlabel('[PIX] = a.u.')
@@ -883,11 +879,8 @@ def print_stack2subplot(imstack, im_minmax=[None, None], imdir='row', inplace=Fa
         elif axislabel == False:
             pass
         else:
-            axm.set_xlabel(axislabel[0], fontsize=nbrs_psize/2)
-            axm.set_ylabel(axislabel[1], fontsize=nbrs_psize/2)
-
-        # axm.set_xticklabels(axm.get_xticklabels())
-        # axm.set_yticklabels(axm.get_yticklabels())
+            axm.set_xlabel(axislabel[0], fontsize=nbrs_psize)
+            axm.set_ylabel(axislabel[1], fontsize=nbrs_psize)
 
         if titlestack == True:
             axm.set_title(
@@ -897,42 +890,80 @@ def print_stack2subplot(imstack, im_minmax=[None, None], imdir='row', inplace=Fa
         else:
             axm.set_title(titlestack[m], fontsize=nbrs_psize/2)
 
+        # add numbers to panels
         if nbrs:
-            # xoff = int(x_offset/imstack[0].shape[-1]*imstack[m].shape[-1])
-            # yoff = int(y_offset/imstack[0].shape[-2]*imstack[m].shape[-2])
             aletter = chr(nbrs_list[m]) if use_gen_nbrs_list else nbrs_list[m]
             axm.text(x_offset, y_offset, aletter+')', fontsize=nbrs_psize,
                      color=nbrs_color, fontname='Helvetica', weight='normal')
 
+        # set axis format
         if not axticks_format is None:
             axm.xaxis.set_major_formatter(FormatStrFormatter(axticks_format[0]))
             axm.yaxis.set_major_formatter(FormatStrFormatter(axticks_format[1]))
 
+        if not yx_ticks is None:
+            if yx_labels is None:
+                yx_labels=[[str(mitem) for mitem in yx_ticks[0]],[str(mitem) for mitem in yx_ticks[1]]]
+            axm.set_xticks(yx_ticks[1])
+            axm.set_xticklabels(yx_labels[1],fontsize=nbrs_psize/2)
+            #axm.yaxis.set_tick_params(labelsize=nbrs_psize)
+            axm.set_yticks(yx_ticks[0])
+            axm.set_yticklabels(yx_labels[0],fontsize=nbrs_psize/2)
+
+        # plot axis according to selection -> in case of 'bottom','left' axis-names are only plotted at bottom-left panel
         if use_axis == None:
             axm.axis('off')
         else:
             if 'bottom' in use_axis:
                 if m//plt_raster[1] < (plt_raster[0]-1):
                     axm.get_xaxis().set_visible(False)
-                    # axm.xaxis.set_ticklabels("")
-                    # axm.set_xlabel('')
+                else:
+                    if 'left' in use_axis:
+                        if not m%plt_raster[1] == 0:
+                            axm.xaxis.set_ticklabels("")
+                            axm.set_xlabel('')
+                    elif 'right' in use_axis:
+                        if not m%plt_raster[1] == plt_raster[1]-1:
+                            axm.xaxis.set_ticklabels("")
+                            axm.set_xlabel('')
             elif 'top' in use_axis:
                 if m//plt_raster[1] > 0:
                     axm.get_xaxis().set_visible(False)
-                    # axm.xaxis.set_ticklabels("")
-                    # axm.set_xlabel('')
+                else:
+                    if 'left' in use_axis:
+                        if not m%plt_raster[1] == 0:
+                            axm.xaxis.set_ticklabels("")
+                            axm.set_xlabel('')
+                    elif 'right' in use_axis:
+                        if not m%plt_raster[1] == plt_raster[1]-1:
+                            axm.xaxis.set_ticklabels("")
+                            axm.set_xlabel('')
             else:
                 pass
             if 'left' in use_axis:
                 if m % plt_raster[1] > 0:
                     axm.get_yaxis().set_visible(False)
-                    # axm.yaxis.set_ticklabels("")
-                    # axm.set_ylabel('')
+                else:
+                    if 'top' in use_axis:
+                        if not m//plt_raster[1] == 0:
+                            axm.yaxis.set_ticklabels("")
+                            axm.set_ylabel('')
+                    elif 'bottom' in use_axis:
+                        if not m//plt_raster[1] == plt_raster[0]-1:
+                            axm.yaxis.set_ticklabels("")
+                            axm.set_ylabel('')
             elif 'right' in use_axis:
                 if m % plt_raster[1] < plt_raster[1]-1:
                     axm.get_yaxis().set_visible(False)
-                    # axm.yaxis.set_ticklabels("")
-                    # axm.set_ylabel('')
+                else:
+                    if 'top' in use_axis:
+                        if not m//plt_raster[1] == 0:
+                            axm.yaxis.set_ticklabels("")
+                            axm.set_ylabel('')
+                    elif 'bottom' in use_axis:
+                        if not m//plt_raster[1] == plt_raster[0]-1:
+                            axm.yaxis.set_ticklabels("")
+                            axm.set_ylabel('')
             else:
                 pass
 
@@ -948,8 +979,9 @@ def print_stack2subplot(imstack, im_minmax=[None, None], imdir='row', inplace=Fa
 
     if colorbar == 'global':
         cbar = grid.cbar_axes[0].colorbar(ima)
-        if not type(axislabel) == bool:
-            cbar.ax.set_ylabel(axislabel[2], rotation=-90, va="bottom", fontsize=nbrs_psize/2)
+        cbar.ax.tick_params(labelsize=gp['cbar_font_size']*2/3)
+        #cbar.ax.set_ylim()
+        cbar.ax.set_ylabel(gp['cbar_label'], rotation=gp['cbar_rotation'], va=gp['cbar_va'], fontsize=gp['cbar_font_size'])
 
     # delete empty axes
     while m+1 < (plt_raster[0]*plt_raster[1]):
@@ -1089,7 +1121,7 @@ def print_stack2subplot(imstack, im_minmax=[None, None], imdir='row', inplace=Fa
 #
 
 
-def stack2plot(x:np.ndarray, ystack:Union[list,np.ndarray], refs:list=None, title:str=None, xl:list=None, xlabel:str=None, ylabel:str=None, colors:list=None, mmarker:str='', mlinestyle:str='-', mlinewidth:list=None, legend:Union[str,list]=[1, 1.05], legend_col:int=1,xlims:Union[list,np.ndarray]=None, ylims:Union[list,np.ndarray]=None, ax_inside:dict=None, figsize:tuple=(8, 8), show_plot:bool=True, ptight:bool=True, ax=None, nbrs:bool=True, nbrs_color:list=[1, 1, 1], nbrs_size:float=None, nbrs_text:str=None, err_bar:Union[list,np.ndarray]=None, err_capsize:int=3, fonts_labels:list=[None,],fonts_sizes:list=[None,]) -> tuple:
+def stack2plot(x:np.ndarray, ystack:Union[list,np.ndarray], refs:list=None, title:str=None, xl:list=None, xlabel:str=None, ylabel:str=None, colors:list=None, mmarker:str='', mlinestyle:str='-', mlinewidth:list=None, legend:Union[str,list]=[1, 1.05], legend_col:int=1,xlims:Union[list,np.ndarray]=None, ylims:Union[list,np.ndarray]=None, ax_inside:dict=None, figsize:tuple=(8, 8), show_plot:bool=True, ptight:bool=True, ax=None, nbrs:bool=True, nbrs_color:list=[1, 1, 1], nbrs_size:float=None, nbrs_text:str=None, err_bar:Union[list,np.ndarray]=None, err_capsize:int=3, fonts_labels:list=[None,],fonts_sizes:list=[None,],set_clipon:bool=False) -> tuple:
     '''
     Prints a 1d-"ystack" into 1 plot and assigns legends + titles.
 
@@ -1138,11 +1170,10 @@ def stack2plot(x:np.ndarray, ystack:Union[list,np.ndarray], refs:list=None, titl
         if err_bar is None:
             line, = ax.plot(x[m], ystack[m], label=label, color=colorse,
                             marker=mmarker[m], linestyle=mlinestyle[m])
-            line.set_clip_on(False)
         else:
             line = ax.errorbar(x[m], ystack[m], err_bar[m], label=label, color=colorse,
                                marker=mmarker[m], linestyle=mlinestyle[m], capsize=err_capsize)
-            line.set_clip_on(False)
+        line.set_clip_on(set_clipon)
         if not mlinewidth is None:
             line.set_linewidth(mlinewidth[m])
         line.set_antialiased(False)
@@ -1159,9 +1190,13 @@ def stack2plot(x:np.ndarray, ystack:Union[list,np.ndarray], refs:list=None, titl
     if xlims is None:
         xlims=[[np.min(mx), np.max(mx)] for mx in x]
         xlims=[np.min(xlims),np.max(xlims)]
+    else:
+        xlims = [ax.get_xlim()[m] if mx==None else mx for m,mx in enumerate(xlims)]
     if ylims is None:
         ylims=[[np.min(my), np.max(my)] for my in ystack]
         ylims=[np.min(ylims),np.max(ylims)]
+    else:
+        ylims = [ax.get_ylim()[m] if my==None else my for m,my in enumerate(ylims)]
     ylims_dist = ylims[1]-ylims[0]
     ax.set_xlim(xlims)
     ax.set_ylim(ylims)
