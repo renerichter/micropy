@@ -69,7 +69,7 @@ def extract_PSFlist(im, ref=None, markers=None, im_axes=(-2, -1), bead_roi=[16,1
     return beadf_list,res_dict_list
 
 
-def extract_multiPSF(im, markers:list=[], im_axes:tuple=(-2, -1), bead_roi:list=[16, 16], compare=False, pre_damp:dict={}, post_damp:dict={},shift_subpix:bool=True):
+def extract_multiPSF(im, markers:list=[], im_axes:tuple=(-2, -1), bead_roi:list=[16, 16], bead_tol:float=-1.0,compare=False, pre_damp:dict={}, post_damp:dict={},shift_subpix:bool=True):
     """ Extracts PSF from image. 
     Extracts ROI from Marker-Positions, aligns selections and fits Gauss to them.
     Implemented for 2D and 3D.
@@ -172,7 +172,9 @@ def extract_multiPSF(im, markers:list=[], im_axes:tuple=(-2, -1), bead_roi:list=
     # sum-normalize to 1
     beadf-=np.min(beadf,keepdims=True)
     beadf_sum=np.sum(beadf)
-    beadf=normNoff(beadf, method='sum', atol=0, direct=False)
+    if bead_tol<0:
+        bead_tol=float(np.median(beadf)/100)
+    beadf=normNoff(beadf, method='sum', atol=bead_tol, direct=False)
 
     # fit 2D-Gauss -> para =(amplitude, center_x, center_y, sigma_x, sigma_y, rotation, offset)
     if beadf.ndim == 2:

@@ -904,11 +904,15 @@ def print_stack2subplot(imstack, im_minmax=[None, None], imdir='row', inplace=Fa
         if not yx_ticks is None:
             if yx_labels is None:
                 yx_labels=[[str(mitem) for mitem in yx_ticks[0]],[str(mitem) for mitem in yx_ticks[1]]]
-            axm.set_xticks(yx_ticks[1])
-            axm.set_xticklabels(yx_labels[1],fontsize=nbrs_psize/2)
+            #axm.set_xticks(yx_ticks[1])
+            #axm.set_xticklabels(yx_labels[1],fontsize=nbrs_psize/2)
+            axm.xaxis.set_ticks(yx_ticks[1])
+            axm.xaxis.set_ticklabels(yx_labels[1],fontsize=nbrs_psize/2)
             #axm.yaxis.set_tick_params(labelsize=nbrs_psize)
-            axm.set_yticks(yx_ticks[0])
-            axm.set_yticklabels(yx_labels[0],fontsize=nbrs_psize/2)
+            #axm.set_yticks(yx_ticks[0])
+            #axm.set_yticklabels(yx_labels[0],fontsize=nbrs_psize/2)
+            axm.yaxis.set_ticks(yx_ticks[0])
+            axm.yaxis.set_ticklabels(yx_labels[0],fontsize=nbrs_psize/2)
 
         # plot axis according to selection -> in case of 'bottom','left' axis-names are only plotted at bottom-left panel
         if use_axis == None:
@@ -916,7 +920,7 @@ def print_stack2subplot(imstack, im_minmax=[None, None], imdir='row', inplace=Fa
         else:
             if 'bottom' in use_axis:
                 if m//plt_raster[1] < (plt_raster[0]-1):
-                    axm.get_xaxis().set_visible(False)
+                    axm.xaxis.set_visible(False)
                 else:
                     if 'left' in use_axis:
                         if not m%plt_raster[1] == 0:
@@ -928,7 +932,7 @@ def print_stack2subplot(imstack, im_minmax=[None, None], imdir='row', inplace=Fa
                             axm.set_xlabel('')
             elif 'top' in use_axis:
                 if m//plt_raster[1] > 0:
-                    axm.get_xaxis().set_visible(False)
+                    axm.xaxis.set_visible(False)
                 else:
                     if 'left' in use_axis:
                         if not m%plt_raster[1] == 0:
@@ -942,7 +946,7 @@ def print_stack2subplot(imstack, im_minmax=[None, None], imdir='row', inplace=Fa
                 pass
             if 'left' in use_axis:
                 if m % plt_raster[1] > 0:
-                    axm.get_yaxis().set_visible(False)
+                    axm.yaxis.set_visible(False)
                 else:
                     if 'top' in use_axis:
                         if not m//plt_raster[1] == 0:
@@ -954,7 +958,7 @@ def print_stack2subplot(imstack, im_minmax=[None, None], imdir='row', inplace=Fa
                             axm.set_ylabel('')
             elif 'right' in use_axis:
                 if m % plt_raster[1] < plt_raster[1]-1:
-                    axm.get_yaxis().set_visible(False)
+                    axm.yaxis.set_visible(False)
                 else:
                     if 'top' in use_axis:
                         if not m//plt_raster[1] == 0:

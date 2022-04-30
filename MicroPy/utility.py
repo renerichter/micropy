@@ -4,7 +4,7 @@
 	@author René Lachmann
 	@email herr.rene.richter@gmail.com
 	@create date 2019 11:53:25
-	@modify date 2022-04-29 07:44:22
+	@modify date 2022-04-30 09:22:40
 	@desc Utility package
 
 ---------------------------------------------------------------------------------------------------
@@ -404,7 +404,9 @@ def shiftby_list(im, shifts=None, shift_offset=[1, 1], shift_method='uvec', shif
     # undo padding and extract core
     if pad_shifts:
         padsm=np.max(pads,axis=0)
-        im_res = nip.extract(im_res,im_origshape,im_origshape//2) if retreal else nip.extractFt(im,im_origshape)
+        im_res=unpad(im_res,padsm,axis=np.arange(-len(padsm),0),direct=True)
+        #im_res = nip.extract(im_res,im_origshape,im_origshape//2) if retreal else nip.extractFt(im,im_origshape)
+        
 
     # correct pixelsizes
     if hasattr(im_res, 'pixelsize'):
@@ -1606,7 +1608,13 @@ def pad_secure_shift(im: nip.image, shifts: np.array, secfac: float = 2.0):
 
 
 def pad_boundaries(im, pad_width):
-
+    '''
+    Example:
+    ========
+    >>> a=nip.readim('orka')
+    >>> pads=np.array([[12,23],[40,17]])
+    >>> apad=mipy.pad_boundaries(a,pads)
+    '''
     # take global pads
     if pad_width.ndim > 2:
         pad_width = np.reshape(pad_width,[np.prod(pad_width.shape[:-2]),]+list(pad_width.shape[-2:]))
@@ -1615,10 +1623,32 @@ def pad_boundaries(im, pad_width):
     return np.pad(im, pad_width=pad_width, mode='constant', constant_values=0)
 
 
-def unpad(im, pads):
-    '''Not finished yet!'''
-    for m in pads:
-        pass
+def unpad(im,pads,axis=[-2,-1],direct=True):
+    '''
+    Example:
+    ========
+    >>> a=nip.readim('orka')
+    >>> pads=np.array([[12,23],[40,17]])
+    >>> apad=mipy.pad_boundaries(a,pads)
+    >>> apadu=mipy.unpad(apad,pads,axis=[-2,-1],direct=False)
+    >>> np.allclose(a,apadu)
+    True
+    
+    '''
+    # sanity
+    if not direct:
+        if type(im)==nip.image:
+            opixelsize=list(im.pixelsize)
+            im=nip.image(np.copy(im))
+            im.pixelsize=opixelsize
+        else:
+            im = np.copy(im)    
+    
+    # undo pads
+    for m in axis:
+        im=np.swapaxes(np.swapaxes(im,0,m)[pads[m,0]:im.shape[m]-pads[m,1]],0,m)
+    
+    return im
 
 # %% -----------------------------------------------------
 # ----              VIEWER INTERACTION
