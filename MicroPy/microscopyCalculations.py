@@ -86,12 +86,18 @@ def calculate_maxbinning(res_lateral=100, obj_M=10, pixel_size=6.5, printout=Tru
     return max_binning, dmax_sampling_detector
 
 
-def calculate_resolution(obj_na=0.25, obj_n=1, wave_em=525, technique='brightfield', criterium='Abbe', cond_na=0, fluorescence=False, wave_ex=488, printout=False):
+def calculate_resolution(obj_na=0.25, obj_n=1, wave_em=525, technique='Brightfield', criterium='Abbe', cond_na=0, fluorescence=False, wave_ex=488, printout=False):
     '''
     Calculates the resolution for the selected technique with the given criteria in lateral xy and axial z.  
 
     For inline testing: obj_na=0.25;obj_n=1;wave_em=525;technique='brightfield';criterium='Abbe'; cond_na=0; fluorescence=False; wave_ex=488; printout=False
+
+    technique: Brightfield,Confocal
+    criterium: Abbe,AU,FWHM,Rayleigh,Sparrow
     '''
+    # params and preparations
+    fact_dict={'Abbe': 1, 'Rayleigh': 1.22, 'AU': 2*1.22, 'Sparrow': 0.95, 'FWHM': 1.02}
+
     res = np.zeros(3)
     # get right na
     if fluorescence:
@@ -102,30 +108,30 @@ def calculate_resolution(obj_na=0.25, obj_n=1, wave_em=525, technique='brightfie
         else:
             na = obj_na
     alpha = np.arcsin(obj_na/obj_n)
+
     # calculate Abbe-support-limit
-    if technique == 'brightfield':
-        res[0] = wave_em/na
-        res[1] = res[0]
-        res[2] = wave_em/(obj_n*(1-np.cos(alpha)))
-    elif technique == 'confocal':
+    if technique == 'Brightfield':
+        res[0] = wave_em/(obj_n*(1-np.cos(alpha)))
+        res[1] = wave_em/na
+        res[2] = res[1]
+    elif technique == 'Confocal':
         # assume to be in incoherent case right now
         if fluorescence:
             leff = harmonic_sum(wave_ex, wave_em)
         else:
             leff = wave_em
-        res[0] = leff / na
-        res[1] = res[0]
-        res[2] = leff/(obj_n*(1-np.cos(alpha)))
+        res[0] = leff/(obj_n*(1-np.cos(alpha)))
+        res[1] = leff / na
+        res[2] = res[1]
     else:
         raise ValueError("Selected technique not implemented yet.")
+    
     # multiply factors for criteria
-    if criterium == 'Abbe':
-        res = res
-    else:
-        raise ValueError("Selected criterium not implemented yet.")
+    res *= fact_dict[criterium]
+    
     # print out
     if printout == True:
-        print("The calculated resolution is: x={}, y={}, z={}".format(
-            res[0], res[1], res[2]))
+        print(f"~~~~~~Resolution results:~~~~~~\n~~~\tTechnique={technique}\n~~~\tCriterium={criterium}\n~~~\tResolution [z,y,x]={np.round(res,4)} nm.")
+    
     # finally, return result
     return res

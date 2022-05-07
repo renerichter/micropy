@@ -7,7 +7,7 @@ with open("README.md", "r") as readme:
 #prepare setup
 setuptools.setup(
     name="MicroPy",
-    version="0.4.0",
+    version="0.6.1a",
     author="Rene Lachmann",
     author_email="herr.rene.richter@gmail.com",
     description="A Toolbox for image analysis in Python that was necessary to be build within and for my PhD.",

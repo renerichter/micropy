@@ -7,12 +7,13 @@ import NanoImagingPack as nip
 from scipy.ndimage.morphology import binary_fill_holes
 from scipy.ndimage import binary_closing
 from deprecated import deprecated
+from typing import Union
 
 # mipy imports
 from .transformations import irft3dz, ft_correct
-from .utility import avoid_division_by_zero, findshift, midVallist, pinhole_shift, pinhole_getcenter, add_multi_newaxis, shiftby_list, subslice_arbitrary, mask_from_dist
+from .utility import avoid_division_by_zero, findshift, midVallist, pad_secure_shift, pinhole_shift, pinhole_getcenter, add_multi_newaxis, shiftby_list, subslice_arbitrary, mask_from_dist,get_slices_from_shiftmap
 from .inout import stack2tiles, format_list
-from typing import Union
+from .filters import savgol_filter_nd
 
 
 # %%
@@ -433,7 +434,7 @@ def unmix_recover_thickslice(unmixer, im, verbose=True, dtype=None):
 #                   ISM-Reconstruction
 # ---------------------------------------------------------------
 
-def recon_genShiftmap(im, pincenter, im_ref=None, nbr_det=None, pinmask=None, shift_method='nearest', shiftval_theory=None, roi=None, shift_axes=None, cross_mask_len=[4,4], printmap=False):
+def recon_genShiftmap(im, pincenter, im_ref=None, nbr_det=None, pinmask=None, shift_method='nearest', shiftval_theory=None, roi=None, shift_axes=None, cross_mask_len=[4,4], sg_para=[13,2,0,1,'wrap'],printmap=False):
     """Generates Shiftmap for ISM SheppardSUM-reconstruction.
     Assumes shape: [Pinhole-Dimension , M] where M stands for arbitrary mD-image.
     Fills shift_map from right-most dimension to left, hence errors could be evoked in case of only shifts along dim=[1,2] applied, but array has spatial dim=[1,2,3]. Hence shifts will be applied along [2,3] with their respective period factors.
@@ -485,7 +486,8 @@ def recon_genShiftmap(im, pincenter, im_ref=None, nbr_det=None, pinmask=None, sh
     if not type(shift_axes) == np.ndarray:
         shift_axes = np.mod(np.array(shift_axes), im.ndim)
 
-    im_ref = im[pincenter] if im_ref is None else im_ref
+    if im_ref is None:
+        im_ref = savgol_filter_nd(im[pincenter], sg_axis=-im.ndim+shift_axes, sg_para=sg_para, direct=False)
 
     if roi is not None:
         im = subslice_arbitrary(im, roi, axes=np.arange(im.ndim))
@@ -559,16 +561,15 @@ def recon_genShiftmap(im, pincenter, im_ref=None, nbr_det=None, pinmask=None, sh
         raise ValueError("Shift-method not implemented")
 
     # print shift-vectors
+    rdict = {'im_ref':im_ref}
     if printmap:
         sm = np.reshape(shift_map, nbr_det + list(shift_map[0].shape))
         if sm.shape[-1] > 2:
             useaxes = [-2, -1]
-        figS, axS = recon_drawshift(sm, useaxes=useaxes)
-    else:
-        figS, axS = [], []
+        rdict['figS'], rdict['axS'] = recon_drawshift(sm, useaxes=useaxes)
 
     # done?
-    return shift_map, figS, axS
+    return shift_map, rdict
 
 
 def recon_sheppardShift(im, shift_map, method='parallel', use_copy=False, shift_pad=True):
@@ -604,10 +605,6 @@ def recon_sheppardShift(im, shift_map, method='parallel', use_copy=False, shift_
     im_origshape=np.copy(im.shape)
     imshifted = nip.image(np.copy(im)) if use_copy else im
 
-    # pad image before shifting
-    if shift_pad:
-        pass
-
     # method to be used
     if method == 'parallel':
         imshifted, _ = shiftby_list(im, shifts=shift_map, listaxis=0)       
@@ -622,17 +619,14 @@ def recon_sheppardShift(im, shift_map, method='parallel', use_copy=False, shift_
             shifts[:,-shift_map.shape[-1]:]=shift_map
         else:
             shifts=shift_map
-            
+
         #shift
         for m in range(shift_map.shape[0]):
-            imshifted[m] = nip.shift(im=im[m],delta=shifts[m])#shifts,axes=shift_axes#shift_map
+            imshifted[m] = nip.shift(im=im[m],delta=shifts[m],dampOutside=True)#shifts,axes=shift_axes#shift_map
 
         # fixup shape
         imshifted = np.reshape(imshifted,im_origshape)
         imshifted.pixelsize = im.pixelsize
-    # unpad
-    if shift_pad:
-        pass
 
     # done
     return imshifted
@@ -822,7 +816,7 @@ def ism_recon(im, method='wf', **kwargs):
     return pinsize
 
 
-def recon_sheppardSUM(im, nbr_det, pincenter, im_ref=None, shift_method='nearest', shift_map=[], shift_roi=None, shiftval_theory=None, shift_axes=None, pinmask=None, pinfo=False, sum_method='normal', shift_style='parallel', shift_use_copy=True, ret_nonSUM=False,cross_mask_len=[4,4]):
+def recon_sheppardSUM(im, nbr_det, pincenter, im_ref=None, shift_method='nearest', shift_map=[], shift_roi=None, shiftval_theory=None, shift_axes=None, shift_extract=False, pinmask=None, pinfo=False, sum_method='normal', shift_style='parallel', shift_use_copy=True, ret_nonSUM=False,cross_mask_len=[4,4]):
     """Calculates sheppardSUM on image (for arbitrary detector arrangement). The 0th-Dimension is assumed as detector-dimension and hence allows for arbitrary, but flattened detector geometries.
 
     The algorithm does:
@@ -873,8 +867,10 @@ def recon_sheppardSUM(im, nbr_det, pincenter, im_ref=None, shift_method='nearest
     """
     # find shift-list -> Note: 'nearest' is standard
     if shift_map == []:
-        shift_map, figS, axS = recon_genShiftmap(
+        shift_map, rdict = recon_genShiftmap(
             im=im, im_ref=im_ref, pincenter=pincenter, nbr_det=nbr_det, pinmask=pinmask, shift_method=shift_method, shiftval_theory=shiftval_theory, roi=shift_roi, shift_axes=shift_axes,cross_mask_len=cross_mask_len)
+    else:
+        rdict={'im_ref':[]}
 
     # apply shifts
     if not pinmask is None:
@@ -885,6 +881,13 @@ def recon_sheppardSUM(im, nbr_det, pincenter, im_ref=None, shift_method='nearest
     # different summing methods
     imshepp, weights = recon_sheppardSUMming(im=ims, pinmask=None, sum_method=sum_method)
 
+    if ret_nonSUM:
+        res_dict['ims'] = ims
+    
+    shift_slices=get_slices_from_shiftmap(im=imshepp,shift_map=shift_map, shift_axes=shift_axes)
+    if shift_extract:
+        imshepp = imshepp[shift_slices]
+
     # info for check of energy conservation
     if pinfo:
         print("~~~~~\t Results of SheppardSUM-routine:\t~~~~~")
@@ -893,10 +896,7 @@ def recon_sheppardSUM(im, nbr_det, pincenter, im_ref=None, shift_method='nearest
         print("~~~~~\t\t\t\t\t\t~~~~~")
 
     res_dict = {'shift_map': shift_map, 'pinmask': pinmask,
-                'pincenter': pincenter, 'weights': weights}
-
-    if ret_nonSUM:
-        res_dict['ims'] = ims
+                'pincenter': pincenter, 'weights': weights, 'im_ref':rdict['im_ref'], 'shift_slices':shift_slices}
 
     # return created results
     return imshepp, res_dict
@@ -1140,6 +1140,19 @@ def recon_drawshift(shift_map, useaxes=[-2, -1]):
     plt.draw()
     plt.plot()
     return fig, ax
+
+def calculate_reference(im, avg_mode=np.median, sg_axis=[-1, -2], sg_para=[13, 2, 0, 1, 'wrap']):
+    '''
+    sg_axis=None to ignore usage
+    avg_mode=np.median, np.mean, ... -> if None should be applied, use: lambda x,axis:x
+    '''
+    imm = avg_mode(im, axis=0)
+
+    if not sg_axis is None:
+        imm = savgol_filter_nd(imm, sg_axis=sg_axis, sg_para=sg_para)
+
+    return imm
+
 
 
 # %% ---------------------------------------------------------------

@@ -761,7 +761,7 @@ def default_coord_axis(imshape):
     return {'ax': 0, 'apos': [[int(imshape[-2]*0.95), int(imshape[-1]*0.05)], ]*2, 'alen': [[-imshape[-2]//3, 0], [0, imshape[-2]//3]], 'acolor': [1, 1, 1], 'text': ['y', 'x'], 'tcolor': [1, 1, 1], 'tsize': None}
 
 
-def print_stack2subplot(imstack, im_minmax=[None, None], imdir='row', inplace=False, plt_raster=[4, 4], plt_format=[8, 6], title=None, titlestack=True, colorbar=True, axislabel=True, laytight=True, nbrs=True, nbrs_list=97, nbrs_color=[1, 1, 1], nbrs_size=None, nbrs_offsets=None, xy_norm=None, aspect=None, use_axis=None, plt_show=False, gridspec_kw=None, yx_ticks=None, yx_labels=None,axticks_format=None,ax_extent=False, grid_param=None, norm_imstack=True, coord_axis=[],ax_ret=False):
+def print_stack2subplot(imstack, im_minmax=[None, None], imdir='row', inplace=False, plt_raster=[4, 4], plt_format=[8, 6], title=None, titlestack=True, colorbar=True, axislabel=True, laytight=True, nbrs=True, nbrs_list=97, nbrs_color=[1, 1, 1], nbrs_size=None, nbrs_offsets=None, xy_norm=None, aspect=None, use_axis=None, plt_show=False, gridspec_kw=None, yx_ticks=None, yx_labels=None,axticks_format=None,ax_extent=False, grid_param=None, norm_imstack=False, coord_axis=[],ax_ret=False):
     '''
     Plots an 3D-Image-stack as set of subplots
     Based on this: https://stackoverflow.com/a/46616645

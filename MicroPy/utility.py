@@ -4,7 +4,7 @@
 	@author René Lachmann
 	@email herr.rene.richter@gmail.com
 	@create date 2019 11:53:25
-	@modify date 2022-04-30 09:22:40
+	@modify date 2022-05-05 14:49:28
 	@desc Utility package
 
 ---------------------------------------------------------------------------------------------------
@@ -1649,6 +1649,13 @@ def unpad(im,pads,axis=[-2,-1],direct=True):
         im=np.swapaxes(np.swapaxes(im,0,m)[pads[m,0]:im.shape[m]-pads[m,1]],0,m)
     
     return im
+
+def get_slices_from_shiftmap(im,shift_map, shift_axes):
+    maxmin_shift=np.round(np.array([np.max(np.array([[0,]*len(shift_map[0]),np.max(shift_map,axis=0)]),axis=0),np.min(np.array([[0,]*len(shift_map[0]),np.min(shift_map,axis=0)]),axis=0)])).astype('int')
+    shift_slices=[slice(m) for m in im.shape]
+    for m,msax in enumerate(shift_axes):
+        shift_slices[msax]=slice(maxmin_shift[0,m],im.shape[msax]+maxmin_shift[1,m])
+    return shift_slices
 
 # %% -----------------------------------------------------
 # ----              VIEWER INTERACTION
