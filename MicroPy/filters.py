@@ -4,7 +4,7 @@
 	@author René Lachmann
 	@email herr.rene.richter@gmail.com
 	@create date 2019-11-25 10:26:14
-	@modify date 2022-05-05 11:02:13
+	@modify date 2022-05-07 13:34:42
 	@desc The Filters are build such that they assume to receive an nD-stack, but they only operate in a 2D-manner (meaning: interpreting the stack as a (n-2)D series of 2D-images). Further, they assume that the last two dimensions (-2,-1) are the image-dimensions. The others are just for stacking.
 
 ---------------------------------------------------------------------------------------------------
@@ -451,10 +451,10 @@ def stf_basic(im, faxes=(-2, -1), printout=False, cols=[],**kwargs):
     im_res.append(stf_normvar(im, faxes=faxes)[0])
     
     imstats_index = ['MAX', 'MIN', 'SUM', 'MEAN', 'MEDIAN', 'VAR', 'NVAR']
-    if im.ndim>2 and len(cols)!=len(im_res[0]):
-        cols = np.arange(len(im_res[0]))
+    if im.ndim-len(faxes)>=1:
+        cols = np.arange(len(im_res[0])) if len(cols)!=len(im_res[0]) else cols
     else:
-        cols = [1,]
+        cols = [1,] if cols==[] else cols
     im_df = DataFrame(im_res, columns=cols, index=imstats_index)
 
     if printout:
