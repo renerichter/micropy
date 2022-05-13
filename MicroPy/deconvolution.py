@@ -94,7 +94,10 @@ def default_dict_deconv(**kwargs):
 
         # damping defaults
         'rwdith': 0.1,
-        'damp_method': 'damp'}  # 'zero'
+        'damp_method': 'damp',# 'zero'
+        
+        # images to evaluate after deconv
+        'use_nimgBig':0}  
 
     # take input into account
     for key in kwargs:
@@ -118,7 +121,9 @@ def tiled_processing(tile, psf, tile_id, dd, merger):
     retStats = None
     if dd['retStats']:
         retStats = processed_tile[1]
-        processed_tile = np.squeeze(processed_tile[0])
+        processed_tile = processed_tile[0][dd['use_nimgBig']] if type(processed_tile[0])==list else processed_tile[0]
+        if not processed_tile.ndim == len(merger.tiler.tile_shape):
+            processed_tile=np.reshape(np.squeeze(processed_tile),tuple(merger.tiler.tile_shape))
     merger.add(tile_id, processed_tile)
     return retStats
 
@@ -149,10 +154,10 @@ def tiled_deconv(im, psf, tiling_dict=None, deconv_dict=None, verbose=True):
                 diffdim_sel.append(slice(0, pshape))
 
     tiler = Tiler(data_shape=td['data_shape'], tile_shape=td['tile_shape'],
-                  overlap=tuple(td['overlap']), get_padding=True)
+                  overlap=tuple(td['overlap']))#, get_padding=True
     if verbose:
         print(tiler)
-    im_padded = tiler.pad_outer(im, tiler.pads)
+    #im_padded = tiler.pad_outer(im, tiler.pads)
 
     # prepare merging strategy and weighting
     if tiling_dict['diffdim_im_psf'] is None:
@@ -160,24 +165,24 @@ def tiled_deconv(im, psf, tiling_dict=None, deconv_dict=None, verbose=True):
             final_shape = im.shape[1:] if all(
                 np.array(im.shape[1:]) > np.array(psf.shape[1:])) else psf.shape[1:]
             tiler_final = Tiler(data_shape=final_shape, tile_shape=psf_tile.shape[1:], overlap=tuple(
-                td['overlap'])[1:], get_padding=True)
+                td['overlap'])[1:])#get_padding=True
         else:
             tiler_final = tiler
     else:
         tiler_final = Tiler(data_shape=psf.shape[1:], tile_shape=tile_shape_final, overlap=tuple(
-            td['overlap'])[1:], get_padding=True)
+            td['overlap'])[1:])#get_padding=True
     if verbose and tiling_dict['diffdim_im_psf']:
         print(tiler_final)
-    merger = Merger(tiler=tiler_final, window=td['window'], atol=td['atol'])
+    merger = Merger(tiler=tiler_final, window=td['window'])
 
-    # run for each created tile
-    for tile_id, tile in tiler(im_padded, progress_bar=verbose):
+    # run for each created tile -> used: im_padded before
+    for tile_id, tile in tiler(im, progress_bar=verbose):
         if not tiling_dict['diffdim_im_psf'] is None:
             tile = nip.image(tile[diffdim_sel])
             tile.pixelsize = psf_tile.pixelsize
         retStats.append(tiled_processing(tile, psf_tile, tile_id, dd, merger))
 
-    im_deconv = nip.image(merger.merge(data_orig_shape=td['data_shape'],))
+    im_deconv = nip.image(merger.merge())#data_orig_shape=td['data_shape'],
     im_deconv.pixelsize = im.pixelsize
 
     return im_deconv, retStats

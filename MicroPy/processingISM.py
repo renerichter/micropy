@@ -816,7 +816,7 @@ def ism_recon(im, method='wf', **kwargs):
     return pinsize
 
 
-def recon_sheppardSUM(im, nbr_det, pincenter, im_ref=None, shift_method='nearest', shift_map=[], shift_roi=None, shiftval_theory=None, shift_axes=None, shift_extract=False, pinmask=None, pinfo=False, sum_method='normal', shift_style='parallel', shift_use_copy=True, ret_nonSUM=False,cross_mask_len=[4,4]):
+def recon_sheppardSUM(im, nbr_det, pincenter, im_ref=None, shift_method='nearest', shift_map=[], shift_roi=None, shiftval_theory=None, shift_axes=(-2,-1), shift_extract=False, pinmask=None, pinfo=False, sum_method='normal', shift_style='parallel', shift_use_copy=True, ret_nonSUM=False,cross_mask_len=[4,4]):
     """Calculates sheppardSUM on image (for arbitrary detector arrangement). The 0th-Dimension is assumed as detector-dimension and hence allows for arbitrary, but flattened detector geometries.
 
     The algorithm does:
