@@ -875,7 +875,7 @@ def recon_sheppardSUM(im, nbr_det, pincenter, im_ref=None, shift_method='nearest
     # apply shifts
     if not pinmask is None:
         im = im[pinmask]
-        shift_map = shift_map[pinmask]
+        shift_map = shift_map[pinmask] if not len(shift_map) == np.sum(pinmask) else shift_map
     ims = recon_sheppardShift(im, shift_map, method=shift_style, use_copy=shift_use_copy)
 
     # different summing methods

@@ -53,6 +53,8 @@ def default_dict_tiling(imshape: Union[tuple, list, np.ndarray],
                         basic_shape: list = [128, 128],
                         basic_roverlap: list = [0.2, 0.2],
                         **kwargs):
+    '''Note: tiling_low_thresh defines the lower boundary that the used system is capable of doing a l-bfgs-b based deconvolution with poisson fwd model. If model, gpu, ... is changed, change this value!'''
+    
     # sanity
     imshape = imshape if type(imshape) in [list, tuple] else imshape.shape
 
@@ -62,7 +64,8 @@ def default_dict_tiling(imshape: Union[tuple, list, np.ndarray],
            'overlap_rel': np.array([0.0, ]*(len(imshape)-len(basic_shape))+list(basic_roverlap)),
            'window': 'hann',
            'diffdim_im_psf': None,
-           'atol': 1e-10}
+           'atol': 1e-10,
+           'tiling_low_thresh': 512*128*128*np.dtype(np.float32).itemsize}
 
     # calculate overlap
     tdd['overlap'] = np.asarray(tdd['overlap_rel']*tdd['tile_shape'], 'int')
