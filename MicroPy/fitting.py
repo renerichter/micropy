@@ -178,7 +178,7 @@ def extract_multiPSF(im, markers:list=[], im_axes:tuple=(-2, -1), bead_roi:list=
 
     # fit 2D-Gauss -> para =(amplitude, center_x, center_y, sigma_x, sigma_y, rotation, offset)
     if beadf.ndim == 2:
-        para, gaussfit = nip.fit_gauss2D(beadf)
+        para, gaussfit = nip.fit_gauss2D(beadf,startPos=np.array(beadf.shape)//2)
         para = [para, ]
     else:
         # simple work-around for 3D --> need proper fit with rotations etc!
