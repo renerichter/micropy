@@ -7,8 +7,9 @@ import numpy as np
 import NanoImagingPack as nip
 
 # intern
-from .utility import get_coords_from_markers, center_of_mass, findshift, normNoff
+from .utility import get_coords_from_markers, center_of_mass, findshift, normNoff,get_slices_from_shiftmap
 from .transformations import lp_norm, dampEdge
+from .filters import savgol_filter_nd
 from .inout import stack2tiles
 
 # %%
@@ -69,7 +70,7 @@ def extract_PSFlist(im, ref=None, markers=None, im_axes=(-2, -1), bead_roi=[16,1
     return beadf_list,res_dict_list
 
 
-def extract_multiPSF(im, markers:list=[], im_axes:tuple=(-2, -1), bead_roi:list=[16, 16], bead_tol:float=-1.0,compare=False, pre_damp:dict={}, post_damp:dict={},shift_subpix:bool=True):
+def extract_multiPSF(im, markers:list=[], im_axes:tuple=(-2, -1), bead_roi:list=[16, 16], bead_tol:float=-1.0,compare=False, pre_damp:dict={}, post_damp:dict={},shift_subpix:bool=True, trim_size:bool=False):
     """ Extracts PSF from image. 
     Extracts ROI from Marker-Positions, aligns selections and fits Gauss to them.
     Implemented for 2D and 3D.
@@ -134,7 +135,7 @@ def extract_multiPSF(im, markers:list=[], im_axes:tuple=(-2, -1), bead_roi:list=
         beads = dampEdge(beads, **pre_damp)
 
     # get rid of NaNs
-    beads -= np.min(beads, keepdims=True)
+    beads -= np.min(beads, axis=tuple(np.arange(1,beads.ndim)),keepdims=True)
     beads[np.isnan(beads)] = 0
 
     # get center of mass and distances
@@ -142,13 +143,15 @@ def extract_multiPSF(im, markers:list=[], im_axes:tuple=(-2, -1), bead_roi:list=
     com_mean = np.mean(com, axis=-1, keepdims=True)
     com_dist = lp_norm(com-com_mean, p=2, normaxis=(-2,))
     # print(f"l2-distances={com}")
-    bead_ref = np.argmin(com_dist)
+    bead_ref_sel = np.argmin(com_dist)
+    bead_ref=beads[bead_ref_sel]
+    bead_refsav=savgol_filter_nd(bead_ref,sg_axis=tuple(np.arange(1,bead_ref.ndim)),sg_para=[5,2,0,1,'wrap'])
     # print(f"referenceBead={bead_ref}")
 
     # correlate and find respective centers
     for m, bead in enumerate(beads):
-        if not m == bead_ref:
-            myshift, _, _, _ = findshift(beads[bead_ref], bead)
+        if not m == bead_ref_sel:
+            myshift, _, _, _ = findshift(bead_refsav, bead)
             #nip.v5(nip.catE(bead,nip.shift2Dby(bead, myshift),beads[bead_ref]))
             myshift = myshift if shift_subpix else np.round(myshift, 0)
             beads[m] = nip.shift(bead, myshift, axes=im_axes, dampOutside=True)
@@ -159,8 +162,8 @@ def extract_multiPSF(im, markers:list=[], im_axes:tuple=(-2, -1), bead_roi:list=
     # shift mean to center -> cut away offset by borders and bounding effects to find proper center pos
     #bead_sum_com = np.mean(center_of_mass(bead_sum, com_axes=im_axes,im_axes=im_axes, placement='corner'), axis=-1, keepdims=True)
     bss=np.array(bead_sum.shape,dtype='int')
-    bead_sum_com = center_of_mass(nip.extract(nip.extract(bead_sum,bss//2),bss), com_axes=im_axes, im_axes=im_axes, placement='corner')
-
+    #bead_sum_com = center_of_mass(nip.extract(nip.extract(bead_sum,bss//2),bss), com_axes=im_axes, im_axes=im_axes, placement='corner')
+    bead_sum_com = center_of_mass(savgol_filter_nd(bead_sum,sg_axis=tuple(np.arange(1,bead_ref.ndim)),sg_para=[5,2,0,1,'wrap'])**3, com_axes=im_axes, im_axes=im_axes, placement='corner')
     beadf_shift = roi_center-bead_sum_com if shift_subpix else np.round(roi_center-bead_sum_com, 0).astype('int')
     beadf = nip.shift(bead_sum, beadf_shift, axes=im_axes, dampOutside=True)
 
@@ -169,8 +172,19 @@ def extract_multiPSF(im, markers:list=[], im_axes:tuple=(-2, -1), bead_roi:list=
         #beads = dampEdge(beads, **pre_damp)
         beadf = nip.DampEdge(beadf,**post_damp)
 
-    # sum-normalize to 1
-    beadf-=np.min(beadf,keepdims=True)
+    # get slices and sum-normalize to 1
+    beadf_slices = get_slices_from_shiftmap(im=beadf,shift_map=[beadf_shift,], shift_axes=im_axes)
+    if trim_size:
+        beadf=beadf[beadf_slices]
+        beadf-=np.min(beadf)
+    else:
+        bmask=np.copy(beadf)
+        bmask[beadf_slices]=np.max(bmask)
+        bmask[bmask<np.max(bmask)]=0
+        bmask = (1-bmask.astype('bool')).astype('bool')
+        
+        beadf[beadf_slices]-=np.min(beadf[beadf_slices])
+        beadf[bmask]=0
     beadf_sum=np.sum(beadf)
     if bead_tol<0:
         bead_tol=float(np.median(beadf)/100)
@@ -216,7 +230,7 @@ def extract_multiPSF(im, markers:list=[], im_axes:tuple=(-2, -1), bead_roi:list=
         bead_comp = [v1, v2]
 
     # combine to result
-    res_dict = {'gaussfit': gaussfit, 'residuum': residuum, 'beads': beads,'beadf_sum':beadf_sum,
+    res_dict = {'gaussfit': gaussfit, 'residuum': residuum, 'beads': beads,'beadf_sum':beadf_sum, 'beadf_slices': beadf_slices,
                 'para': para, 'para_names':para_names,'markers': markers, 'bead_comp': bead_comp}
 
     # done?
