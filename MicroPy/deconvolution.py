@@ -42,7 +42,7 @@ def ismR_deconvolution(imfl, psfl, method='multi', regl=None, lambdal=None, NIte
         pass
     elif method == 'multi':
         res = invmod.Deconvolve(imfl, psfl, NIter=NIter, regularization=regl,
-                                mylambda=lambdal, BorderRegion=0.1, useSeparablePSF=False)
+                                mylambda=lambdal, BorderRegion=0.1, useSeparablePSF=False,returnBig=True)
         # print('test')
     else:
         raise ValueError('Method unknown. Please specify your needs.')
@@ -53,7 +53,11 @@ def default_dict_tiling(imshape: Union[tuple, list, np.ndarray],
                         basic_shape: list = [128, 128],
                         basic_roverlap: list = [0.2, 0.2],
                         **kwargs):
-    '''Note: tiling_low_thresh defines the lower boundary that the used system is capable of doing a l-bfgs-b based deconvolution with poisson fwd model. If model, gpu, ... is changed, change this value!'''
+    '''Note: tiling_low_thresh defines the lower boundary that the used system is capable of doing a l-bfgs-b based deconvolution with poisson fwd model. If model, gpu, ... is changed, change this value!
+    
+    possible parameters:
+    
+    '''
     
     # sanity
     imshape = imshape if type(imshape) in [list, tuple] else imshape.shape
@@ -94,6 +98,9 @@ def default_dict_deconv(**kwargs):
         'log_name': None,
         'retStats': True,
         'oparam': {"learning_rate": 1.5, 'disp': True},
+        'validMask': None,
+        'anisotropy':[1.0,],
+        'returnBig': True,
 
         # damping defaults
         'rwdith': 0.1,
@@ -114,7 +121,8 @@ def deconv_atom(im, psf, dd):
     multiview_dim = dd['multiview_dim'] if 'multiview_dim' in dd else None
 
     processed_tile = invmod.Deconvolve(nimg=im, psf=psf, NIter=dd['NIter'], lossFkt=dd['lossFkt'], regularization=dd['regl'], mylambda=dd['lambdal'],
-                                       regEps=dd['regEps'], BorderRegion=dd['BorderRegion'], optimizer=dd['optimizer'], forcePos=dd['forcePos'], multiview_dim=multiview_dim, tflog_name=dd['log_name'], retStats=dd['retStats'],oparam=dd['oparam'])
+                                       regEps=dd['regEps'], BorderRegion=dd['BorderRegion'], optimizer=dd['optimizer'], forcePos=dd['forcePos'], multiview_dim=multiview_dim, tflog_name=dd['log_name'], retStats=dd['retStats'],oparam=dd['oparam'], validMask=dd['validMask'], anisotropy=dd['anisotropy'], returnBig=dd['returnBig'])
+    
     return processed_tile
 
 

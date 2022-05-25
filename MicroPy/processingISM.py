@@ -434,7 +434,7 @@ def unmix_recover_thickslice(unmixer, im, verbose=True, dtype=None):
 #                   ISM-Reconstruction
 # ---------------------------------------------------------------
 
-def recon_genShiftmap(im, pincenter, im_ref=None, nbr_det=None, pinmask=None, shift_method='nearest', shiftval_theory=None, roi=None, shift_axes=None, cross_mask_len=[4,4], sg_para=[13,2,0,1,'wrap'],printmap=False):
+def recon_genShiftmap(im, pincenter, im_ref=None, nbr_det=None, pinmask=None, shift_method='nearest', shiftval_theory=None, roi=None, shift_axes=None, cross_mask_len=[4,4], period=[],factors=[], sg_para=[13,2,0,1,'wrap'],subpix_lim=2,printmap=False):
     """Generates Shiftmap for ISM SheppardSUM-reconstruction.
     Assumes shape: [Pinhole-Dimension , M] where M stands for arbitrary mD-image.
     Fills shift_map from right-most dimension to left, hence errors could be evoked in case of only shifts along dim=[1,2] applied, but array has spatial dim=[1,2,3]. Hence shifts will be applied along [2,3] with their respective period factors.
@@ -479,12 +479,15 @@ def recon_genShiftmap(im, pincenter, im_ref=None, nbr_det=None, pinmask=None, sh
     TODO
     ----
     1) fix dimensionality problem of factors generation (eg by taking in a 'shift_axis' parameter)
+    2) 'cross' method not implemented for arbitrary shape
+    3) add general detector-position calculation for arbitrary period -> for now: airyDetector shape is hardcoded
     """
     # sanity
     if shift_axes is None:
         shift_axes = np.arange(1, im.ndim)
     if not type(shift_axes) == np.ndarray:
         shift_axes = np.mod(np.array(shift_axes), im.ndim)
+    calc_factors = True if factors == [] else False
 
     if im_ref is None:
         im_ref = savgol_filter_nd(im[pincenter], sg_axis=-im.ndim+shift_axes, sg_para=sg_para, direct=False)
@@ -497,47 +500,49 @@ def recon_genShiftmap(im, pincenter, im_ref=None, nbr_det=None, pinmask=None, sh
         pcu = np.unravel_index(pincenter, nbr_det)
 
         # find shift per period-direction
-        factors = []
         shiftvec = []
         for m in range(len(nbr_det)):
             # calculate shift, but be aware to not leave the array
-            period = int(np.prod(np.array(nbr_det[(m+1):])))
+            perioda = int(np.prod(np.array(nbr_det[(m+1):]))) if period == [] else period[m]
             if shift_method == 'nearest':
                 shifth, _, _, _ = findshift(im_ref,
-                                            im[np.mod(pincenter+period, im.shape[0])],  100)
+                                            im[np.mod(pincenter+perioda, im.shape[0])],  10**subpix_lim)
             elif shift_method == 'cross':
                 cmask=np.zeros(im.shape[0],dtype='bool')
                 direct_pixel_dist=np.arange(-cross_mask_len[m],cross_mask_len[m]+1)#+cmask.shape[m]
                 pixel_offset=np.prod(nbr_det[-(m+1):])//2
-                cmask[np.mod(pixel_offset+(direct_pixel_dist+nbr_det[m]//2)*period,im.shape[0])]=True
+                cmask[np.mod(pixel_offset+(direct_pixel_dist+nbr_det[m]//2)*perioda,im.shape[0])]=True
                 shifth,_,_=recon_genShiftmap(im, pincenter, im_ref=im_ref, nbr_det=nbr_det, pinmask=cmask, shift_method='mask', shiftval_theory=None, roi=None, shift_axes=None, printmap=False)
                 shifth=np.mean(avoid_division_by_zero(shifth[cmask],direct_pixel_dist[:,np.newaxis]),axis=0)
             else:
                 shifth = shiftval_theory[m]
-            shiftvec.append(shifth)
+            shiftvec.append(np.round(shifth,subpix_lim))
 
             # create factors
-            factors.append(nip.ramp(nbr_det, ramp_dim=m,
+            if calc_factors:
+                factors.append(nip.ramp(nbr_det, ramp_dim=m,
                                     placement='corner').flatten()-pcu[m])
 
         # generate shiftvec -> eg [eZ,eY,eX] where eZ=[eZ1,eZ2,eZ3]
         shiftvec = np.array(shiftvec)
-        shiftvec = np.array([shiftvec[:, m] for m in shift_axes-1]).T
-        factors = np.array(factors).T
+        if calc_factors:
+            shiftvec = np.array([shiftvec[:, m] for m in shift_axes-1]).T
+            factors = np.array(factors).T
 
-        # sanity for arbitrary dimensionality -> find non-shifted dimensions and add to factors --> need to check logic again
-        #shiftsums = np.sum(abs(shiftvec), axis=0)
-        #shiftfree_dim = shift_axes[list(np.where(shiftsums == 0)[0])]
-        #zero_shifts = np.arange(1,im.ndim)
-        # zero_shifts[shift_axes-1]
-        # if len(zero_shifts) > 0:
-        #    factors = add_multi_newaxis(factors, zero_shifts)
+            # sanity for arbitrary dimensionality -> find non-shifted dimensions and add to factors --> need to check logic again
+            #shiftsums = np.sum(abs(shiftvec), axis=0)
+            #shiftfree_dim = shift_axes[list(np.where(shiftsums == 0)[0])]
+            #zero_shifts = np.arange(1,im.ndim)
+            # zero_shifts[shift_axes-1]
+            # if len(zero_shifts) > 0:
+            #    factors = add_multi_newaxis(factors, zero_shifts)
 
-        # generate shifts for whole array (elementwise-multiplication)
-        shift_map = np.matmul(factors, shiftvec)
-        #if not pinmask is None:
-        #    shift_map = shift_map[pinmask]
-
+            # generate shifts for whole array (elementwise-multiplication)
+            shift_map = np.matmul(factors, shiftvec)
+            #if not pinmask is None:
+            #    shift_map = shift_map[pinmask]
+        else:
+            shift_map=np.array([m[0]*shiftvec[0]+m[1]*shiftvec[1] for m in factors])
     elif shift_method == 'mask':
         imh = im[pinmask]
         # shift_map = np.array([[0, ]*im.ndim]*im.shape[0])
@@ -816,7 +821,7 @@ def ism_recon(im, method='wf', **kwargs):
     return pinsize
 
 
-def recon_sheppardSUM(im, nbr_det, pincenter, im_ref=None, shift_method='nearest', shift_map=[], shift_roi=None, shiftval_theory=None, shift_axes=(-2,-1), shift_extract=False, pinmask=None, pinfo=False, sum_method='normal', shift_style='parallel', shift_use_copy=True, ret_nonSUM=False,cross_mask_len=[4,4]):
+def recon_sheppardSUM(im, nbr_det, pincenter, im_ref=None, shift_method='nearest', shift_map=[], shift_roi=None, shiftval_theory=None, shift_axes=(-2,-1), shift_extract=False, pinmask=None, pinfo=False, sum_method='normal', shift_style='parallel', shift_use_copy=True, ret_nonSUM=False,cross_mask_len=[4,4], period=[],factors=[],subpix_lim=2):
     """Calculates sheppardSUM on image (for arbitrary detector arrangement). The 0th-Dimension is assumed as detector-dimension and hence allows for arbitrary, but flattened detector geometries.
 
     The algorithm does:
@@ -868,7 +873,7 @@ def recon_sheppardSUM(im, nbr_det, pincenter, im_ref=None, shift_method='nearest
     # find shift-list -> Note: 'nearest' is standard
     if shift_map == []:
         shift_map, rdict = recon_genShiftmap(
-            im=im, im_ref=im_ref, pincenter=pincenter, nbr_det=nbr_det, pinmask=pinmask, shift_method=shift_method, shiftval_theory=shiftval_theory, roi=shift_roi, shift_axes=shift_axes,cross_mask_len=cross_mask_len)
+            im=im, im_ref=im_ref, pincenter=pincenter, nbr_det=nbr_det, pinmask=pinmask, shift_method=shift_method, shiftval_theory=shiftval_theory, roi=shift_roi, shift_axes=shift_axes,cross_mask_len=cross_mask_len,period=period,factors=factors,subpix_lim=subpix_lim)
     else:
         rdict={'im_ref':[]}
 
@@ -880,9 +885,6 @@ def recon_sheppardSUM(im, nbr_det, pincenter, im_ref=None, shift_method='nearest
 
     # different summing methods
     imshepp, weights = recon_sheppardSUMming(im=ims, pinmask=None, sum_method=sum_method)
-
-    if ret_nonSUM:
-        res_dict['ims'] = ims
     
     shift_slices=get_slices_from_shiftmap(im=imshepp,shift_map=shift_map, shift_axes=shift_axes)
     if shift_extract:
@@ -897,6 +899,8 @@ def recon_sheppardSUM(im, nbr_det, pincenter, im_ref=None, shift_method='nearest
 
     res_dict = {'shift_map': shift_map, 'pinmask': pinmask,
                 'pincenter': pincenter, 'weights': weights, 'im_ref':rdict['im_ref'], 'shift_slices':shift_slices}
+
+    res_dict['ims'] = ims if ret_nonSUM else None
 
     # return created results
     return imshepp, res_dict
