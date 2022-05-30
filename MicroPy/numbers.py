@@ -88,6 +88,13 @@ def generate_combinations(nbr_entries, combined_entries=2):
             "The expected combined_entries size is not implemented yet.")
     return id1, id2
 
+# %% --------------------------------------------------------------
+#           LOGIC OPERATIONS
+# ----------------------------------------------------------------
+def xor(x, y):
+    '''from: https://www.delftstack.com/howto/python/xor-in-python/'''
+    return bool((x and not y) or (not x and y))
+
 
 # %% --------------------------------------------------------------
 #               DIFFERENT SUMMING
@@ -98,3 +105,6 @@ def harmonic_sum(a, b):
     calculates the harmonic sum of two inputs. 
     '''
     return a * b / (a + b)
+
+def harmonic_mean(a, b):
+    return a*a*b*b/(a*a+b*b)

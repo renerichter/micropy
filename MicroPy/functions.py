@@ -4,6 +4,7 @@ Relevant functions are implemented here.
 import NanoImagingPack as nip
 import numpy as np
 from typing import Optional, Tuple, List, Union, Generator, Callable
+from .numbers import harmonic_mean
 
 
 def gaussian1D_func(x,mu,sigma):
@@ -68,3 +69,9 @@ def gaussianND(size: np.ndarray,
 
     # done?
     return gaussianND
+
+def gaussProd_mu(λ1, λ2):
+    return 1/(1+λ2*λ2/(λ1*λ1))
+
+def gaussProd_sigma(σ1, σ2):
+    return harmonic_mean(σ1, σ2)

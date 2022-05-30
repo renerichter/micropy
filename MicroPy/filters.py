@@ -4,7 +4,7 @@
 	@author René Lachmann
 	@email herr.rene.richter@gmail.com
 	@create date 2019-11-25 10:26:14
-	@modify date 2022-05-07 13:34:42
+	@modify date 2022-05-27 16:46:20
 	@desc The Filters are build such that they assume to receive an nD-stack, but they only operate in a 2D-manner (meaning: interpreting the stack as a (n-2)D series of 2D-images). Further, they assume that the last two dimensions (-2,-1) are the image-dimensions. The others are just for stacking.
 
 ---------------------------------------------------------------------------------------------------
@@ -775,6 +775,12 @@ def image_sharpness(im, im_filters=['Tenengrad']):
     # return res
     pass
 
+def get_SNR(ims, reps=1e-7):
+    signal = np.mean(ims, axis=0)
+    noise = np.std(ims, axis=0)
+    noise[noise == 0] += np.max(noise)*reps
+    snr = signal / noise
+    return snr
 
 # %%
 # --------------------------------------------------------
@@ -878,3 +884,41 @@ def savgol_filter_nd(im, sg_axis=[-1, -2], sg_para=[13, 2, 0, 1, 'wrap'], direct
             im, window_length=sg_para[0], polyorder=sg_para[1], deriv=sg_para[2], delta=sg_para[3], axis=sga, mode=sg_para[4])
 
     return im
+
+def moving_average_1d(im1d, window_length):
+    '''
+    Thanks to https://stackoverflow.com/a/54628145
+
+    '''
+    return np.convolve(im1d, np.ones(window_length), 'valid') / window_length
+
+
+def moving_average_2d(stack2d, window_length):
+    mavg_pre = []
+    mavg = []
+
+    # calculate first entries
+    for m in np.arange(1, window_length):
+        mavg_pre.append(np.mean(stack2d[:, :m], axis=-1))
+    mavg_pre = np.array(mavg_pre)
+
+    for m, ys in enumerate(stack2d):
+        mavg.append(list(mavg_pre[:, m])+list(moving_average_1d(ys, window_length)))
+    mavg = np.array(mavg)
+
+    return mavg
+
+def gaussf(img, kernelSigma, axes: list = None):
+    """
+    enhanced nip-toolbox function with axes-parameter;
+    performs an N-dimensional Gaussian convolution, based on Fourier-transforms.
+
+    :param img: input image to convolve
+    :param kernelSigma: sizes of the kernel stated as StdDev. If smaller thant the dimensions of the image, the other kernelsizes are assumed to be zero
+    :return: the convolved image
+    """
+    if axes is None:
+        kernelSigma = nip.repToList(kernelSigma, img.ndim)
+        axes = np.arange(img.ndim)
+    kernel = nip.gaussian(img.shape[-len(kernelSigma):], kernelSigma)
+    return nip.convolve(img, kernel, norm2nd=True, axes=axes)

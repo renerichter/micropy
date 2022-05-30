@@ -609,7 +609,6 @@ def radial_sum(im: np.ndarray, scale: np.ndarray = None, maxfreq: int = None, nb
     else:
         return rsum
 
-
 def reduce_shape(im: np.ndarray, lim_dim: int = -2) -> np.ndarray:
     """Reduces shape of an array until the last dimension lim_dim.
 

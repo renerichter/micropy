@@ -9,6 +9,8 @@ import InverseModelling as invmod
 from tiler import Tiler, Merger
 from typing import Union
 
+from .inout import store_data
+
 
 def ismR_deconvolution(imfl, psfl, method='multi', regl=None, lambdal=None, NIter=100, tflog_name=None):
     '''
@@ -52,7 +54,7 @@ def ismR_deconvolution(imfl, psfl, method='multi', regl=None, lambdal=None, NIte
 def default_dict_tiling(imshape: Union[tuple, list, np.ndarray],
                         basic_shape: list = [128, 128],
                         basic_roverlap: list = [0.2, 0.2],
-                        **kwargs):
+                        **kwargs) -> dict:
     '''Note: tiling_low_thresh defines the lower boundary that the used system is capable of doing a l-bfgs-b based deconvolution with poisson fwd model. If model, gpu, ... is changed, change this value!
     
     possible parameters:
@@ -82,7 +84,7 @@ def default_dict_tiling(imshape: Union[tuple, list, np.ndarray],
     return tdd
 
 
-def default_dict_deconv(**kwargs):
+def default_dict_deconv(**kwargs) -> dict:
 
     deconv_dict = {
         # deconv defaults
@@ -124,7 +126,6 @@ def deconv_atom(im, psf, dd):
                                        regEps=dd['regEps'], BorderRegion=dd['BorderRegion'], optimizer=dd['optimizer'], forcePos=dd['forcePos'], multiview_dim=multiview_dim, tflog_name=dd['log_name'], retStats=dd['retStats'],oparam=dd['oparam'], validMask=dd['validMask'], anisotropy=dd['anisotropy'], returnBig=dd['returnBig'])
     
     return processed_tile
-
 
 def tiled_processing(tile, psf, tile_id, dd, merger):
     # damped_tile = nip.DampEdge(tile, rwidth=dd['rwdith'], method=dd['damp_method'])
@@ -197,3 +198,166 @@ def tiled_deconv(im, psf, tiling_dict=None, deconv_dict=None, verbose=True):
     im_deconv.pixelsize = im.pixelsize
 
     return im_deconv, retStats
+
+def deconv_switcher(im, psf, tiling_dict, deconv_dict, do_tiling):
+    tiling_dict = default_dict_tiling(imshape=im.shape, basic_shape=list(
+        im.shape[:-2])+[128, 128], basic_roverlap=[0, ]*(im.ndim-2)+[0.2, 0.2]) if tiling_dict is None else tiling_dict
+    if do_tiling or any(np.array([im.nbytes, psf.nbytes]) > tiling_dict['tiling_low_thresh']):
+        print(
+            f"Switched to tiled deconv. Do_tiling={do_tiling}, bigger_tiling_thresh={any(np.array([im.nbytes, psf.nbytes]) > tiling_dict['tiling_low_thresh'])}.")
+        return tiled_deconv(im=im, psf=psf, tiling_dict=tiling_dict, deconv_dict=deconv_dict)
+    else:
+        print("Switched to complete deconv.")
+        return deconv_atom(im=im, psf=psf, dd=deconv_dict)
+
+def deconv_test_param(im, psf, tiling_dict, deconv_dict, param, param_range, use_im_big=False, use_tiling_lowthresh=True):
+    deconv_list = []
+    im_deconv_retStats = []
+    if param == 'regl':
+        param_val = np.copy(deconv_dict['lambdal'])
+
+    smaller_than_tiling_thresh = True if tiling_dict is None else (all(np.array(
+        [im.nbytes, psf.nbytes]) < tiling_dict['tiling_low_thresh']) if use_tiling_lowthresh else False)
+
+    for m, para in enumerate(param_range):
+        deconv_dict[param] = para
+        if param == 'regl':
+            deconv_dict['lambdal'] = param_val[m]
+        if tiling_dict is None or smaller_than_tiling_thresh:
+            im_deconv = deconv_atom(im, psf, deconv_dict)
+        else:
+            im_deconv = tiled_deconv(
+                im=im, psf=psf, tiling_dict=tiling_dict, deconv_dict=deconv_dict)
+        if 'retStats' in deconv_dict and deconv_dict['retStats']:
+            im_deconv_retStats.append(im_deconv[1])
+            im_deconv = im_deconv[0]
+        im_deconv = im_deconv[use_im_big] if type(im_deconv) == list else im_deconv
+        deconv_list.append(im_deconv)
+
+    deconv_list = np.squeeze(nip.image(np.array(deconv_list)))
+    deconv_list.pixelsize = im.pixelsize
+
+    if param == 'regl':
+        deconv_dict['lambdal'] = param_val
+
+    # done?
+    if not im_deconv_retStats == []:
+        return deconv_list, im_deconv_retStats
+    else:
+        return deconv_list
+
+def deconv_test_param_on_list(ims, psfs, pad, resd, rparams, ddh, sname=['dec2D', 'conf'], ldim=0, do_tiling=False):
+    '''Calculate Deconvolution within a parameterrange for set of images.'''
+
+    # sanity
+    snamef = '_'.join(sname)
+    if not ldim == 0:
+        ims = np.swapaxes(ims, 0, ldim)
+        psfs = np.swapaxes(psfs, 0, ldim)
+
+    # prepare deconv parameters
+    resd[snamef+'_rtest_dict'] = dict(ddh)
+    resd[snamef+'rtest_dict']['BorderRegion'] = resd[snamef+'rtest_dict']['BorderRegion'][-(
+        ims.ndim-1):]
+
+    # prepare storage
+    resd[snamef+'rtest'] = nip.image(
+        np.zeros([len(ddh['lambdal_range']), ]+list(ims.shape)))
+    resd[snamef+'rtest_rstats'] = [{} for m in range(ims.shape[ldim])]
+    resd[snamef+'rtest'].pixelsize = ims.pixelsize
+
+    # normalize
+    if rparams['im_norm']:
+        resd[sname[1]+'sum'] = np.sum(ims, axis=tuple(pad['faxes']), keepdims=True)
+        ims *= resd['ims_sum'][0]/resd[sname[1]+'sum']
+
+    # tiling dict
+    td = default_dict_tiling(imshape=ims.shape[1:], basic_shape=list(ims[0].shape[:-3])+list(
+        pad['td']['tile_shape'][-3:]), basic_roverlap=[0, ]*(ims[0].ndim-3)+list(pad['td']['overlap_rel'][-3:])) if do_tiling else None
+
+    # test deconv parameters
+    for m in range(ims.shape[0]):
+        dech, resd[snamef+'rtest_rstats'][m] = deconv_test_param(im=ims[m], psf=psfs[m], tiling_dict=td, deconv_dict=resd[
+            snamef+'rtest_dict'], param=resd[snamef+'rtest_dict']['param'], param_range=resd[snamef+'rtest_dict']['lambdal_range'])
+        resd[snamef+'rtest'][m] = np.reshape(dech,
+                                             resd[snamef+'rtest'][m].shape)  # [:,m]
+
+    # fix order?
+    # if not ldim == 0:
+    #    resd[snamef+'rtest'] = np.swapaxes(resd[snamef+'rtest'], 0, ldim)
+
+    # blueprint for saving in case something breaks on the fly
+    if 0:
+        pad['save_name'] = pad['save_name_base'] + snamef+'_resd'
+        store_data(param_dict=pad, proc_dict=resd, data_dict=None)
+
+    # done?
+    return resd
+
+
+def recon_deconv_list(ims, psfs, pad, rparams, resd, sname=['dec_2D', 'allview_indivim'], ldim=0, ddh={}, do_tiling=False, td=None, verbose=True):
+    '''allows for different parameters per deconvolution step via rparams['lambdal'].
+    TODO:
+    1) docstring
+    2) add sanity check for ddh and td integrity
+    '''
+    # verbosity
+    if verbose:
+        print("Starting Function: recon_deconv_list")
+
+    # sanity
+    snamef = '_'.join(sname)
+    if not ldim == 0:
+        ims = np.swapaxes(ims, 0, ldim)
+        psfs = np.swapaxes(psfs, 0, ldim)
+
+    # prepare storage
+    resd[snamef] = nip.image(np.zeros([ims.shape[0], ]+list(ims.shape[2:])))
+    resd[snamef+'_stats'] = [{} for m in range(ims_ft.shape[0])]
+    resd[snamef].pixelsize = ims.pixelsize[2:]
+
+    # prepare deconv parameters
+    ddh['lambdal'] = rparams['lambdal'][m]
+    resd[snamef+'_dict'] = dict(ddh)
+    resd[snamef+'_dict']['BorderRegion'] = resd[snamef+'_dict']['BorderRegion'][-(
+        ims.ndim-1):]
+
+    # tiling dict
+    td = default_dict_tiling(imshape=ims.shape[1:], basic_shape=list(ims[0].shape[:-3])+list(
+        pad['td']['tile_shape'][-3:]), basic_roverlap=[0, ]*(ims[0].ndim-3)+list(pad['td']['overlap_rel'][-3:])) if (do_tiling and td is None) else None
+
+    # normalize
+    if rparams['im_norm']:
+        resd[sname[1]+'sum'] = np.sum(ims, axis=tuple(pad['faxes']), keepdims=True)
+        ims *= resd['ims_sum'][0]/resd[sname[1]+'sum']
+
+    # deconvolve
+    ilen = ims.shape[0]
+    for m, mIm in enumerate(ims):
+        if verbose:
+            print((">>> m={:0"+str(ilen)+"d}.").format(m))
+
+        # deconv --> multiview, all-views for each raw (and calculated) image
+        ddh['lambdal'] = rparams[snamef+'lambdal'][m]
+        resd[snamef+'_dict'][m] = dict(ddh)
+
+        # tried to catch output written by l-bfgs
+        if 0:
+            from io import StringIO
+            from contextlib import redirect_stdout
+            f = StringIO()
+            with redirect_stdout(f):
+                dech, resd[snamef+'_stats'][m] = deconv_atom(
+                    im=ims[:, m], psf=psfs[:, m], dd=ddh)
+            resd[snamef+''][m] = dech[0][0]
+            out = f.getvalue().splitlines()
+        else:
+            dech, resd[snamef+'_stats'][m] = deconv_switcher(
+                im=mIm, psf=psfs[m], tiling_dict=td, deconv_dict=ddh, do_tiling=rparams['do_tiling'])
+            resd[snamef][m] = nip.extract(
+                dech[0][0], resd['dec_2D_shepp'][m].shape) if rparams['use_slices'] else dech[0][0]
+
+    # done?
+    if verbose:
+        print("Done.")
+    return resd

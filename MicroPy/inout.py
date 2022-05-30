@@ -13,11 +13,17 @@ from matplotlib.patches import Arrow
 from matplotlib.ticker import FormatStrFormatter
 from tifffile import imread as tifimread
 from typing import Optional, Tuple, List, Union, Generator, Callable
-from .utility import normNoff, add_multi_newaxis, transpose_arbitrary, fill_dict_with_default
+
 import subprocess
 from io import StringIO
 import untangle
+
+
 # mipy imports
+from .utility import normNoff, add_multi_newaxis, transpose_arbitrary, fill_dict_with_default
+from .transformations import radial_sum
+from .microscopyCalculations import calculate_resolution, convert_x_to_k
+from .filters import moving_average_2d
 
 # %% -------------------------------------------
 #       LOGGING
@@ -94,6 +100,33 @@ def logger_switch_output(str_message, logger=False):
 #                      STORAGE
 # -----------------------------------------------
 
+def load_data(param_dict, load_data_dict=False):
+    store_dict = np.load(param_dict['save_path']+param_dict['save_name'] +
+                         '_data.npz', allow_pickle=True)['arr_0'].item()
+    ret = [store_dict['proc_dict'], store_dict['param_dict']]
+
+    if load_data_dict:
+        ret += store_dict['data_dict']
+
+    return ret
+
+
+def store_data(param_dict, proc_dict, data_dict=None):
+    store_dict = {'proc_dict': proc_dict, 'param_dict': param_dict}
+    if not data_dict is None:
+        store_dict['data_dict'] = data_dict
+    np.savez(param_dict['save_path']+param_dict['save_name']+'_data.npz', store_dict)
+
+def fix_dict_pixelsize(dictin, pixelsize, fixlist):
+    for val in fixlist:
+        if val in dictin:
+            if not type(dictin[val]) == nip.image:
+                dictin[val] = nip.image(dictin[val])
+            dictin[val].pixelsize = pixelsize
+        else:
+            print(f"WARNING: key={val} not in prd on load.")
+
+    return dictin
 
 def get_filelist(load_path='.', fn_proto='jpg'):
     '''
@@ -1324,6 +1357,110 @@ def plot_3dstacks(res_noisy_s, defocus_range, noise_stack, myfilters, axis_label
     return fig3, axm3
 
 
+def plot_kradial(imb: np.ndarray, krad_scale_fac: float = 1, nbr_bins: int = 32, obj: np.ndarray = None, res_param: list = [], ref_names: list = [], ref_colors: list = [], imname='h', figsize: tuple = (10, 8), fonts_sizes: list = [10, ], fonts_labels: list = ['x', 'y', 'xtick', 'ytick', 'legend'], do_nn=True, nn_range: int = 0, region_draw: bool = True, region_im2use: list = [1, -1], region_yxlim: list = [1.0, 1.0], region_line_colors: list = [], region_colors: list = [], region_colors_scale: list = [1.7, ], xlims: list = [], ylims: list = [], draw_Abbe: bool = False, movavg_do: bool = False, movavg_len: int = 4, log_do: bool = True):
+    '''
+    krad_scale_fac = 0.9*np.sqrt(2)
+    res_param=[PIXELSIZE,NA,N_IMMERSION,λem,λex,TECHNIQUE]=[pad_snr['pixelsize'][-1],pad_snr['NA'],pad_snr['n_immersion'],pad_snr['lem'],pad_snr['lex'],'confocal']
+    '''
+    # im_maxfreq = imb.shape[-1]//2
+
+    if nbr_bins is None:
+        nbr_bins = int(np.ceil(krad_scale_fac*np.min(imb.shape[-2:])//2))  # 0.9*
+    im = np.zeros([imb.shape[0], nbr_bins])
+    for m, mIm in enumerate(np.abs(imb)):
+        im[m], idx = radial_sum(
+            mIm, maxfreq=nbr_bins, return_idx=True, nbr_bins=nbr_bins)
+    if not obj is None:
+        obj_radsum, oidx = radial_sum(
+            np.abs(nip.ft2d(obj*1000)), maxfreq=nbr_bins, return_idx=True, nbr_bins=nbr_bins)
+    _, dk_2c = convert_x_to_k(2*nbr_bins, res_param[0]/krad_scale_fac)
+    d_abbe = calculate_resolution(obj_na=res_param[1], obj_n=res_param[2], wave_em=res_param[3],
+                                       technique=res_param[5], criterium='Abbe', fluorescence=True, wave_ex=res_param[4], printout=True)
+    k_abbe_2c, _ = convert_x_to_k(2*nbr_bins, d_abbe)
+    xrange2c = np.arange(nbr_bins)*dk_2c/k_abbe_2c[-1]  # *1000
+    # im_norm = im/np.sum(np.sqrt(ystack2b), axis=-1, keepdims=True)
+    # imshepp_nf_log = np.log10(1+np.mean(imshepp_nf))
+    if log_do:
+        im = np.log10(1+im)
+        ylabel = ['$log_{10}(1+|', '', ')$']
+    else:
+        ylabel = ['$|', '', '$']
+
+    if movavg_do:
+        im = nip.image(np.array([*im, *moving_average_2d(im, movavg_len)]))
+
+    if do_nn:
+        if nn_range < 0:
+            imbh = np.log10(1+np.abs(imb)) if log_do else imb
+            im = im/np.mean(imbh
+                            [:, ~(idx+1).astype('bool')], axis=-1, keepdims=True)
+            del imbh
+            # nbrh=int(np.ceil(np.sqrt(2)*imb.shape[-1]//2))
+            # imh = np.zeros([imb.shape[0], nbrh])
+            # for m, mIm in enumerate(np.abs(imb)):
+            #    imh[m], idxh = mipy.radial_sum(
+            #        mIm, maxfreq=nbrh, return_idx=True, nbr_bins=nbrh)
+
+        elif nn_range == 0:
+            im = im/np.mean(im[:, -nbr_bins//4:], axis=-1, keepdims=True)
+        else:
+            im = im/np.mean(im[:, -nn_range:], axis=-1, keepdims=True)
+        region_yxlim[0] = 1.0
+        ylabel[1] = imname+'|/\\sigma^{('+imname+')}'
+    else:
+        ylabel[1] = imname+'|'
+
+    ylabel = ''.join(ylabel)
+
+    if region_draw:
+        noisecuts = [np.min(np.where((im[mreg] <= region_yxlim[0]) * (xrange2c >=
+                            region_yxlim[1])))-1 for mreg in region_im2use]
+        if region_line_colors == []:
+            region_line_colors = [ref_colors[mreg] for mreg in region_im2use]
+        if region_colors == []:
+            rcols = convert_colors_name2rgba(region_line_colors)
+            region_colors_scale = [region_colors_scale[0], ] * \
+                len(rcols) if len(region_colors_scale) < len(rcols) else region_colors_scale
+            region_colors = [scale_lightness(mcol, region_colors_scale[m])
+                             for m, mcol in enumerate(rcols)]
+    else:
+        noisecuts = []
+
+    xlims = None if xlims == [] else xlims
+    if ylims == []:
+        ylims = [np.min(im), np.max(im)]
+        ylims[0] = ylims[0]-(ylims[1]-ylims[0])*0.1
+
+    fig2c, ax2c = stack2plot(xrange2c, im, refs=ref_names, title='', xlabel='$k_x/k^{(Abbe)}$',
+                                  ylabel=ylabel, colors=ref_colors, legend='upper right', legend_col=2, figsize=figsize, fonts_sizes=fonts_sizes, fonts_labels=fonts_labels, nbrs=False, xlims=xlims, ylims=ylims, set_clipon=True, mmarker='.', mlinestyle='-')  # $k_x/\mu m^{-1}$
+    if region_draw:
+        ax2c.plot([xrange2c[0], xrange2c[-1]], [region_yxlim[0], ] *
+                  2, color='darkviolet', linestyle='--', linewidth=5)
+        ncs = np.argsort(noisecuts, axis=-1, kind='quicksort', order=None)
+        rlcs = np.array(region_line_colors)[ncs]
+        nscs = np.array(noisecuts)[ncs]
+        rcs = np.array(region_colors)[ncs]
+        for m, mcut in enumerate(nscs):
+            ax2c.plot([xrange2c[mcut], ]*2, ylims,
+                      color=rlcs[m], linestyle='--', linewidth=2)
+            patch_xlim_upper = xrange2c[nscs[m+1]]-xrange2c[mcut] + \
+                1 if m+1 < len(nscs) else xrange2c[-1]-xrange2c[mcut]
+            patch_color = rcs[m] if m < len(nscs)-1 else 'darkgray'
+            ax2c.add_patch(
+                Rectangle((xrange2c[mcut], ylims[0]), patch_xlim_upper, ylims[1]-ylims[0], color=patch_color))
+    if draw_Abbe:
+        ax2c.plot([1, ]*2, ylims, color='gold', linestyle='--',
+                  linewidth=5, marker='x')  # k_abbe_2c[0]*1000
+    if not obj is None:
+        obj_radsum = np.log10(1+obj_radsum) if log_do else obj_radsum
+        ax2c.plot(xrange2c, obj_radsum, color='lightgrey',
+                  linestyle='solid', linewidth=3, marker='.')  # /200
+
+    ret_dict = {'xrange': xrange2c, 'yrange': im, 'idx': idx, 'k_abbe': k_abbe_2c, 'd_abbe': d_abbe,
+                'noisecuts': noisecuts}
+
+    return fig2c, ax2c, ret_dict
+
 def plot_save(ppointer, save_name, save_format='png', dpi=300):
     '''
     Just an easy wrapper.
@@ -1362,6 +1499,35 @@ def save_n_crop(fig, fname:str, dpi:int=300, crop_me:bool=True, crop_param:str=N
     fig.savefig(fname=fname, format=fname[-3:], dpi=dpi)
     if crop_me:
         crop_pdf(fname, crop_param=crop_param, file_path_cropped=file_path_cropped)
+
+# %% ------------------------------------------------------
+# ---                 Color Functions                   ---
+# ---------------------------------------------------------
+#
+def convert_colors_name2rgba(colors: list):
+    '''
+    Example:
+    =======
+    mipy.convert_colors_name2rgba(['salmon','goldenrod'])
+    '''
+    return [matplotlib_colors.to_rgba(mcol) if type(mcol) == str else mcol for mcol in colors]
+
+
+def scale_lightness(rgb, scale_l):
+    '''mainly from: https://stackoverflow.com/a/60562502
+    for now only implemented for rgb not rgba! Hence: Conversion is done if rgba is detected.
+    '''
+    # sanity
+    if len(rgb) > 3:
+        rgb = rgb[:3]
+
+    # convert rgb to hls
+    h, l, s = rgb_to_hls(*rgb)
+
+    # manipulate h, l, s values and return as rgb
+    rgb_changed = hls_to_rgb(h, min(1, l * scale_l), s=s)
+
+    return rgb_changed
 
 # %% ------------------------------------------------------
 # ---            RESHAPE FOR COOL DISPLAY               ---

@@ -4,7 +4,7 @@
 	@author René Lachmann
 	@email herr.rene.richter@gmail.com
 	@create date 2019 11:53:25
-	@modify date 2022-05-25 14:24:07
+	@modify date 2022-05-27 17:06:59
 	@desc Utility package
 
 ---------------------------------------------------------------------------------------------------
@@ -18,6 +18,7 @@ from deprecated import deprecated
 # mipy imports
 from .functions import gaussian1D
 from .numbers import generate_combinations
+from .transformations import lp_norm
 import timeit
 from time import time
 from skimage.feature import register_translation
@@ -700,6 +701,34 @@ def gen_shift_npfunc(soff, nbr):
     shiftarr = [[soff[0]*m, soff[1]*n] for m, n in zip(b, a)]
     return shiftarr
 
+def pix_shift(im, shifts, axes):
+    '''
+    Wrap-around free pixel-precise shifting.
+
+    TODO:
+    1) docstring
+    '''
+    # sanity
+    if not type(shifts) in [list, tuple, np.ndarray]:
+        shifts = np.array([shifts, ])
+    if not type(axes) in [list, tuple, np.ndarray]:
+        axes = np.array([axes, ])
+    axes = np.mod(axes, im.ndim)
+    pads = [[0, 0], ]*im.ndim
+    slicer = [slice(0, s, 1) for s in im.shape]
+
+    # fix pads
+    for m, ax in enumerate(axes):
+        s = shifts[m]
+        if s > 0:
+            pads[ax] = [0, s]
+        else:
+            sabs = np.abs(s)
+            pads[ax] = [sabs, 0]
+            slicer[ax] = slice(sabs, im.shape[ax]+sabs, 1)
+
+    im_shift = np.roll(np.pad(im, pads), shifts, axes)
+    return im_shift[slicer]
 
 def center_of_mass(im, com_axes=(-2, -1), im_axes=(-2, -1), placement='corner'):
     """Calculates the center of mass for multiple directions.
@@ -1367,6 +1396,14 @@ def subtract_from_max(im):
     return im
 
 
+def dist_from_detnbr(nbr_det, pincenter):
+    mgrid = np.meshgrid(np.arange(nbr_det[-2]), np.arange(nbr_det[-1]))
+    detpos = np.array([item for item in zip(mgrid[1].flat, mgrid[0].flat)]) - \
+        np.unravel_index(pincenter, nbr_det)
+    detdist = lp_norm(detpos, p=2, normaxis=(-1,))
+
+    return detdist, detpos
+
 def mask_from_dist(detdist, radius_outer, radius_inner=0.0):
     """Generates 1D-representation of a mask within Lp-distance representation. Use in conjunction with 'mipy.lp_norm' (to calculate distance of detectors (detdist)).
 
@@ -1391,6 +1428,28 @@ def mask_from_dist(detdist, radius_outer, radius_inner=0.0):
     # select
     sel_mask = (detdist >= radius_inner) * (detdist <= radius_outer)
     return sel_mask
+
+def get_ring_radiis(detdist):
+    '''
+    See Also:
+    ---------
+    select_pinhole_radius
+    '''
+    ring_radii = np.unique(detdist)
+    radii_all_comb = list(iterprod(ring_radii, ring_radii))
+    radii_unique_comb = [m for m in radii_all_comb if m[0] <= m[1]]
+    return radii_unique_comb
+
+def get_pincenter(im, nbr_det, imfunc=np.max, rfunc=np.round, im_axes=(-2, -1), com_axes=(-2, -1)):
+    '''only 2D for now; im.shape=[arb_dims,DETYX,Y,X]'''
+    im_axesh = np.mod(im_axes, im.ndim)
+    rshape = np.array([(mshape if not m in im_axesh else 0) for m, mshape in enumerate(im.shape)])
+    rshape = rshape[rshape > 0]
+    rshape = list(rshape[:-1])+list(nbr_det)
+    im_cpsearch = np.reshape(imfunc(im, axis=im_axes), rshape)
+    pincenter_CoM_raw = center_of_mass(im_cpsearch, com_axes=com_axes, im_axes=im_axes)
+    pincenter_CoM = rfunc(pincenter_CoM_raw).astype('int')
+    return pincenter_CoM[0]*nbr_det[1]+pincenter_CoM[1]
 
 
 def get_center(obj):
@@ -1850,6 +1909,14 @@ def visualize_extrema_1D(flatim, localmax, value, output_shape):
         b[m] = 10
     return b.reshape(output_shape)
 
+def findBg(img, kernelSigma: list = [3.0, 3.0], axes: list = [-2, -1]):
+    """
+    estimates the background value by convolving first with a Gaussian and then looking for the minimum.
+
+    enhanced version of nip.findBg
+    """
+    return np.min(gaussf(img, np.array(kernelSigma)[np.array(axes)], axes=axes), axis=tuple(axes), keepdims=True)
+
 # %% -----------------------------------------------------
 # ----                  TIMING AND PERFORMANCE
 # --------------------------------------------------------
@@ -1931,81 +1998,3 @@ def get_caller_function():
 
 def time_me_stats(time_vec):
     return [np.min(time_vec), np.max(time_vec), np.median(time_vec), np.mean(time_vec), np.var(time_vec)]
-
-
-# %% ---------------------------------------------------------------
-# ---                         DEPRECATED                         ---
-# ------------------------------------------------------------------
-
-
-@deprecated(version='0.1.5', reason='Name_scope resolution and passing of arrays etc not working as planned. Changed to call by relay-function.')
-def time_me_loop(call_str, myfuncs=None, repeats=1000, averages=100, name_scope=None, **kwargs):
-    """Loop based timing of input-function. Helpful to get more concise data for averaging. 
-
-    Parameters
-    ----------
-    call_str : str
-        input function call to be evaluated
-    myfuncs : list, optional
-        functions called in call_str, by default None
-    repeats : int, optional
-        number of repitions, by default 1000
-    averages : int, optional
-        number of evaluations of myfunc per 1 repetition, by default 100
-    name_scope : str, optional
-        module to import from, by default None
-
-
-    Returns
-    -------
-    time_nbrsl : array
-        list if timings
-    time_stats : array
-        list of parameters: min, max, median, mean, variance
-
-    Example
-    -------
-    >>> def mysq(x):
-    >>>     return x*x*x
-    >>> def mysum(x,y):
-    >>>     return 2*x+y
-    >>> def myminus(x,y):
-    >>>     return 2*x-np.min([x,y])
-    >>> print(mipy.time_me_loop(call_str="mysq(mysum(10,myminus(5,4)))",myfuncs=[mysq,mysum,myminus],repeats=1000,averages=1000,name_scope=__name__)[1][0])
-    9.433002560399473e-06
-    See Also
-    --------
-    time_me
-    """
-    if name_scope is None:
-        name_scope = get_caller_function()
-
-    setup_str = time_me_setup_string(myfuncs, name_scope)
-    time_nbrsl = []
-    for m in range(repeats):
-        time_nbrsl.append(timeit.timeit(
-            call_str, setup=setup_str, number=averages, globals=kwargs)/averages)
-
-    time_stats = time_me_stats(time_nbrsl)
-    return time_nbrsl, time_stats
-
-
-@deprecated(version='0.1.3', reason='General Change of ISM-interface lead to rather use distances instead of rectangular geometry to allow for arbitrary shapes. See mask_from_dist for more.')
-def ismR_generateRings(det_geo=[0, 0], ring=0, aslist=True):
-    '''
-    Generates binary mask for selection of rings for deconvolution. Assumes 2D detector distribution geometry.
-    '''
-    sel = np.zeros(det_geo)
-    selc = np.array(sel.shape)//2
-
-    if ring == 0:
-        sel[selc[0], selc[1]] = 1
-    else:
-        sel[selc[-2]-ring:selc[-2]+ring+1, selc[-1]-ring:selc[-1]+ring+1] = 1
-        sel[selc[-2]-ring+1:selc[-2]+ring, selc[-1]-ring+1:selc[-1]+ring] = 0
-    sel = np.array(sel, dtype=bool)
-
-    if aslist == True:
-        sel = np.reshape(sel, np.prod(sel.shape))
-
-    return sel

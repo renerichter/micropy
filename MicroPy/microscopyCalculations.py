@@ -135,3 +135,33 @@ def calculate_resolution(obj_na=0.25, obj_n=1, wave_em=525, technique='Brightfie
     
     # finally, return result
     return res
+
+def convert_x_to_k(imsize, dx):
+    '''
+    imsize could eg be 2*nbr_bins used for calculating radial-summation or represent k-space from x-space
+    '''
+    k_max = 1.0/np.array(dx)
+    dk = 2*k_max/(np.array(imsize))
+    return k_max, dk
+
+def convert_dict():
+    conv_dict = {'h': [6.6261*10**(-34), 'J*s'], 'c': [2.99*10**8, 'm/s']}
+    return conv_dict
+
+
+def convert_lambda2energy(λ: float):
+    '''in Joule; λ in m'''
+    convd = convert_dict()
+    return convd['h'][0]*convd['c'][0]/(λ*10**(-9))
+
+
+def convert_phot2int(λ: float, NPhot: float = 1e9, area: float = 1e-4, time: float = 1):
+    '''in Phot*J/m^2/s'''
+    E = convert_lambda2energy(λ)
+    return NPhot*E/area/time
+
+
+def convert_int2phot(λ: float, I: float = 1e3, area: float = 1e-4, time: float = 1):
+    ''''''
+    E = convert_lambda2energy(λ)
+    return I*time*area/E

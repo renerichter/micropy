@@ -5,6 +5,7 @@ All data generating functions will be found in here.
 from .basicTools import sanityCheck_structure
 from .transformations import irft3dz, rft3dz, rftnd, polar2cartesian, lp_norm
 from .utility import shiftby_list, add_multi_newaxis, set_val_atpos, get_center
+from .microscopyCalculations import convert_phot2int, convert_int2phot
 
 # external imports
 import copy
@@ -281,6 +282,29 @@ def generate_tilted_stripes(imsize=[128, 128], offset=0.7, repfac=12):
     # done?
     return siny
 
+def generate_object(do_object=0, imsize=[64, 64, 64], defocus_range=None, nbr_spokes=14, nbr_spokes_ax=14, pixelsize=[64, 64, 64]):
+    if do_object == 0:
+        obj = generate_spokes_target(imsize=imsize[-2:], nbr_spokes=nbr_spokes)
+        obj_savname = 'spokes2d'
+    elif do_object == 1:
+        obj_savname = 'spokes3d'
+        obj = generate_spokes_target(
+            imsize=imsize, nbr_spokes=nbr_spokes, gen3D=True, nbr_spokes_ax=nbr_spokes_ax)
+        defocus_range = np.arange(obj.shape[0])
+        obj = nip.DampEdge(obj, rwidth=0.4, func=nip.cossqr, method='zero')
+    elif do_object == 2:
+        obj_savname = 'obj3dzslice'
+        obj = nip.readim('obj3d')
+        obj = obj[obj.shape[0]//2]
+    elif do_object == 3:
+        obj_savname = 'obj3d'
+        obj = nip.readim('obj3d')
+        defocus_range = np.arange(obj.shape[0])
+    else:
+        print("nothing todo.")
+        sys.exit()
+    obj.set_pixelsize(pixelsize[-obj.ndim:])
+    return obj, obj_savname, defocus_range
 
 def generate_obj_beads(imsize=[128, 128], srange=[4, 7], amount=20, nphot=None):
     """Generate some beads with random size and positions (given restrictions).
@@ -662,6 +686,7 @@ def calculatePSF(obj, psf_params=None, method='brightfield', amplitude=False, **
         psfex = None if not 'psfex' in kwargs else kwargs['psfex']
         psfdet = None if not 'psfdet' in kwargs else kwargs['psfdet']
         psfdet_array = None if not 'psfdet_array' in kwargs else kwargs['psfdet_array']
+        shifts = None if not 'shifts' in kwargs else kwargs['shifts']
         shift_offset = None if not 'shift_offset' in kwargs else kwargs['shift_offset']
         nbr_det = None if not 'nbr_det' in kwargs else kwargs['nbr_det']
         center = None if not 'center' in kwargs else kwargs['center']
@@ -676,7 +701,7 @@ def calculatePSF(obj, psf_params=None, method='brightfield', amplitude=False, **
 
         # calculate resulting ISM-PSF
         psf_eff, otf_eff, psfdet_array, shifts = calculatePSF_ism(
-            psfex=psfex, psfdet=psfdet, psfdet_array=psfdet_array, shift_offset=shift_offset, nbr_det=nbr_det, center=center, fmodel=fmodel, pinhole=pinhole, faxes=faxes,do_norm=do_norm)
+            psfex=psfex, psfdet=psfdet, psfdet_array=psfdet_array, shifts=shifts,shift_offset=shift_offset, nbr_det=nbr_det, center=center, fmodel=fmodel, pinhole=pinhole, faxes=faxes,do_norm=do_norm)
         return psf_eff, otf_eff, psfex, psfdet_array, shifts
 
     elif method == 'sax':
@@ -875,6 +900,210 @@ def forward_model(obj, psf, fmodel='fft', retreal=True, is_list=False, **kwargs)
         res = res.real
 
     return res
+
+def fwd_create_obect(pad, prd={}):
+    # generate object
+    if not 'obj_bak' in prd:
+        prd['obj_bak'], pad['obj_savname'], pad['defocus_range'] = generate_object(
+            pad['do_testobject'], imsize=pad['imsize'], defocus_range=pad['imsize'][0], nbr_spokes=pad['nbr_spokes'], pixelsize=pad['pixelsize'])
+        prd['obj_bak'] = prd['obj_bak'].astype(pad['dtype_real'])
+        if prd['obj_bak'].ndim < 3:
+            prd['obj_bak'] = prd['obj_bak'][np.newaxis]
+        prd['obj_bak'] = nip.extract(prd['obj_bak'], pad['imsize'], centerpos=pad['obj_centerpos'])
+        prd['obj_bak'].pixelsize = pad['pixelsize']
+
+    # shift n copy
+    if not 'obj' in prd:
+        if pad['obj_shifts']:
+            prd['obj'] = nip.image(np.zeros(prd['obj_bak'].shape, dtype=prd['obj_bak'].dtype))
+
+            for m, shift in enumerate(pad['obj_shifts']):
+                prd['obj'] += nip.shift(prd['obj_bak'], shift)
+            prd['obj'].pixelsize = pad['pixelsize']
+        else:
+            prd['obj'] = nip.image(np.copy(prd['obj_bak']))
+            prd['obj'].pixelsize = pad['pixelsize']
+
+    # done?
+    return pad, prd
+
+
+def fwd_create_psf(pad, prd={}):
+    if not all([key in prd for key in ['psfex', 'psfdet', 'psf_ism', 'otf_ism', 'psfdet_array']]):
+        psf_params = nip.PSF_PARAMS()
+        psf_params.NA = pad['NA']
+        psf_params.n = pad['n_immersion']
+        psf_params.wavelength = pad['lex']
+        psf_params.aplanar = psf_params.apl.excitation
+        psf_params = [psf_params, deepcopy(psf_params)]
+        psf_params[1].wavelength = pad['lem']
+        psf_params[1].aplanar = psf_params[1].apl.emission
+        if not pad['asymmt_ex'] is None:
+            psf_params[0].aberration_types = pad['asymmt_ex']
+            psf_params[0].aberration_strength = pad['asymms_ex']
+        if not pad['asymmt_em'] is None:
+            psf_params[1].aberration_types = pad['asymmt_em']
+            psf_params[1].aberration_strength = pad['asymms_em']
+        pad['psf_params'] = psf_params
+        prd['psfex'] = nip.psf(prd['obj'], psf_params[0]).astype(prd['obj'].dtype)
+        prd['psfdet'] = nip.psf(prd['obj'], psf_params[1]).astype(prd['obj'].dtype)
+        psfex_fwd = prd['psfex']
+        psfdet = prd['psfdet']
+        do_norm = pad['do_norm']
+
+        if 'dsax_Iex' in pad:
+            psfex = prd['psfex']/np.max(prd['psfex'])
+            psfex_sat = []
+            _, pad['psfex_sat_params'] = saturation_curve(
+                psfex*pad['dsax_Iex'][0], ψmax=pad['dsax_ψmax'], Imax=pad['dsax_Iex_max'], tau=pad['dsax_tau'], sigma=pad['dsax_sigma'], rcomplete=True, CeQe=pad['dsax_CeQe'])
+            for m, Iex in enumerate(pad['dsax_Iex']):
+                psfex_sat.append(saturation_curve(
+                    psfex*Iex, ψmax=pad['dsax_ψmax'], Imax=pad['dsax_Iex_max'], tau=pad['dsax_tau'], sigma=pad['dsax_sigma'], rcomplete=False, CeQe=pad['dsax_CeQe']))
+            pad['dsax_Iexn'] = dsax_isolateOrder_prefactors(
+                pad['dsax_Iex'], pad['psfex_sat_params']['Isat'], 1/pad['psfex_sat_params']['kf'], order=3,)
+            prd['psfex_sat'] = nip.image(np.array(psfex_sat))
+            prd['psfex_sat'].pixelsize = pad['pixelsize']
+            prd['psfex_sat_max'] = np.array(
+                np.max(prd['psfex_sat'], axis=pad['dsax_normax'], keepdims=True))
+            prd['psfex_sat_sum'] = np.array(
+                np.sum(prd['psfex_sat'], axis=pad['dsax_normax'], keepdims=True))
+            psfex_fwd = prd['psfex_sat']
+            psfdet = psfdet[np.newaxis]
+            do_norm = False
+            del psfex_sat
+
+        shifts = None if not 'shifts' in prd else prd['shifts']
+        prd['psf_ism'], prd['otf_ism'], _, prd['psfdet_array'], pad['det_shifts'] = calculatePSF(prd['obj'], psf_params=psf_params, method=pad['imaging_method'], amplitude=False, shifts=shifts, shift_offset=pad[
+            'shift_offset'], nbr_det=pad['nbr_det'], center=pad['det_center'], fmodel=pad['fmodel'], psfex=psfex_fwd, psfdet=psfdet, faxes=pad['faxes'], do_norm=do_norm)
+
+        # sanity for dtypes
+    prd['psf_ism'] = prd['psf_ism'].astype(pad['dtype_real'])
+    prd['otf_ism'] = prd['otf_ism'].astype(pad['dtype_complex'])
+
+    if not pad['psf_shifts'] is None:
+        prd['psfs_ism'] = np.zeros([len(pad['psf_shifts']), ]+list(prd['psf_ism'].shape))
+        for m, shift in enumerate(pad['psf_shifts']):
+            prd['psfs_ism'][m] = nip.shift(
+                prd['psf_ism'], delta=shift, axes=pad['psf_shifts_axes'])
+        psf = prd['psfs_ism']
+    else:
+        psf = prd['psf_ism']
+
+    # done?
+    return pad, prd, psf
+
+
+def fwd_calculate_im(pad, psf, prd={}):
+    if not 'im' in prd:
+        prd['im'] = nip.convolve(psf, prd['obj'], axes=pad['faxes']).astype(pad['dtype_real'])
+
+    if 'dsax_Iex' in pad:
+        if not pad['psf_shifts'] is None:
+            prd['psfex_sat_sum'] = prd['psfex_sat_sum'][np.newaxis]
+        # prd['im'] /= np.max(prd['im'], axis=pad['dsax_normax'], keepdims=True)
+        # prd['im'] /= np.sum(prd['im'], axis=pad['dsax_normax'], keepdims=True)
+        prd['im'] *= pad['dsax_NPhot_factor']
+
+    if not pad['noise'] is None:
+        if not pad['noise_realizations'] is None:
+            prd['im'] = nip.repmat(prd['im'][np.newaxis], [
+                                   pad['noise_realizations'], ]+[1, ]*prd['im'].ndim)
+        immin = np.min(prd['im'])
+        prd['im'] = prd['im']-immin if immin < 0 else prd['im']
+        prd = fwd_add_noise(pad, prd)
+
+    # normalize image for comparability
+    if pad['normalize_fwd_im']:
+        prd['im'] = thickslice_normalize(prd['im'], direct=True)
+    else:
+        prd['im'] -= (np.min(prd['im'])*1.01)
+
+    # done?
+    return pad, prd
+
+
+def fwd_add_noise(pad, prd):
+    prd['im_noisefree'] = nip.image(np.array(prd['im'], dtype=prd['im'].dtype))
+    prd['im_noisefree'].pixelsize = pad['pixelsize']
+    if pad['noise'][0] == 'Poisson':
+        prd['im'] = nip.poisson(prd['im'], NPhot=pad['noise'][1])
+    elif pad['noise'][0] == 'scaledGaussian':
+        if not pad['noise'][1] is None:
+            prd['im'] = prd['im']/np.max(prd['im'], keepdims=True)
+            prd['im'] *= pad['noise'][1]
+        prd['im'] = np.random.default_rng().normal(loc=prd['im'], scale=pad['noise'][1])
+    else:
+        prd['im'] = prd['im'] + \
+            np.random.normal(pad['noise'][1], sigma=pad['noise'][2], size=prd['im'].shape)
+
+    prd['im'] = prd['im'].astype(prd['im_noisefree'].dtype)
+    return prd
+
+
+def dsax_fwd_model(pad, prd={}, psd={}):
+    '''Alias for fwd_model'''
+    pad['ism_method'] == 'dsax'
+    return fwd_model(pad=pad, prd=prd, psd=psd)
+
+def fwd_model(pad, prd={}, psd={}):
+
+    # generate object
+    pad, prd = fwd_create_obect(pad, prd=prd)
+
+    # create individual PSFs
+    pad, prd, psf = fwd_create_psf(pad, prd=prd)
+
+    # create image, normalize and add noise
+    pad, prd = fwd_calculate_im(pad, psf=psf,prd=prd)
+
+    # some further parameters
+    pad['cpos'] = np.array(prd['im'].shape)//2
+    pad['detdist'] = lp_norm(pad['det_shifts'], p=2, normaxis=(-1,))
+
+    # done?
+    return pad, prd
+
+def saturation_curve(Iex, ψmax: float = 0, Imax: float = 1000, tau: float = 1, sigma: float = 1, rcomplete: bool = True, conv_int: bool = True, conv_lem: float = 515, conv_area: float = 1.0, time: float = 1, CeQe: float = 0.0):
+    '''
+    Ce...Flourophore density in conv_area, Qe...quantum efficiency of fluorophore --> Example: CeQe = Ce*Qe = 1.05**10(18)
+    conv_area=1.0 means no change in unit for conversion, eg conv_area=0.0001 changes to/from m^2 to cm^2
+    '''
+    # prep
+
+    if conv_int:
+        Iex = convert_int2phot(λ=conv_lem, I=Iex, area=conv_area, time=time)
+        Imax = convert_int2phot(λ=conv_lem, I=Imax, area=conv_area, time=time)
+
+    if (sigma != 1.0 and tau != 1.0):
+        stinv = 1.0/(np.float128(sigma*tau))
+        if ψmax == 0:
+            ψmax = Imax/(stinv+Imax)
+        else:
+            Imax = stinv/(1/ψmax-1)
+    else:
+        stinv = (1/ψmax-1)*Imax
+
+    ψ = Iex / (Iex+stinv)
+
+    # influence on output fluorescence is modeled into tau if ψmax is given, but sigma unknown
+    sigma = tau/stinv if sigma == 1.0 else sigma  # sigma = tau/stinv if tau != 1.0 else sigma
+    kf = stinv*sigma if tau == 1.0 else 1/tau
+
+    Ifluo = kf * ψ  # 1/s
+
+    if conv_int:
+        Ifluo = convert_phot2int(λ=conv_lem, NPhot=Ifluo, area=conv_area, time=time)
+        stinv = convert_phot2int(λ=conv_lem, NPhot=stinv, area=conv_area, time=time)
+        Imax = convert_phot2int(λ=conv_lem, NPhot=Imax, area=conv_area, time=time)
+
+    if not CeQe == 0.0:
+        Ifluo *= CeQe
+
+    # done?
+    if rcomplete:
+        return Ifluo, {'kf': kf, 'sigma': sigma, 'Isat': stinv, 'ψmax': ψmax, 'Imax': Imax}
+    else:
+        return Ifluo
 
 # %%
 # ------------------------------------------------------------------
