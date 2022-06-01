@@ -4,7 +4,7 @@
 	@author René Lachmann
 	@email herr.rene.richter@gmail.com
 	@create date 2019 11:53:25
-	@modify date 2022-05-27 17:06:59
+	@modify date 2022-05-30 08:58:43
 	@desc Utility package
 
 ---------------------------------------------------------------------------------------------------
@@ -18,7 +18,6 @@ from deprecated import deprecated
 # mipy imports
 from .functions import gaussian1D
 from .numbers import generate_combinations
-from .transformations import lp_norm
 import timeit
 from time import time
 from skimage.feature import register_translation
@@ -1394,62 +1393,6 @@ def subtract_from_max(im):
     '''
     im = get_immax(im) - im
     return im
-
-
-def dist_from_detnbr(nbr_det, pincenter):
-    mgrid = np.meshgrid(np.arange(nbr_det[-2]), np.arange(nbr_det[-1]))
-    detpos = np.array([item for item in zip(mgrid[1].flat, mgrid[0].flat)]) - \
-        np.unravel_index(pincenter, nbr_det)
-    detdist = lp_norm(detpos, p=2, normaxis=(-1,))
-
-    return detdist, detpos
-
-def mask_from_dist(detdist, radius_outer, radius_inner=0.0):
-    """Generates 1D-representation of a mask within Lp-distance representation. Use in conjunction with 'mipy.lp_norm' (to calculate distance of detectors (detdist)).
-
-    Parameters
-    ----------
-    detdist : list
-        distances of detector elements w.r.t. to a central pixel
-    radius_outer : float
-        size of outer radius
-    radius_inner : float, optional
-        size of inner radius, by default 0 (=smallest)
-
-    Returns
-    -------
-    sel_mask : bool-list
-        selection mask
-
-    See Also
-    --------
-    mipy.lp_norm, mipy.pinhole_getcenter
-    """
-    # select
-    sel_mask = (detdist >= radius_inner) * (detdist <= radius_outer)
-    return sel_mask
-
-def get_ring_radiis(detdist):
-    '''
-    See Also:
-    ---------
-    select_pinhole_radius
-    '''
-    ring_radii = np.unique(detdist)
-    radii_all_comb = list(iterprod(ring_radii, ring_radii))
-    radii_unique_comb = [m for m in radii_all_comb if m[0] <= m[1]]
-    return radii_unique_comb
-
-def get_pincenter(im, nbr_det, imfunc=np.max, rfunc=np.round, im_axes=(-2, -1), com_axes=(-2, -1)):
-    '''only 2D for now; im.shape=[arb_dims,DETYX,Y,X]'''
-    im_axesh = np.mod(im_axes, im.ndim)
-    rshape = np.array([(mshape if not m in im_axesh else 0) for m, mshape in enumerate(im.shape)])
-    rshape = rshape[rshape > 0]
-    rshape = list(rshape[:-1])+list(nbr_det)
-    im_cpsearch = np.reshape(imfunc(im, axis=im_axes), rshape)
-    pincenter_CoM_raw = center_of_mass(im_cpsearch, com_axes=com_axes, im_axes=im_axes)
-    pincenter_CoM = rfunc(pincenter_CoM_raw).astype('int')
-    return pincenter_CoM[0]*nbr_det[1]+pincenter_CoM[1]
 
 
 def get_center(obj):

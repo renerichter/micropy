@@ -54,6 +54,7 @@ def ismR_deconvolution(imfl, psfl, method='multi', regl=None, lambdal=None, NIte
 def default_dict_tiling(imshape: Union[tuple, list, np.ndarray],
                         basic_shape: list = [128, 128],
                         basic_roverlap: list = [0.2, 0.2],
+                        basic_add_overlap2shape: bool = False,
                         **kwargs) -> dict:
     '''Note: tiling_low_thresh defines the lower boundary that the used system is capable of doing a l-bfgs-b based deconvolution with poisson fwd model. If model, gpu, ... is changed, change this value!
     
@@ -66,15 +67,16 @@ def default_dict_tiling(imshape: Union[tuple, list, np.ndarray],
 
     # generate dict
     tdd = {'data_shape': imshape,
-           'tile_shape': np.array(list(imshape[:-(len(basic_shape))]) + list(basic_shape)),
+           'tile_shape': list(imshape[:-(len(basic_shape))]) + list(basic_shape),
            'overlap_rel': np.array([0.0, ]*(len(imshape)-len(basic_shape))+list(basic_roverlap)),
            'window': 'hann',
            'diffdim_im_psf': None,
            'atol': 1e-10,
-           'tiling_low_thresh': 512*128*128*np.dtype(np.float32).itemsize}
+           'tiling_low_thresh': 512*128*128*np.dtype(np.float32).itemsize,}
 
-    # calculate overlap
-    tdd['overlap'] = np.asarray(tdd['overlap_rel']*tdd['tile_shape'], 'int')
+    # calculate overlap and add to tileshape
+    tdd['overlap'] = np.asarray(tdd['overlap_rel']*np.array(tdd['tile_shape']), 'int')
+    tdd['tile_shape'] = np.array(tdd['tile_shape'],dtype='int')+tdd['overlap'] if basic_add_overlap2shape else np.array(tdd['tile_shape'],dtype='int')
 
     for key in kwargs:
         if key in tdd:
@@ -105,7 +107,8 @@ def default_dict_deconv(**kwargs) -> dict:
         'returnBig': True,
 
         # damping defaults
-        'rwdith': 0.1,
+        'do_damp_psf': False,
+        'damp_rwidth': 0.1,
         'damp_method': 'damp',# 'zero'
         
         # images to evaluate after deconv
@@ -128,7 +131,7 @@ def deconv_atom(im, psf, dd):
     return processed_tile
 
 def tiled_processing(tile, psf, tile_id, dd, merger):
-    # damped_tile = nip.DampEdge(tile, rwidth=dd['rwdith'], method=dd['damp_method'])
+    # damped_tile = nip.DampEdge(tile, rwidth=dd['damp_rwidth'], method=dd['damp_method'])
     processed_tile = deconv_atom(tile, psf, dd)
     retStats = None
     if dd['retStats']:
@@ -149,8 +152,8 @@ def tiled_deconv(im, psf, tiling_dict=None, deconv_dict=None, verbose=True):
     retStats = []
 
     # prepare psf
-    psf_tile = nip.DampEdge(nip.extract(psf, td['tile_shape']),
-                            rwidth=dd['rwdith'], method=dd['damp_method'])
+    psf_tile=nip.extract(psf, td['tile_shape'])
+    psf_tile = nip.DampEdge(psf_tile,rwidth=dd['damp_psf_rwidth'], method=dd['damp_psf_method'],) if dd['do_damp_psf'] else psf_tile
 
     # create tiling structure
     if not tiling_dict['diffdim_im_psf'] is None:

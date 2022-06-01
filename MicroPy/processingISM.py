@@ -12,8 +12,8 @@ from scipy.ndimage import binary_closing
 from typing import Union
 
 # mipy imports
-from .transformations import irft3dz, ft_correct, get_cross_correlations
-from .utility import avoid_division_by_zero, findshift, midVallist, pinhole_getcenter, add_multi_newaxis, shiftby_list, subslice_arbitrary, mask_from_dist,get_slices_from_shiftmap, normNoff
+from .transformations import irft3dz, ft_correct, get_cross_correlations, lp_norm
+from .utility import avoid_division_by_zero, findshift, midVallist, pinhole_getcenter, add_multi_newaxis, shiftby_list, subslice_arbitrary, get_slices_from_shiftmap, normNoff
 from .inout import stack2tiles, format_list, load_data, fix_dict_pixelsize
 from .filters import savgol_filter_nd, stf_basic
 from .fitting import extract_multiPSF
@@ -24,6 +24,61 @@ from .deconvolution import recon_deconv_list, deconv_test_param_on_list, deconv_
 # ---------------------------------------------------------------
 #                   ISM-Reconstruction
 # ---------------------------------------------------------------
+def dist_from_detnbr(nbr_det, pincenter):
+    mgrid = np.meshgrid(np.arange(nbr_det[-2]), np.arange(nbr_det[-1]))
+    detpos = np.array([item for item in zip(mgrid[1].flat, mgrid[0].flat)]) - \
+        np.unravel_index(pincenter, nbr_det)
+    detdist = lp_norm(detpos, p=2, normaxis=(-1,))
+
+    return detdist, detpos
+
+def mask_from_dist(detdist, radius_outer, radius_inner=0.0):
+    """Generates 1D-representation of a mask within Lp-distance representation. Use in conjunction with 'mipy.lp_norm' (to calculate distance of detectors (detdist)).
+
+    Parameters
+    ----------
+    detdist : list
+        distances of detector elements w.r.t. to a central pixel
+    radius_outer : float
+        size of outer radius
+    radius_inner : float, optional
+        size of inner radius, by default 0 (=smallest)
+
+    Returns
+    -------
+    sel_mask : bool-list
+        selection mask
+
+    See Also
+    --------
+    mipy.lp_norm, mipy.pinhole_getcenter
+    """
+    # select
+    sel_mask = (detdist >= radius_inner) * (detdist <= radius_outer)
+    return sel_mask
+
+def get_ring_radiis(detdist):
+    '''
+    See Also:
+    ---------
+    select_pinhole_radius
+    '''
+    ring_radii = np.unique(detdist)
+    radii_all_comb = list(iterprod(ring_radii, ring_radii))
+    radii_unique_comb = [m for m in radii_all_comb if m[0] <= m[1]]
+    return radii_unique_comb
+
+def get_pincenter(im, nbr_det, imfunc=np.max, rfunc=np.round, im_axes=(-2, -1), com_axes=(-2, -1)):
+    '''only 2D for now; im.shape=[arb_dims,DETYX,Y,X]'''
+    im_axesh = np.mod(im_axes, im.ndim)
+    rshape = np.array([(mshape if not m in im_axesh else 0) for m, mshape in enumerate(im.shape)])
+    rshape = rshape[rshape > 0]
+    rshape = list(rshape[:-1])+list(nbr_det)
+    im_cpsearch = np.reshape(imfunc(im, axis=im_axes), rshape)
+    pincenter_CoM_raw = center_of_mass(im_cpsearch, com_axes=com_axes, im_axes=im_axes)
+    pincenter_CoM = rfunc(pincenter_CoM_raw).astype('int')
+    return pincenter_CoM[0]*nbr_det[1]+pincenter_CoM[1]
+
 def recon_genShiftmap(im, pincenter, im_ref=None, nbr_det=None, pinmask=None, shift_method='nearest', shiftval_theory=None, roi=None, shift_axes=None, cross_mask_len=[4,4], period=[],factors=[], sg_para=[13,2,0,1,'wrap'],subpix_lim=2,printmap=False):
     """Generates Shiftmap for ISM SheppardSUM-reconstruction.
     Assumes shape: [Pinhole-Dimension , M] where M stands for arbitrary mD-image.
@@ -1266,6 +1321,7 @@ def thickslice_unmix(ims_ft: nip.image, otfs: nip.image, pad: dict, full_ret: bo
                           mode=pad['fmodel'], dir='fwd', dtype=pad['dtype_complex'])
     if ims_ft.ndim > 3:
         ims_ft = np.reshape(ims_ft, [np.prod(ims_ft.shape[:-2]), ]+list(ims_ft.shape[-2:]))
+        otfs=nip.repmat(otfs,[int(ims_ft.shape[0]/otfs.shape[0]),1,1,1])
     ims_ft.pixelsize = pixelsize if ims_ft.pixelsize is None else ims_ft.pixelsize
     otfs.pixelsize = pixelsize if otfs.pixelsize is None else otfs.pixelsize
 

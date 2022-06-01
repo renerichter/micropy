@@ -8,7 +8,7 @@ from .utility import shiftby_list, add_multi_newaxis, set_val_atpos, get_center
 from .microscopyCalculations import convert_phot2int, convert_int2phot
 
 # external imports
-import copy
+from copy import deepcopy
 import NanoImagingPack as nip
 import numpy as np
 
@@ -487,7 +487,7 @@ def calculatePSF_confocal(obj, psf_params, psfp=False, psfex=None, psfdet=None, 
 
     if psfdet is None:
         if not psfp:
-            psf_params.append(copy.deepcopy(psf_params[0]))
+            psf_params.append(deepcopy(psf_params[0]))
             psf_params[1].wavelength = 510
             psf_params[1].lambdaEx = 510
             psf_params[1].pinhole = 0.6
@@ -520,7 +520,7 @@ def calculatePSF_sax(psfex, k_fluo):
     return psf
 
 
-def calculatePSF_ism(psfex, psfdet=None, psfdet_array=None, shifts=None, shift_offset=[[2, 0], [0, 3]], shift_axes=[-2, -1], shift_method='uvec', nbr_det=[3, 5], center=None, fmodel='rft', faxes=[-2, -1], pinhole=None, do_norm=True):
+def calculatePSF_ism(psfex, psfdet=None, psfdet_array=None, shifts=None, shift_offset=[[2, 0], [0, 3]], shift_axes=[-2, -1], shift_method='uvec', sort_shifts=False, nbr_det=[3, 5], center=None, fmodel='rft', faxes=[-2, -1], pinhole=None, do_norm=True):
     """ Generates the incoherent intensity ISM-PSF. Takes system excitation and emission PSF and assumes spatial invariance under translation on the detector.
 
     Parameters
@@ -576,7 +576,7 @@ def calculatePSF_ism(psfex, psfdet=None, psfdet_array=None, shifts=None, shift_o
             psfdet_array, shifts = shiftby_list(
                 psfdet, shifts=None, shift_offset=shift_offset, shift_method=shift_method, shift_axes=shift_axes, nbr_det=nbr_det, center=center)
         else:
-            shifts = np.sort(shifts)
+            shifts = np.sort(shifts) if sort_shifts else shifts
             psfdet_array, _ = shiftby_list(psfdet, shifts=shifts)
         if pinhole is not None:
             nbrnewaxis = psfdet_array.ndim-pinhole.ndim
@@ -688,6 +688,7 @@ def calculatePSF(obj, psf_params=None, method='brightfield', amplitude=False, **
         psfdet_array = None if not 'psfdet_array' in kwargs else kwargs['psfdet_array']
         shifts = None if not 'shifts' in kwargs else kwargs['shifts']
         shift_offset = None if not 'shift_offset' in kwargs else kwargs['shift_offset']
+        sort_shifts = False if not 'sort_shifts' in kwargs else kwargs['sort_shifts']
         nbr_det = None if not 'nbr_det' in kwargs else kwargs['nbr_det']
         center = None if not 'center' in kwargs else kwargs['center']
         fmodel = None if not 'fmodel' in kwargs else kwargs['fmodel']
@@ -701,7 +702,7 @@ def calculatePSF(obj, psf_params=None, method='brightfield', amplitude=False, **
 
         # calculate resulting ISM-PSF
         psf_eff, otf_eff, psfdet_array, shifts = calculatePSF_ism(
-            psfex=psfex, psfdet=psfdet, psfdet_array=psfdet_array, shifts=shifts,shift_offset=shift_offset, nbr_det=nbr_det, center=center, fmodel=fmodel, pinhole=pinhole, faxes=faxes,do_norm=do_norm)
+            psfex=psfex, psfdet=psfdet, psfdet_array=psfdet_array, shifts=shifts,shift_offset=shift_offset, sort_shifts=sort_shifts,nbr_det=nbr_det, center=center, fmodel=fmodel, pinhole=pinhole, faxes=faxes,do_norm=do_norm)
         return psf_eff, otf_eff, psfex, psfdet_array, shifts
 
     elif method == 'sax':
