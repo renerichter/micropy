@@ -10,6 +10,7 @@ from pandas import DataFrame
 from scipy.ndimage.morphology import binary_fill_holes
 from scipy.ndimage import binary_closing
 from typing import Union
+from tiler import Tiler,Merger
 
 # mipy imports
 from .transformations import irft3dz, ft_correct, get_cross_correlations, lp_norm
@@ -17,7 +18,7 @@ from .utility import avoid_division_by_zero, findshift, midVallist, pinhole_getc
 from .inout import stack2tiles, format_list, load_data, fix_dict_pixelsize
 from .filters import savgol_filter_nd, stf_basic
 from .fitting import extract_multiPSF
-from .deconvolution import recon_deconv_list, deconv_test_param_on_list, deconv_test_param, default_dict_tiling
+from .deconvolution import recon_deconv_list, deconv_test_param_on_list, deconv_test_param, default_dict_tiling, deconv_switcher, create_tiling_structure
 
 
 # %%
@@ -352,7 +353,7 @@ def airy_factors(indiv_rings=False):
                  'R1': [[0,  1], [-1,  1], [-1,  0], [0, -1], [1, -1], [1,  0]],
                  'R2': [[1,  1], [0,  2], [-1,  2], [-2,  2], [-2,  1], [-2,  0],
                         [-1, -1], [0, -2], [1, -2], [2, -2], [2, -1], [2,  0]],
-                 'R4': [[2,  1], [1,  2], [-1,  3], [-2,  3], [-3,  2], [-3,  1],
+                 'R3': [[2,  1], [1,  2], [-1,  3], [-2,  3], [-3,  2], [-3,  1],
                         [-2, -1], [-1, -2], [1, -3], [2, -3], [3, -2], [3, -1], [3,  0]], }
     ring_dict['Rlen'] = [len(ring_dict['R0']), len(ring_dict['R1']),
                          len(ring_dict['R2']), len(ring_dict['R3'])]
@@ -382,7 +383,7 @@ def recon_widefield(im, detaxes):
     return np.sum(im, axis=detaxes)
 
 
-def recon_confocal(im, detdist, pinsize=0, pincenter=None, pinmask=None):
+def recon_confocal(im, detdist, pinsize=0, pincenter=None, pinmask=None, squeeze=False):
     """Confocal Processing of ISM-Data. Assumes ISM-Direction as 0th-dimension and nD-afterwards for arbitrary image data.
 
     Ways for further change in the implementation:
@@ -402,6 +403,8 @@ def recon_confocal(im, detdist, pinsize=0, pincenter=None, pinmask=None):
         central detector, by default None
     pinmask : list, optional
         1D-list of pinholes to be used (should have the same 0th-dimension as input im), by default None
+    squeeze : bool, optional
+        whether to squeeze output, by default False
 
     Returns
     -------
@@ -428,7 +431,8 @@ def recon_confocal(im, detdist, pinsize=0, pincenter=None, pinmask=None):
         pinmask = mask_from_dist(detdist=detdist, radius_outer=pinsize, radius_inner=0.0)
 
     # calculate confocal image
-    im_conf = np.squeeze(np.sum(im[pinmask], axis=0))
+    im_conf = np.sum(im[pinmask], axis=0,keepdims=True)
+    im_conf = np.squeeze(im_conf) if squeeze else im_conf
 
     # done?
     return im_conf, pinmask
@@ -1300,17 +1304,145 @@ def thickslice_get_diag_shift(diag_shape, zshift_list):
 
     return dshift
 
-
-def thickslice_unmix(ims_ft: nip.image, otfs: nip.image, pad: dict, full_ret: bool = True, ret_real: bool = True, zslices: list = [], verbose=True, pixelsize=None, t1: nip.timer = None) -> Union[nip.image, dict]:
+def default_tu_params(strict=False,**kwargs):
     '''
+    Default dictionary for call parameters of mipy.tiled_thickslice_unmix .
+    '''
+    tu_params={'full_ret': True, 
+                'ret_real': True, 
+                'zslices': [], 
+                'verbose':True, 
+                'pixelsize': None, 
+                't1': None, 
+                'tiling_dict': {},
+                'tiling_dict_pre': {'basic_shape_2D': [34,34],#[67, 67], 
+                                'basic_roverlap': [0.0, 0.2, 0.2], 
+                                'diffdim_im_psf': False, 
+                                'basic_add_overlap2shape': True, 
+                                'tiling_low_thresh': 400*100*100*8}
+                }
+    # overwrite defaults with existing 
+    if strict:
+        for key in kwargs:
+            if key in tu_params:
+                tu_params[key] = kwargs[key]
+    else:
+        for key in kwargs:
+            tu_params[key] = kwargs[key]
 
+    return tu_params
+
+def tiled_processing_thickslice(tile, otf, tile_id, merger, tu_params, pad, otfs_dict={}):
+    # process
+    processed_tile, retStats = thickslice_unmix(ims_ft=tile, otfs=otf, pad=pad, otfs_dict=otfs_dict,full_ret=tu_params['full_ret'], ret_real=tu_params['ret_real'], zslices=tu_params['zslices'], verbose=tu_params['verbose'], pixelsize=tu_params['pixelsize'], t1=tu_params['t1'])
+    
+    # merge
+    merger.add(tile_id, processed_tile)
+    
+    # done?
+    return retStats
+
+def create_tiling_structure_thickslice(im,psf,td,verbose):
+
+    #basic shapes
+    imshape_in=list(im.shape)
+    #imshape_new=[np.prod(im.shape[:-2]),]+list(im.shape[-2:])
+    psf_tile_shape=list(psf.shape[:2])+list(td['tile_shape'][-2:])
+    psf_tile=nip.extract(psf,psf_tile_shape)
+    psf_repeats = [1,]*psf_tile.ndim
+    psf_repeats[0]=int(td['tile_shape'][0]/psf_tile.shape[0])
+    psf_tile=nip.repmat(psf_tile,psf_repeats) 
+
+    # create tiler that creates tiles used for reconstruction
+    tiler = Tiler(data_shape=td['data_shape'], tile_shape=td['tile_shape'],
+                overlap=tuple(td['overlap']),mode=td['tiling_mode'])
+    if verbose:
+        print(">>>\t Tileset used for actual data-processing.\t<<<")
+        print(tiler)
+
+    # create tiler that is used as basis (w.r.t. unmixed/processed tiles) for merging
+    tiler_final = Tiler(data_shape=psf.shape[-3:], tile_shape=psf_tile.shape[-3:], overlap=tuple(
+        td['overlap'])[-3:],mode=td['tiling_mode'])
+    if verbose:
+        print(">>>\t Tileset used recombination.\t<<<")
+        print(tiler_final)
+    
+    # merger based on final shape
+    merger = Merger(tiler=tiler_final, window=td['window'])
+
+    # done?
+    return tiler, tiler_final, merger, psf_tile
+
+
+def tiled_thickslice_unmix(im: nip.image, psf: nip.image, pad: dict,tu_params:dict={},otfs_dict:dict={}) -> Union[nip.image, dict]: 
+    '''
+    idea: extract 1 PSF and just reapply for whole image
+    
+    
+    '''
+    tu_params= default_tu_params() if tu_params == {} else tu_params
+    if tu_params['tiling_dict'] == {}:
+        basic_shape_2D=tu_params['tiling_dict_pre']['basic_shape_2D'] if 'tiling_dict_pre' in tu_params else [64,64]
+        im=np.reshape(im, [np.prod(im.shape[:-2]),]+list(im.shape[-2:])) 
+        basic_shape_2D=[np.min([im.shape[(-2+m)],bs2])for m,bs2 in enumerate(basic_shape_2D)]
+        td=tu_params['tiling_dict']= default_dict_tiling(imshape=im,basic_shape=[im.shape[0]]+basic_shape_2D,basic_roverlap=[0.0,0.2,0.2],basic_add_overlap2shape=True,method='thickslice') 
+    else:
+        td=tu_params['tiling_dict']
+        im=np.reshape(im, td['data_shape'])  
+    retStats = []
+
+    # create tiling structure 
+    tiler, tiler_final, merger, psf_tile = create_tiling_structure_thickslice(im=im,psf=psf,td=td,verbose=tu_params['verbose'])
+    
+
+    # calculate unmixing OTF once
+    store_full_otf_dict=tu_params['full_ret']
+    im_test_tile=nip.extract(im,td['tile_shape'])
+    imu,otf_dict=thickslice_unmix(ims_ft=im_test_tile, otfs=psf_tile, pad=pad, otfs_dict=otfs_dict,full_ret=tu_params['full_ret'], ret_real=tu_params['ret_real'], zslices=tu_params['zslices'], verbose=tu_params['verbose'], pixelsize=tu_params['pixelsize'], t1=tu_params['t1'])
+    del imu, im_test_tile
+
+    # run for each created tile
+    for tile_id, tile in tiler(im, progress_bar=tu_params['verbose']):
+        if otfs_dict == {}:
+            tu_params['full_ret'] = True
+            retStats.append(tiled_processing_thickslice(tile=tile, otf=psf_tile, tile_id=tile_id, merger=merger, tu_params=tu_params, pad=pad, otfs_dict={}))
+            otfs_dict=deepcopy(retStats[0])
+            tu_params['full_ret'] = True if store_full_otf_dict else False
+        else: 
+            retStats.append(tiled_processing_thickslice(tile=tile, otf=psf_tile, tile_id=tile_id, merger=merger, tu_params=tu_params, pad=pad, otfs_dict=otfs_dict))
+
+    im_tu = nip.image(merger.merge())#data_orig_shape=td['data_shape'],
+    im_tu.pixelsize = im.pixelsize
+
+    # store the one used otf_unmix for further processing
+    if not store_full_otf_dict:
+        retStats = [otfs_dict]
+
+    return im_tu, retStats
+
+def thickslice_switcher(im, psf, pad, tu_params, do_tiling,otfs_dict={}):
+    tlt= tu_params['tiling_dict_pre']['tiling_low_thresh'] if tu_params['tiling_dict'] == {} else tu_params['tiling_dict']['tiling_low_thresh']
+    if do_tiling or any(np.array([im.nbytes, psf.nbytes]) > tlt):
+        print(
+            f"Switched to tiled Thickslice Unmixing. Do_tiling={do_tiling}, bigger_tiling_thresh={any(np.array([im.nbytes, psf.nbytes]) > tlt)}.")
+        tu_params['tiling_dict']
+        return tiled_thickslice_unmix(im=im, psf=psf, pad=pad,tu_params=tu_params,otfs_dict=otfs_dict)
+    else:
+        print("Switched to complete Thickslice Unmixing.")
+        #fill tu_params
+        tu_params=default_tu_params(**tu_params)
+        return thickslice_unmix(ims_ft=im, otfs=psf, pad=pad, otfs_dict=otfs_dict,full_ret=tu_params['full_ret'], ret_real=tu_params['ret_real'], zslices=tu_params['zslices'], verbose=tu_params['verbose'], pixelsize=tu_params['pixelsize'], t1=tu_params['t1'])
+
+def thickslice_unmix(ims_ft: nip.image, otfs: nip.image, pad: dict, otfs_dict:dict={},full_ret: bool = True, ret_real: bool = True, zslices: list = [], verbose=True, pixelsize=None, t1: nip.timer = None) -> Union[nip.image, dict]:
+    '''
+    
 
     '''
     t1 = nip.timer('s') if t1 is None else t1
 
     # sanity
     if pixelsize is None:
-        pixelsize = ims_ft.pixelsize
+        pixelsize = ims_ft.pixelsize if hasattr(ims_ft,'pixelsize') else otfs.pixelsize[-3:]
     if not np.iscomplexobj(ims_ft):
         if not 'imsize' in pad or pad['imsize'] is None:
             pad['imsize'] = ims_ft.shape
@@ -1327,6 +1459,12 @@ def thickslice_unmix(ims_ft: nip.image, otfs: nip.image, pad: dict, full_ret: bo
 
     # note: dimensions need to at max reduce to singletons, but not vanish for the svd-unmixing to work
     if not zslices == []:
+        # for easy choice
+        if not type(zslices[0])=='bool':
+            zslicesh=np.zeros(otfs.shape[1],dtype='bool')
+            zslicesh[zslices]=True
+            zslices=list(zslicesh)
+        
         #ims_ft = np.squeeze(ims_ft.swapaxes(0, 1)[zslices].swapaxes(0, 1))
         otfs = otfs.swapaxes(0, 1)[zslices].swapaxes(0, 1)
         #ims_ft.pixelsize = pixelsize
@@ -1334,26 +1472,32 @@ def thickslice_unmix(ims_ft: nip.image, otfs: nip.image, pad: dict, full_ret: bo
 
     # prepare container
     ret_dict = {}
+    t1.add("Prepared Data.")
 
     # calculate unmix-matrix
-    t1.add('Start Unmixing.')
-    otf_unmix, otf_unmix_svd_counter_dict, otf_unmix_mask, otf_unmix_projmask = unmix_matrix(
-        otfs, mode=pad['fmodel'], eps_mask=pad['eps_mask'], eps_reg=pad['eps_reg'], eps_reg_rel=pad['eps_reg_rel'], svdlim=pad['svdlim'], svdnum=pad['svdnum'], use_own=pad['use_own'], closing=pad['closing'], verbose=verbose, svd_stat=pad['svd_stat'])
+    if otfs_dict == {}:
+        otf_unmix, otf_unmix_svd_counter_dict, otf_unmix_mask, otf_unmix_projmask = unmix_matrix(
+            otfs, mode=pad['fmodel'], eps_mask=pad['eps_mask'], eps_reg=pad['eps_reg'], eps_reg_rel=pad['eps_reg_rel'], svdlim=pad['svdlim'], svdnum=pad['svdnum'], use_own=pad['use_own'], closing=pad['closing'], verbose=verbose, svd_stat=pad['svd_stat'])
+    else: 
+        otf_unmix=otfs_dict['otf_unmix']
+        otf_unmix_svd_counter_dict=otfs_dict['otf_unmix_svd_counter_dict']
+        otf_unmix_mask=otfs_dict['otf_unmix_mask']
+        otf_unmix_projmask=otfs_dict['otf_unmix_projmask']
+    t1.add(f"{['Load stored','Calculated'][otfs_dict == {}]} Unmixing Matrix.")
 
     # unmix
-    t1.add('Start Recovering.')
     im_unmix_ft = unmix_recover_thickslice(
         unmixer=otf_unmix, im=ims_ft, verbose=verbose, dtype=pad['dtype_complex'])
+    t1.add('Recovered 3D Sample distribution.')
 
     # back-transform
-    t1.add('Transform back.')
     im_unmix = ft_correct(im_unmix_ft, pad['faxes'],
                           im_shape=pad['imsize'], mode=pad['fmodel'], dir='bwd', dtype=pad['dtype_real'])
 
     # return real-valued?
     if ret_real:
         im_unmix = np.abs(im_unmix)
-    t1.add('Recovering done.')
+    t1.add('Transformed image back.')
 
     # return complete?
     if full_ret:
@@ -1464,7 +1608,12 @@ def complete_recon(pad, ims, psfs, rparams={}):
     ims.shape=[DETPIXELS,IEX,Z,Y,X]
     rparams={'wiener_reg_reps':1e-8,'reg_reps':1e-7,'lambdal':1e-12,'lambdal_complete':[1e-11.5,]}
 
-    To use this function make sure that photon-statistics of IM and PSF are the same as used to find the optimal reconstruction parameters placed in rparams.
+    Note: 
+    1) To use this function make sure that photon-statistics of IM and PSF are the same as used to find the optimal reconstruction parameters placed in rparams.
+    2) Asummes a list of images to be reconstructed. Thus for use with only 1 image/psf put into a simple list like im=nip.image(np.array([im,])) and set pixelsize properly
+
+    TODO:
+        1) add docstring!
     '''
     resd = {}
 
@@ -1494,7 +1643,7 @@ def complete_recon(pad, ims, psfs, rparams={}):
         resd = recon_wiener_list(ims_ft=ims_ft, otfs=otfs, pad=pad,
                                  rparams=rparams, resd=resd, ldim=1)
 
-        # deconv --> multiview, all-views and 3 images together
+        # deconv (all-views and 3 images together) or thickslice
         if rparams['ism_method'] == 'dsax':
             pad['dd']['BorderRegion'][1] = 0
             pad['dd']['lambdal'] = rparams['lambdal_complete']
@@ -1503,14 +1652,9 @@ def complete_recon(pad, ims, psfs, rparams={}):
                 pad['td']['tile_shape'][-3:]), basic_roverlap=[0, ]*(ims_rs.ndim-3)+list(pad['td']['overlap_rel'][-3:])) if rparams['do_tiling'] else None
             resd['dec_2D_allview_allim'], resd['dec_2D_allview_allim_stats'] = deconv_switcher(
                 im=ims_rs, psf=psfs_rs, tiling_dict=tdh_rs, deconv_dict=pad['dd'], do_tiling=rparams['do_tiling'])
-        elif rparams['method'] == 'thickslice':
-            # oof
-            resd['thickslice'] = thickslice_unmix(
-                ims_ft, otfs, pad, full_ret=pad['full_ret'], ret_real=pad['ret_real'], pixelsize=pad['pixelsize'], verbose=pad['verbose'])
-
-            # 2D to 3D
-
-            # 3D
+        elif rparams['ism_method'] == 'thickslice':
+            resd=recon_thickslice_unmix_list(ims, psfs, pad, rparams, resd, ldim=1,)
+            resd=recon_thickslice_deconv_list(ims, psfs, pad, rparams, resd, ldim=1,) 
 
         # confocal deconvolution
         resd = recon_deconv_list(ims=im_conf, psfs=psf_conf, pad=pad, rparams=rparams, resd=resd, sname=[
@@ -1520,9 +1664,10 @@ def complete_recon(pad, ims, psfs, rparams={}):
         resd = recon_deconv_list(ims=im_shepp, psfs=psf_shepp, pad=pad, rparams=rparams, resd=resd, sname=[
                                  'dec_2D', 'allview_indivim'], ldim=0, ddh=pad['dd'], do_tiling=rparams['do_tiling'], td=None)
 
-        # multiview deconvolution
+        # multiview deconvolutions
         resd = recon_deconv_list(ims=ims[rparams['pinmask_mdec'][1]], psfs=psfs[rparams['pinmask_mdec'][1]], pad=pad, rparams=rparams, resd=resd, sname=[
-                                 'dec_2D', 'allview_indivim'], ldim=0, ddh=pad['dd'], do_tiling=rparams['do_tiling'], td=None)
+                                 'dec_2D', 'allview_indivim'], ldim=0, ddh=pad['dd'], do_tiling=rparams['do_tiling'], td=None)            
+
 
     else:
         # test
@@ -1530,15 +1675,18 @@ def complete_recon(pad, ims, psfs, rparams={}):
             ims=ims_rs, psfs=psfs_rs, pad=pad, rparams=rparams, ddh=pad['dd'], do_test_tiling=False, do_load_data=False)
 
         # Weighted Averaging in Fourierspace
-        resd = wavg_testparam(ims_ft=ims_ft, otfs=otfs, pad=pad, resd=resd)
+        resd = wavg_testparam(ims_ft=ims_ft, otfs=otfs, pad=pad, resd=resd, rparams=rparams)
 
         # wiener
-        resd = wiener_testparam(ims_ft=ims_ft, otfs=otfs, pad=pad, resd=resd)
+        resd = wiener_testparam(ims_ft=ims_ft, otfs=otfs, pad=pad, resd=resd, rparams=rparams)
 
-        # deconv --> multiview, all-views and 3 images together
-        if rparams['method'] == 'dsax':
+        # deconv (all-views and 3 images together) or thickslice
+        if rparams['ism_method'] == 'dsax':
             resd = deconv_test_param_on_list(ims=ims_rs[np.newaxis], psfs=psfs_rs[np.newaxis], pad=pad,
                                              resd=resd, rparams=rparams, ddh=pad['dd'], sname=['dec2D', 'av_aim'], ldim=0, do_tiling=rparams['do_tiling'])
+        elif rparams['ism_method'] == 'thickslice':
+            resd = recon_thickslice_unmix_list(ims, psfs, pad, rparams, resd, ldim=1, do_testparam=True)
+            resd = recon_thickslice_deconv_list(ims, psfs, pad, rparams, resd, ldim=1,do_testparam=True)
 
         # deconv --> multiview, all-views for each raw (and calculated) image
         resd = deconv_test_param_on_list(ims=im_conf, psfs=psf_conf, pad=pad,
@@ -1546,15 +1694,13 @@ def complete_recon(pad, ims, psfs, rparams={}):
         resd = deconv_test_param_on_list(ims=im_shepp, psfs=psf_shepp, pad=pad,
                                          resd=resd, rparams=rparams, ddh=pad['dd'], sname=['dec2D', 'shepp'], ldim=0, do_tiling=False)
         resd = deconv_test_param_on_list(ims=ims[rparams['pinmask_mdec'][1]], psfs=psfs[[rparams['pinmask_mdec'][1]]], pad=pad,
-                                         resd=resd, rparams=rparams, ddh=pad['dd'], sname=['dec2D', 'av_indivim'], ldim=0, do_tiling=rparams['do_tiling'])
+                                         resd=resd, rparams=rparams, ddh=pad['dd'], sname=['dec2D', 'av_indivim'], ldim=1, do_tiling=rparams['do_tiling'])
+            
 
-        # select comparison data
-        compare_list, obj = dsax_create_deconv_complist(resd=resd, rparams=rparams,)
-        deconv_test_param_find_best_combination(compare_list=compare_list, obj=obj, resd=resd)
-
-        # find best combinations via NCC
-        resd, index_list = deconv_test_param_find_best_combination(
-            compare_list=compare_list, obj=obj, resd=resd, index_list=[])
+        # find best reconstructions
+        compare_list, obj, method_names,index_list = create_deconv_complist(pad=pad,resd=resd, rparams=rparams,method=rparams['ism_method'])
+        resd, best_regs=deconv_test_param_find_best_combination(compare_list=compare_list, obj=obj, resd=resd, rparams=rparams)
+        resd= translate_best_regs(rparams=rparams,resd=resd)
 
         # store some stats about the data
         ax_stats = (0, -3, -2, -1)
@@ -1570,6 +1716,9 @@ def dsax_vary_Iex(im, markers, Iex=[1, ], order=2, Iex_sr=[2.6, 4.7, 0.05], crit
     '''
     Vary dsax-factors and test change of FWHM of psf.
     Iex_sr should be the range of the ratio between the varied Iex and one non-varied Iex'. In case of 2nd order: Iex2/Iex1=Iex_sr.
+
+    TODO:
+        1) add docstring!
     '''
 
     # allocate space
@@ -1644,7 +1793,10 @@ def dsax_vary_Iex(im, markers, Iex=[1, ], order=2, Iex_sr=[2.6, 4.7, 0.05], crit
     return Iratio_sel, ret_dict
 
 def dsax_extract_higher_order_curves(curve_Iex, curve_fluo, lims_Iex, order=3):
-
+    '''
+    TODO:
+        1) add docstring!
+    '''
     # sanity
     lims_Iex = np.array(lims_Iex).astype('int')
 
@@ -1666,6 +1818,10 @@ def dsax_extract_higher_order_curves(curve_Iex, curve_fluo, lims_Iex, order=3):
     return dsax_iex, curve_nl1_range, curve_nl2_range, curve_nl1, curve_nl2
 
 def dsax_find_Iex_combination(im, Iex, Iex_test_range=[[1.5, 8.1, 0.1], ], critlim=[[5e-1, 5e-1, 5e-4], [1e-4, 5e-4, 5e-4]], bead_roi=[16, 16], markers=[[], ], use_criteria=[1, 1, 0, 0, 1], shield=False, verbose=True):
+    '''
+    TODO:
+        1) add docstring!
+    '''
     # sanity
     if len(Iex_test_range) < 2:
         Iex_test_range = list(Iex_test_range)*2
@@ -1689,7 +1845,10 @@ def dsax_find_Iex_combination(im, Iex, Iex_test_range=[[1.5, 8.1, 0.1], ], critl
     return res_Iex
 
 def cr_sanity_checks(ims, pad, rparams):
-    '''Sanity Checks for input data of dsax_complete_recon.'''
+    '''Sanity Checks for input data of dsax_complete_recon.
+    TODO:
+        1) add docstring!
+    '''
     allowed_ds = [list, np.ndarray, tuple]
 
     if not 'detdist' in pad:
@@ -1712,14 +1871,19 @@ def cr_sanity_checks(ims, pad, rparams):
 
 
 def cr_input_normalization(ims, psfs, pad, resd, rparams):
-    '''Input Normalization routine of dsax_complete_recon.'''
+    '''Input Normalization routine of dsax_complete_recon.
+    TODO:
+        1) add docstring!
+    '''
     pad['norm_ax'] = tuple([0, ]+list(pad['faxes']))
 
     # make sure ims is =>0
     if rparams['im_norm']:
         ims -= np.min(ims, pad['norm_ax'], keepdims=True)
         resd['ims_sum'] = np.sum(ims, axis=pad['norm_ax'], keepdims=True)
-        ims *= (np.squeeze(resd['ims_sum'])[0]/resd['ims_sum'])*rparams['ims_NPhot_fact']
+        imssum=np.squeeze(resd['ims_sum'])
+        imssum=imssum[0] if imssum.ndim>0 else imssum
+        ims *= (imssum/resd['ims_sum'])*rparams['ims_NPhot_fact']
     if rparams['psf_norm']:
         psfs = normNoff(psfs, dims=pad['norm_ax'], method='sum', atol=0, direct=False)
     resd['im_conf_mask'] = rparams['pinmask_conf'][1] if rparams['pinmask_conf'][0] else None
@@ -1728,7 +1892,10 @@ def cr_input_normalization(ims, psfs, pad, resd, rparams):
 
 
 def cr_basic_methods(ims, psfs, pad, resd, rparams):
-    '''Set of basic reconstructions of dsax_complete_recon.'''
+    '''Set of basic reconstructions of dsax_complete_recon.
+    TODO:
+        1) add docstring!
+    '''
 
     # widefield
     resd['im_wf'] = np.sum(ims, axis=0)
@@ -1753,33 +1920,41 @@ def cr_basic_methods(ims, psfs, pad, resd, rparams):
                                    [1]) if rparams['pinmask_amdec'][0] else np.ones(ims.shape[0], dtype='bool')
 
     # calculate SheppSum
-    resd['im_shepp'] = nip.image(np.zeros(ims.shape[1:]))
+    shepp_shape=np.copy(ims.shape)
+    shepp_shape[0]=1
+    resd['im_shepp'] = nip.image(np.zeros(shepp_shape))
     resd['im_shepp_resd'] = [{} for m in range(ims.shape[1])]
     resd['psf_shepp'] = nip.image(np.zeros(resd['im_shepp'].shape))
     fix_dict_pixelsize(resd, pad['pixelsize'], ['im_shepp', 'psf_shepp'])
+    shift_factors = rparams['shift_factors'] if 'shift_factors' in rparams else []
+    shift_map = rparams['shepp_shift_map'] if 'shepp_shift_map' in rparams else []
+    
     for m in range(ims.shape[1]):
         imshepph, resd['im_shepp_resd'][m] = recon_sheppardSUM(
-            ims[:, m], nbr_det=pad['nbr_det'], pincenter=pad['pincenter'], shift_axes=pad['faxes'], shift_style='iter', pinmask=rparams['pinmask_shepp'][1])
+            ims[:, m], nbr_det=pad['nbr_det'], pincenter=pad['pincenter'], shift_axes=pad['faxes'], shift_style='iter', pinmask=rparams['pinmask_shepp'][1],factors=shift_factors,shift_map=shift_map)
         psfshepph, _ = recon_sheppardSUM(
             psfs[:, m], nbr_det=pad['nbr_det'], pincenter=pad['pincenter'], shift_axes=pad['faxes'], shift_style='iter', shift_map=resd['im_shepp_resd'][m]['shift_map'], pinmask=rparams['pinmask_shepp'][1])
-        resd['im_shepp'][m] = imshepph.astype(pad['dtype_real'])
-        resd['psf_shepp'][m] = psfshepph.astype(pad['dtype_real'])
+        resd['im_shepp'][:,m] = imshepph.astype(pad['dtype_real'])
+        resd['psf_shepp'][:,m] = psfshepph.astype(pad['dtype_real'])
 
     return pad, resd, rparams
 
 
 def cr_prepare_basic_data_for_deconv(ims, psfs, pad, resd, rparams):
-    '''Preparation of data for deconv in dsax_complete_recon.'''
+    '''Preparation of data for deconv in dsax_complete_recon.
+    TODO:
+        1) add docstring!
+    '''
     # use sliced result?
-    im_shepp = resd['im_shepp'][[slice(resd['im_shepp'].shape[0]), ]+resd['im_shepp_resd']
-                                [2]['shift_slices']] if rparams['im_shepp_use_slices'] else resd['im_shepp']
-    psf_shepp = resd['psf_shepp'][[slice(resd['im_shepp'].shape[0]), ]+resd['im_shepp_resd']
-                                  [2]['shift_slices']] if rparams['im_shepp_use_slices'] else resd['psf_shepp']
+    shepp_slice_choice=np.argmax([np.max(abs(m['shift_map'])) for m in resd['im_shepp_resd']])
+    pad['shift_slices_2use']=resd['im_shepp_resd'][shepp_slice_choice]['shift_slices']
+    im_shepp = resd['im_shepp'][[slice(resd['im_shepp'].shape[0]), ]+pad['shift_slices_2use']] if rparams['im_shepp_use_slices'] else resd['im_shepp']
+    psf_shepp = resd['psf_shepp'][[slice(resd['im_shepp'].shape[0]), ]+pad['shift_slices_2use']] if rparams['im_shepp_use_slices'] else resd['psf_shepp']
     # normalize results
     im_conf = (resd['im_conf']-np.min(resd['im_conf'],
-               axis=tuple(pad['faxes']), keepdims=True))[:, np.newaxis]
+               axis=tuple(pad['faxes']), keepdims=True))
     psf_conf = normNoff(resd['psf_conf'], dims=tuple(
-        pad['faxes']), atol=0, method='sum')[:, np.newaxis]
+        pad['faxes']), atol=0, method='sum')
     im_shepp = im_shepp-np.min(im_shepp, axis=tuple(pad['faxes']), keepdims=True)
     psf_shepp = normNoff(psf_shepp, dims=tuple(pad['faxes']), method='sum', atol=0)
 
@@ -1801,9 +1976,12 @@ def cr_prepare_basic_data_for_deconv(ims, psfs, pad, resd, rparams):
     return im_conf, psf_conf, im_shepp, psf_shepp, ims_ft, otfs, ims_rs, psfs_rs
 
 
-def wavg_testparam(ims_ft, otfs, pad, resd):
-    '''Search for optimal parameters of recon_weightedAveraging.'''
-    resd['ismWA_reps_testrange'] = 10**(-np.arange(0, 9, 0.5))
+def wavg_testparam(ims_ft, otfs, pad, resd, rparams):
+    '''Search for optimal parameters of recon_weightedAveraging.
+    TODO:
+        1) add docstring!
+    '''
+    resd['ismWA_reps_testrange'] = rparams['ismWA_params']['reps_testrange'] if 'ismWA_params' in rparams else 10**(-np.arange(0, 9, 0.5))
     resd['ismWA_rtest'] = nip.image(
         np.zeros([len(resd['ismWA_reps_testrange']), ]+list(ims_ft.shape[-4:]), dtype=pad['dtype_real']))
     resd['ismWAN_rtest'] = nip.image(
@@ -1817,11 +1995,14 @@ def wavg_testparam(ims_ft, otfs, pad, resd):
     return resd
 
 
-def wiener_testparam(ims_ft, otfs, pad, resd):
-    '''Search for optimal parameters of recon_weightedAveraging.'''
-    resd['wiener_reg_eps_testrange'] = 10**(-np.arange(0, 9, 0.5))
+def wiener_testparam(ims_ft, otfs, pad, resd, rparams):
+    '''Search for optimal parameters of recon_weightedAveraging.
+    TODO:
+        1) add docstring!
+    '''
+    resd['wiener_reg_eps_testrange'] = rparams['wiener_params']['reps_testrange'] if 'wiener_params' in rparams else 10**(-np.arange(0, 9, 0.5))
     resd['wiener_rtest'] = nip.image(
-        np.zeros([len(resd['wiener_reg_eps_testrange']), ]+list(ims.shape[-4:]), dtype=ims.dtype))
+        np.zeros([len(resd['wiener_reg_eps_testrange']), ]+list(ims_ft.shape[-4:]), dtype=pad['dtype_real']))
 
     for m, reps in enumerate(resd['wiener_reg_eps_testrange']):
         resd['wiener_rtest'][m], resd['wiener_dict_rtest'] = recon_wiener(ims_ft, otfs, use_generalized=pad['wiener_use_generalized'], pincenter=pad['pincenter'], eps_mask=pad[
@@ -1831,7 +2012,10 @@ def wiener_testparam(ims_ft, otfs, pad, resd):
         return resd
 
 def recon_wiener_list(ims_ft, otfs, pad, rparams, resd, ldim=0,):
-    ''''''
+    '''
+    TODO:
+        1) add docstring!
+    '''
     # prepare data
     if not ldim == 0:
         ims_ft = np.swapaxes(ims_ft, 0, ldim)
@@ -1850,7 +2034,10 @@ def recon_wiener_list(ims_ft, otfs, pad, rparams, resd, ldim=0,):
 
 
 def recon_wavg_list(ims_ft, otfs, pad, rparams, resd, ldim=0,):
-    ''''''
+    '''
+    TODO:
+        1) add docstring!
+    '''
     # prepare data
     if not ldim == 0:
         ims_ft = np.swapaxes(ims_ft, 0, ldim)
@@ -1863,7 +2050,7 @@ def recon_wavg_list(ims_ft, otfs, pad, rparams, resd, ldim=0,):
     # calculate wiener-filter
     for m, mIm in enumerate(ims_ft):
         resd['ismWA'][m], resd['ismWA_weights'][m], resd['ismWAN'][m], resd['ismWAN_psf'][m] = recon_weightedAveraging(
-            ims_ft[:, m], otfs[:, m], pincenter=pad['pincenter'], mask_eps=pad['eps_mask'], noise_norm=pad['noise_norm'], use_mask=pad['use_mask'], reg_reps=rparams['reg_reps'][m], reg_aeps=pad['reg_aeps'])
+            mIm, otfs[m,:], pincenter=pad['pincenter'], mask_eps=pad['eps_mask'], noise_norm=pad['noise_norm'], use_mask=pad['use_mask'], reg_reps=rparams['reg_reps'][m], reg_aeps=pad['reg_aeps'])
 
     # if not ldim == 0:
     #    resd['wiener'] = np.swapaxes(resd['wiener'], 0, ldim)
@@ -1871,46 +2058,253 @@ def recon_wavg_list(ims_ft, otfs, pad, rparams, resd, ldim=0,):
     # done?
     return resd
 
-def dsax_create_deconv_complist(resd, rparams,):
-    '''Create Comparison list for finding NCC-best deconv results for dsax_complete_recon.'''
-    compare_list = np.array([resd['ismWA_rtest'], resd['ismWAN_rtest'], resd['wiener_rtest'], resd['dec2D_conf_rtest'], nip.extract(resd['dec2D_shepp_rtest'], resd['ismWA_rtest'].shape), resd['dec2D_av_indivim_rtest'], nip.repmat(
-        resd['dec2D_av_aim_rtest'][:, np.newaxis], [1, resd['wiener_rtest'].shape[1], 1, 1, 1])])
+def recon_thickslice_deconv_list(ims, psfs, pad, rparams, resd, ldim=0,do_testparam=False):
+    '''
+    TODO:
+        1) add docstring!
+    '''
+    # prepare data
+    if not ldim == 0:
+        ims = np.swapaxes(ims, 0, ldim)
+        psfs = np.swapaxes(psfs, 0, ldim)
+
+    # basic parameter 
+    do_tiling=rparams['do_tiling']
+
+    # loop over all available techniques
+    for lname in ['dec_oof','dec_2d3d','dec_zleap']:
+        if rparams['do_tu'][lname[4:]]:
+            spatial_shape = list(psfs.shape[-2:]) if lname == 'dec_oof' else list(psfs.shape[-3:])
+            if do_testparam:
+                resd[lname+'_rtest'] = nip.image(np.zeros([len(rparams[lname+'_params'][0]['param_range']),ims.shape[0]]+spatial_shape)) 
+                resd[lname+'_rtest'].pixelsize=psfs.pixelsize[-2:] if lname == 'tu_oof' else psfs.pixelsize[-3:]
+                resd[lname+'_rtest_stats'] = [[{} for n in range(resd[lname+'_rtest'].shape[1])] for m in range(resd[lname+'_rtest'].shape[0])]
+            else:
+                resd[lname] = nip.image(np.zeros([ims.shape[0], ]+spatial_shape))
+                resd[lname].pixelsize=psfs.pixelsize[-2:] if lname == 'tu_oof' else psfs.pixelsize[-3:]
+                resd[lname+'_dict'] = [[{} for n in range(resd[lname].shape[1])] for m in range(resd[lname].shape[0])]
+
+            # loop over all images
+            for m, mIm in enumerate(ims):
+                #params
+                ddh=dict(pad['dd'])
+                ddh['lambdal']=rparams[lname+'_params'][m]['lambdal']
+                pinholes = rparams[lname+'_params'][m]['pinholes'] if 'pinholes' in rparams[lname+'_params'][m] else slice(psfs.shape[2])
+
+                # prepare data
+                if lname=='dec_oof':
+                    im_dec = mIm[:, pad['tu_oof_recon_slices']]
+                    psfs_dec = psfs[m,:, pad['tu_oof_recon_slices']]
+                    do_tiling=False
+                    td=None
+                elif lname=='dec_2d3d':
+                    im_dec = nip.image(np.zeros(mIm[pinholes].shape,dtype=mIm.dtype))
+                    im_dec[:,rparams['tu_2d3d_params'][m]['zchoices']['im']]=mIm[pinholes,rparams['tu_2d3d_params'][m]['zchoices']['im']]
+                    psfs_dec = psfs[m,pinholes]
+                    ddh['validMask'] = np.zeros(psfs_dec.shape[:2], dtype='bool')
+                    ddh['validMask'][:, rparams['tu_2d3d_params'][m]['zchoices']['im']] = 1
+                    td = default_dict_tiling(imshape=im_dec.shape, basic_shape=list(im_dec.shape[:-3])+list(pad['td']['tile_shape'][-3:]), basic_roverlap=[0, ]*(im_dec.ndim-3)+list(pad['td']['overlap_rel'][-3:])) if do_tiling else None
+                else:
+                    im_dec = nip.image(np.zeros(mIm[pinholes].shape, dtype=mIm.dtype))
+                    im_dec[:,rparams['tu_zleap_params'][m]['zchoices']['im']] = (mIm[pinholes])[:,rparams['tu_zleap_params'][m]['zchoices']['im']]
+                    psfs_dec = psfs[m,pinholes]
+                    ddh['validMask'] = np.zeros(psfs_dec.shape[:2], dtype='bool')
+                    ddh['validMask'][:, rparams['tu_zleap_params'][m]['zchoices']['im']] = 1
+                    ddh['BorderRegion'][-3] = ddh['BorderRegion'][-1]
+                    td = default_dict_tiling(imshape=im_dec.shape, basic_shape=list(im_dec.shape[:-3])+list(pad['td']['tile_shape'][-3:]), basic_roverlap=[0, ]*(im_dec.ndim-3)+list(pad['td']['overlap_rel'][-3:])) if do_tiling else None
+
+                # unmix
+                if do_testparam:
+                    # test all paramaters
+                    padh = deepcopy(pad)
+                    dech, resd[lname+'_rtest_stats'][m] = deconv_test_param(im=im_dec, psf=psfs_dec, tiling_dict=td, deconv_dict=ddh, param=rparams[lname+'_params'][m]['param'], param_range=rparams[lname+'_params'][m]['param_range'])
+                    resd[lname+'_rtest'][:,m] = np.reshape(dech,resd[lname+'_rtest'][:,m].shape)
+                else:
+                    resd[lname][m], resd[lname+'_dict'][m] = deconv_switcher(im=im_dec, psf=psfs_dec, tiling_dict=None, deconv_dict=ddh, do_tiling=do_tiling)
+        
+    # done?
+    return resd
+
+def recon_thickslice_unmix_list(ims, psfs, pad, rparams, resd, ldim=0, do_testparam=False):
+    '''
+    oof: out-of-focus rejection
+    2d3d: 2D-ISM to 3D-stack thickslice unmixing
+    zleap: ZLEAP
+
+    TODO:
+        1) add docstring!
+    '''
+    # prepare data
+    if not ldim == 0:
+        ims = np.swapaxes(ims, 0, ldim)
+        psfs = np.swapaxes(psfs, 0, ldim)
+
+    # loop over all available techniques
+    for lname in ['tu_oof','tu_2d3d','tu_zleap']:
+        if rparams['do_tu'][lname[3:]]:
+            spatial_shape = list(psfs.shape[-2:]) if lname == 'tu_oof' else list(psfs.shape[-3:])
+            if do_testparam:
+                resd[lname+'_rtest'] = nip.image(np.zeros([len(rparams[lname+'_params'][0]['reg_eps_range']),ims.shape[0]]+spatial_shape)) 
+                resd[lname+'_rtest'].pixelsize=psfs.pixelsize[-2:] if lname == 'tu_oof' else psfs.pixelsize[-3:]
+                resd[lname+'_rtest_stats'] = [[{} for n in range(resd[lname+'_rtest'].shape[1])] for m in range(resd[lname+'_rtest'].shape[0])]
+            else:
+                resd[lname] = nip.image(np.zeros([ims.shape[0], ]+spatial_shape))
+                resd[lname].pixelsize=psfs.pixelsize[-2:] if lname == 'tu_oof' else psfs.pixelsize[-3:]
+                resd[lname+'_dict'] = [[{} for n in range(resd[lname].shape[1])] for m in range(resd[lname].shape[0])]
+
+            # set to avoid any possibilities
+            ims_use =ims 
+            psfs_use=psfs
+
+            # loop over all images
+            for m, mIm in enumerate(ims):
+                #params
+                pad['eps_reg']=rparams[lname+'_params'][m]['reg_eps']
+                pad[lname+'_recon_slices'] = []
+                pinholes = rparams[lname+'_params'][m]['pinholes'] if 'pinholes' in rparams[lname+'_params'][m] else slice(psfs.shape[2])
+
+                # prepare data
+                if lname=='tu_oof':
+                    pad[lname+'_recon_slices'] = np.zeros(psfs.shape[-3], dtype=bool)
+                    pad[lname+'_recon_slices'][psfs.shape[1]//2] = True
+                    #ims_ft = ft_correct(mIm[:, rparams[lname+'_params'][m]['zslices'][0]], faxes=(-2, -1), dtype=pad['dtype_complex'])
+                    #otfs = ft_correct(psfs[m], faxes=pad['faxes'], dtype=pad['dtype_complex'])
+                    ims_use=mIm[:, rparams[lname+'_params'][m]['zslices'][0]]
+                    psfs_use=psfs[m]
+                elif lname=='tu_2d3d':
+                    #ims_ft = ft_correct(mIm[pinholes,rparams[lname+'_params'][m]['zchoices']['im']], faxes=(-2, -1), dtype=pad['dtype_complex'])
+                    ims_use=mIm[pinholes,rparams[lname+'_params'][m]['zchoices']['im']]
+                    psfs_use=psfs[m,pinholes]
+                    #otfs = ft_correct(psfs[m,pinholes], faxes=pad['faxes'], dtype=pad['dtype_complex'])
+                else:
+                    # use full recon-shape for now
+                    if 0:
+                        ims_ft = ft_correct((mIm[pinholes])[:,rparams['tu_zleap_params'][m]['zchoices']['im']], faxes=(-2, -1), dtype=pad['dtype_complex'])
+                        otfs = ft_correct((psfs[m,pinholes])[:,rparams['tu_zleap_params'][m]['zchoices']['psf']], faxes=pad['faxes'], dtype=pad['dtype_complex'])
+                        otfs=otfs[:otfs.shape[1]]
+                    else:
+                        #ims_ft = ft_correct(mIm[pinholes], faxes=(-2, -1), dtype=pad['dtype_complex'])
+                        ims_use=mIm[pinholes]
+                        psfs_use=psfs[m,pinholes]
+                        #otfs = ft_correct(psfs[m,pinholes], faxes=pad['faxes'], dtype=pad['dtype_complex'])
+                
+                # unmix
+                if do_testparam:
+                    # test all paramaters
+                    padh = deepcopy(pad)
+                    for nr, reps in enumerate(rparams[lname+'_params'][m]['reg_eps_range']):
+                        padh['eps_reg']=reps
+                        resd[lname+'_rtest'][nr,m], stats = thickslice_switcher(im=ims_use, psf=psfs_use, pad=pad, tu_params=rparams[lname+'_params'][m], do_tiling=rparams[lname+'_params'][m]['do_tiling'],otfs_dict={})#thickslice_unmix(ims_ft, otfs, pad,  zslices=pad[lname+'_recon_slices'], pixelsize=pad['pixelsize'])    
+                        resd[lname+'_rtest_stats'][nr][m]= stats if pad['thickslice_store_stats'] else {}
+                else:
+                    resd[lname][m], resd[lname+'_dict'][m] = thickslice_switcher(im=ims_use, psf=psfs_use, pad=pad, tu_params=rparams[lname+'_params'][m], do_tiling=rparams[lname+'_params'][m]['do_tiling'],otfs_dict={})#thickslice_unmix(ims_ft, otfs, pad,  zslices=pad[lname+'_recon_slices'], pixelsize=pad['pixelsize'])
+
+    # done?
+    return resd
+
+
+def create_deconv_complist(pad, resd, rparams,method='dsax'):
+    '''Create Comparison list for finding NCC-best deconv results for dsax_complete_recon.
+    TODO:
+        1) add docstring!
+    '''
+    compare_list=[resd['ismWA_rtest'], resd['ismWAN_rtest'], resd['wiener_rtest'], resd['dec2D_conf_rtest'], nip.extract(resd['dec2D_shepp_rtest'], resd['ismWA_rtest'].shape),]
+    if rparams['ism_method']=='dsax':
+        compare_list = np.array(compare_list+[resd['dec2D_av_indivim_rtest'], nip.repmat(
+            resd['dec2D_av_aim_rtest'][:, np.newaxis], [1, resd['wiener_rtest'].shape[1], 1, 1, 1])])
+        resd['method_names'] = ['WA', 'WAN', 'Wiener', 'CmDEC', 'PRmDEC', 'mDEC', 'amDEC']
+        resd['index_list'] = ['Iex1', 'Iex2', 'Iex3', 'NL1', 'NL2']        
+    else:
+        compare_list = np.array(compare_list+[resd['tu_2d3d_rtest'],resd['tu_zleap_rtest'],resd['dec_2d3d_rtest'],resd['dec_zleap_rtest'],resd['dec2D_av_indivim_rtest']])
+        resd['method_names'] = ['WA', 'WAN', 'Wiener', 'CmDEC', 'PRmDEC', 'TU2d3d', 'TUzleap','DEC2d3d', 'DECzleap','mDEC']
+        resd['index_list'] = np.arange(resd['ismWA_rtest'].shape[1])
+        # add 2D comparison
+        compare_list_2D=compare_list[:,:,:,pad['tu_oof_recon_slices']]
+        compare_list_2D=np.concatenate([compare_list_2D[:5],np.reshape(resd['tu_oof_rtest'],compare_list_2D.shape[-5:])[np.newaxis],compare_list_2D[5:7],np.reshape(resd['dec_oof_rtest'],compare_list_2D.shape[-5:])[np.newaxis],compare_list_2D[7:]],axis=0)
+        resd['method_names_2D'] = resd['method_names'][:5]+['TUoof',]+resd['method_names'][5:7]+['DECoof',]+resd['method_names'][7:]
+
     obj = resd['dec2D_av_indivim_rtest'][resd['dec2D_av_indivim_rtest'].shape[0] //
                                          2, 2] if rparams['obj'] is None else rparams['obj']
 
     if rparams['im_shepp_use_slices']:
-        slic = resd['im_shepp_resd'][2]['shift_slices']
+        slic = pad['shift_slices_2use']
         compare_list = compare_list[:, :, :, :, slic[-2], slic[-1]]
         obj = obj[slic]
+        if rparams['ism_method']=='thickslice':
+            compare_list_2D=compare_list_2D[ :, :, :, :,slic[-2], slic[-1]]
+            obj2D = obj[pad['tu_oof_recon_slices'],slic[-2],slic[-1]]
+            compare_list_2D = np.transpose(compare_list_2D, [2, 0, 1, 3, 4, 5])
+            compare_list_2D = normNoff(compare_list_2D, dims=(-2, -1))#normNoff(np.squeeze(compare_list), dims=(-2, -1))
 
     # swap axes such that order is: [Iex,ReconMETHOD,param_range,Z,Y,X]
     compare_list = np.transpose(compare_list, [2, 0, 1, 3, 4, 5])
-    compare_list = normNoff(np.squeeze(compare_list), dims=(-2, -1))
-    return compare_list, obj
+    compare_list = normNoff(compare_list, dims=(-2, -1))#normNoff(np.squeeze(compare_list), dims=(-2, -1))
+
+    if rparams['ism_method']=='thickslice':
+        compare_list=[compare_list,compare_list_2D]
+
+    return compare_list, obj, resd['method_names'],resd['index_list']
 
 
-def deconv_test_param_find_best_combination(compare_list, obj, resd, index_list=[]):
-    '''Find NCC-best combinations of deconv parameters for dsax_recon_complete.'''
+def deconv_test_param_find_best_combination(compare_list, obj, resd, rparams):
+    '''Find NCC-best combinations of deconv parameters for dsax_recon_complete.
+    TODO:
+        1) add docstring!
+    '''
+    if rparams['ism_method']=='thickslice':
+        compare_list_2D=compare_list[1]
+        compare_list=compare_list[0]
 
     resd['ncc_find_reps'] = []
     resd['ncc_find_reps_latex'] = []
     ncc_full_cols = np.arange(compare_list.shape[2])
-    ncc_full_rows = ['WA', 'WAN', 'Wiener', 'CmDEC', 'PRmDEC', 'mDEC', 'amDEC']
     for m, cval in enumerate(compare_list):
         ncc_full, ncc_full_latex = get_cross_correlations(
-            [np.squeeze(obj), ]*cval.shape[0], cval, rows=ncc_full_rows, cols=ncc_full_cols)
+            [np.squeeze(obj), ]*cval.shape[0], cval, rows=resd['method_names'], cols=ncc_full_cols)
         resd['ncc_find_reps'].append(ncc_full)
         resd['ncc_find_reps_latex'].append(ncc_full_latex)
-
-    # order(best regs)=[Iex,ReconMETHOD]
-    if index_list == []:
-        index_list = ['Iex1', 'Iex2', 'Iex3', 'NL1', 'NL2']
+        
     best_regs = DataFrame(
-        np.argmax(np.array(resd['ncc_find_reps']), axis=-1), columns=ncc_full_rows, index=index_list)
+        np.argmax(np.array(resd['ncc_find_reps']), axis=-1), columns=resd['method_names'], index=resd['index_list'])
     resd['best_regs'] = DataFrame(best_regs)
 
-    # translate to reg-values for methods
-    resd['best_regs_sel'] = DataFrame(np.swapaxes(np.array([np.array(resd['ismWA_reps_testrange'])[best_regs.values[:, 0]], np.array(resd['ismWA_reps_testrange'])[
-        best_regs.values[:, 1]], np.array(resd['wiener_reg_eps_testrange'])[best_regs.values[:, 2]], np.array(resd['dec2D_conf_rtest_dict']['lambdal_range'])[best_regs.values[:, 3]][:, 0], np.array(resd['dec2D_shepp_rtest_dict']['lambdal_range'])[best_regs.values[:, 4]][:, 0], np.array(resd['dec2D_av_indivim_rtest_dict']['lambdal_range'])[best_regs.values[:, 5]][:, 0], np.array(resd['dec2D_av_aim_rtest_dict']['lambdal_range'])[best_regs.values[:, 6]][:, 0]]), 0, 1), columns=ncc_full_rows, index=index_list)
+    if rparams['ism_method']=='thickslice':
+        resd['ncc_find_reps_2D'] = []
+        resd['ncc_find_reps_2D_latex'] = []
+        ncc_full_cols = np.arange(compare_list_2D.shape[2])
+        for m, cval in enumerate(compare_list_2D):
+            ncc_full, ncc_full_latex = get_cross_correlations(
+                [np.squeeze(obj), ]*cval.shape[0], cval, rows=resd['method_names_2D'], cols=ncc_full_cols)
+            resd['ncc_find_reps_2D'].append(ncc_full)
+            resd['ncc_find_reps_2D_latex'].append(ncc_full_latex)
+        resd['best_regs_2D'] = DataFrame(np.argmax(np.array(resd['ncc_find_reps_2D']), axis=-1), columns=resd['method_names_2D'], index=resd['index_list'])
+        
+    best_regs = DataFrame(
+        np.argmax(np.array(resd['ncc_find_reps']), axis=-1), columns=resd['method_names'], index=resd['index_list'])
+    resd['best_regs'] = DataFrame(best_regs)     
 
-    return resd, index_list
+
+    return resd, best_regs
+
+def translate_best_regs(rparams,resd):
+    '''
+    TODO:
+        1) add docstring!
+    '''
+    br=resd['best_regs'].values
+    translation_list=[np.array(resd['ismWA_reps_testrange'])[br[:, 0]], np.array(resd['ismWA_reps_testrange'])[br[:, 1]], np.array(resd['wiener_reg_eps_testrange'])[br[:, 2]], np.array(resd['dec2D_conf_rtest_dict']['lambdal_range'])[br[:, 3]][:, 0], np.array(resd['dec2D_shepp_rtest_dict']['lambdal_range'])[br[:, 4]][:, 0],]
+    if rparams['ism_method']=='dsax':
+        translation_list=translation_list+[np.array(resd['dec2D_av_indivim_rtest_dict']['lambdal_range'])[br[:, 5]][:, 0], np.array(resd['dec2D_av_aim_rtest_dict']['lambdal_range'])[br[:, 6]][:, 0]]
+    else: 
+        translation_list=translation_list+[np.array(rparams['tu_2d3d_params'][0]['reg_eps_range'][br[:,5]]),np.array(rparams['tu_zleap_params'][0]['reg_eps_range'][br[:,6]]),np.array(rparams['dec_2d3d_params'][0]['param_range'][br[:,7]]),np.array(rparams['dec_zleap_params'][0]['param_range'][br[:,8]]),np.array(resd['dec2D_av_indivim_rtest_dict']['lambdal_range'])[br[:, 9]][:, 0],]
+        
+        #2D
+        br2=resd['best_regs_2D'].values
+        translation_list_2D=[np.array(resd['ismWA_reps_testrange'])[br2[:, 0]], np.array(resd['ismWA_reps_testrange'])[br2[:, 1]], np.array(resd['wiener_reg_eps_testrange'])[br2[:, 2]], np.array(resd['dec2D_conf_rtest_dict']['lambdal_range'])[br2[:, 3]][:, 0], np.array(resd['dec2D_shepp_rtest_dict']['lambdal_range'])[br2[:, 4]][:, 0],np.array(rparams['tu_oof_params'][0]['reg_eps_range'][br2[:,5]]),np.array(rparams['tu_2d3d_params'][0]['reg_eps_range'])[br2[:,6]],np.array(rparams['tu_zleap_params'][0]['reg_eps_range'])[br2[:,7]],np.array(rparams['dec_oof_params'][0]['param_range'][br2[:,8]]),np.array(rparams['dec_2d3d_params'][0]['param_range'][br2[:,9]]),np.array(rparams['dec_zleap_params'][0]['param_range'][br2[:,10]]),np.array(resd['dec2D_av_indivim_rtest_dict']['lambdal_range'])[br2[:, 11]][:, 0],]
+        resd['best_regs_sel_2D'] = DataFrame(np.swapaxes(np.array(translation_list), 0, 1), columns=resd['method_names'], index=resd['index_list'])
+    
+    # convert to data_frame
+    resd['best_regs_sel'] = DataFrame(np.swapaxes(np.array(translation_list), 0, 1), columns=resd['method_names'], index=resd['index_list'])
+
+    #done?
+    return resd
