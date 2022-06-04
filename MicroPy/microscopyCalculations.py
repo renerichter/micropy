@@ -5,7 +5,7 @@ Some easy calculations regarding resolution and magnification for different imag
 # ---         RESOLUTION ESTIMATIONS             ---
 # ---------------------------------------------------------
 #
-import numpy as np
+from .general_imports import *
 from .numbers import harmonic_sum
 
 def calculate_na_fincorr(obj_M_new=5, obj_M=10, obj_NA=0.25, obj_N=1, obj_di=160, roundout=0, printout=False):

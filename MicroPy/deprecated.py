@@ -4,16 +4,15 @@
 	@author René Lachmann
 	@email herr.rene.richter@gmail.com
 	@create date 2022-05-27 14:32:52
-	@modify date 2022-05-27 14:57:33
+	@modify date 2022-06-04 10:29:31
 	@desc Collection of deprecated functions ...just in case
 
 ---------------------------------------------------------------------------------------------------
 """
-import numpy as np
-import NanoImagingPack as nip
 from deprecated import deprecated
 
 # mipy imports
+from .general_imports import *
 from .utility import  findshift, midVallist,pinhole_getcenter
 
 # %% ---------------------------------------------------------------

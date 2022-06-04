@@ -14,14 +14,15 @@ import matplotlib as mpl
 import matplotlib.pyplot as plt
 from matplotlib import rcParams as mplParams
 from matplotlib_scalebar.scalebar import ScaleBar
-import NanoImagingPack as nip
-import numpy as np
 import os
 import PIL
 import psutil
 from socket import gethostname
 from time import time, sleep
 import yaml
+
+# internal imports
+from .general_imports import *
 
 
 # %%

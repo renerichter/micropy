@@ -4,11 +4,9 @@ Created on Fri Feb 15 12:39:42 2019
 
 @author: rene
 """
-import numpy as np
-import NanoImagingPack as nip
 import os
 import math
-
+from .general_imports import *
 
 # %% get_range
 def get_range(dim_im, dim_goal):

@@ -4,8 +4,6 @@ The ISM processing toolbox.
 # %% imports
 
 from copy import deepcopy
-import numpy as np
-import NanoImagingPack as nip
 from pandas import DataFrame
 from scipy.ndimage.morphology import binary_fill_holes
 from scipy.ndimage import binary_closing
@@ -13,6 +11,7 @@ from typing import Union
 from tiler import Tiler,Merger
 
 # mipy imports
+from .general_imports import *
 from .transformations import irft3dz, ft_correct, get_cross_correlations, lp_norm
 from .utility import avoid_division_by_zero, findshift, midVallist, pinhole_getcenter, add_multi_newaxis, shiftby_list, subslice_arbitrary, get_slices_from_shiftmap, normNoff
 from .inout import stack2tiles, format_list, load_data, fix_dict_pixelsize
@@ -1319,7 +1318,7 @@ def default_tu_params(strict=False,**kwargs):
                                 'basic_roverlap': [0.0, 0.2, 0.2], 
                                 'diffdim_im_psf': False, 
                                 'basic_add_overlap2shape': True, 
-                                'tiling_low_thresh': 400*100*100*8}
+                                'tiling_low_thresh': (32*20*400*400)*4}#shape * dtype-bytes
                 }
     # overwrite defaults with existing 
     if strict:
@@ -1603,7 +1602,7 @@ def thickslice_complete_recon(pad, ims, psfs, rparams={}):
     rparams['ism_method'] == 'dsax'
     return complete_recon(pad=pad, ims=ims, psfs=psfs, rparams=rparams)
 
-def complete_recon(pad, ims, psfs, rparams={}):
+def complete_recon(pad, ims, psfs, rparams={}, verbose=True):
     '''
     ims.shape=[DETPIXELS,IEX,Z,Y,X]
     rparams={'wiener_reg_reps':1e-8,'reg_reps':1e-7,'lambdal':1e-12,'lambdal_complete':[1e-11.5,]}
@@ -1616,20 +1615,25 @@ def complete_recon(pad, ims, psfs, rparams={}):
         1) add docstring!
     '''
     resd = {}
+    t=nip.timer()
 
     # sanity
     pad = cr_sanity_checks(ims=ims, pad=pad, rparams=rparams)
+    t.add('Sanity Checks')
 
     # normalize input data
     ims, psfs, pad, resd = cr_input_normalization(
         ims=ims, psfs=psfs, pad=pad, resd=resd, rparams=rparams)
+    t.add('Input Normalization')
 
     # do simple WF, Confocal +-1AU and SheppSUM
     pad, resd, rparams = cr_basic_methods(ims=ims, psfs=psfs, pad=pad, resd=resd, rparams=rparams)
+    t.add('Widefield, Confocal and ISM SheppSUM')
 
     # prepare data for deconv
     im_conf, psf_conf, im_shepp, psf_shepp, ims_ft, otfs, ims_rs, psfs_rs = cr_prepare_basic_data_for_deconv(
         ims=ims, psfs=psfs, pad=pad, resd=resd, rparams=rparams)
+    t.add('Prepare Data for Deconvolution'+[' and Unmixing',''][rparams['ism_method'] == 'dsax'])
 
     if not rparams['find_optimal_parameters']:
         fix_dict_pixelsize(resd, pad['pixelsize'], ['im_shepp', 'psf_shepp', 'wiener',
@@ -1638,10 +1642,12 @@ def complete_recon(pad, ims, psfs, rparams={}):
         # wavg recon
         resd = recon_wavg_list(ims_ft=ims_ft, otfs=otfs, pad=pad,
                                rparams=rparams, resd=resd, ldim=1)
+        t.add('Weighted Averaging in Fourier space')
 
         # wiener recon
         resd = recon_wiener_list(ims_ft=ims_ft, otfs=otfs, pad=pad,
                                  rparams=rparams, resd=resd, ldim=1)
+        t.add('Wiener Deconvolution')
 
         # deconv (all-views and 3 images together) or thickslice
         if rparams['ism_method'] == 'dsax':
@@ -1652,22 +1658,25 @@ def complete_recon(pad, ims, psfs, rparams={}):
                 pad['td']['tile_shape'][-3:]), basic_roverlap=[0, ]*(ims_rs.ndim-3)+list(pad['td']['overlap_rel'][-3:])) if rparams['do_tiling'] else None
             resd['dec_2D_allview_allim'], resd['dec_2D_allview_allim_stats'] = deconv_switcher(
                 im=ims_rs, psf=psfs_rs, tiling_dict=tdh_rs, deconv_dict=pad['dd'], do_tiling=rparams['do_tiling'])
+            t.add('DSAX -> Deconvolution -> all views, all images')
         elif rparams['ism_method'] == 'thickslice':
-            resd=recon_thickslice_unmix_list(ims, psfs, pad, rparams, resd, ldim=1,)
-            resd=recon_thickslice_deconv_list(ims, psfs, pad, rparams, resd, ldim=1,) 
+            resd=recon_thickslice_unmix_list(ims, psfs, pad, rparams, resd, ldim=1,t=t)
+            resd=recon_thickslice_deconv_list(ims, psfs, pad, rparams, resd, ldim=1,t=t) 
 
         # confocal deconvolution
         resd = recon_deconv_list(ims=im_conf, psfs=psf_conf, pad=pad, rparams=rparams, resd=resd, sname=[
                                  'dec_2D', 'allview_indivim'], ldim=0, ddh=pad['dd'], do_tiling=False, td=None)
-
+        t.add('Deconvolution -> Confocal')
+        
         # sheppard deconvolution
         resd = recon_deconv_list(ims=im_shepp, psfs=psf_shepp, pad=pad, rparams=rparams, resd=resd, sname=[
                                  'dec_2D', 'allview_indivim'], ldim=0, ddh=pad['dd'], do_tiling=rparams['do_tiling'], td=None)
+        t.add('Deconvolution -> SheppSUM')
 
         # multiview deconvolutions
         resd = recon_deconv_list(ims=ims[rparams['pinmask_mdec'][1]], psfs=psfs[rparams['pinmask_mdec'][1]], pad=pad, rparams=rparams, resd=resd, sname=[
                                  'dec_2D', 'allview_indivim'], ldim=0, ddh=pad['dd'], do_tiling=rparams['do_tiling'], td=None)            
-
+        t.add('Deconvolution -> all views, individual images')
 
     else:
         # test
@@ -1676,31 +1685,37 @@ def complete_recon(pad, ims, psfs, rparams={}):
 
         # Weighted Averaging in Fourierspace
         resd = wavg_testparam(ims_ft=ims_ft, otfs=otfs, pad=pad, resd=resd, rparams=rparams)
+        t.add('Parameter Search -> Weighted Averaging in Fourier space')
 
         # wiener
         resd = wiener_testparam(ims_ft=ims_ft, otfs=otfs, pad=pad, resd=resd, rparams=rparams)
+        t.add('Parameter Search -> Weighted Averaging in Fourier space')
 
         # deconv (all-views and 3 images together) or thickslice
         if rparams['ism_method'] == 'dsax':
             resd = deconv_test_param_on_list(ims=ims_rs[np.newaxis], psfs=psfs_rs[np.newaxis], pad=pad,
                                              resd=resd, rparams=rparams, ddh=pad['dd'], sname=['dec2D', 'av_aim'], ldim=0, do_tiling=rparams['do_tiling'])
+            t.add('Parameter Search -> DSAX -> Deconvolution -> all views, all images')
         elif rparams['ism_method'] == 'thickslice':
-            resd = recon_thickslice_unmix_list(ims, psfs, pad, rparams, resd, ldim=1, do_testparam=True)
-            resd = recon_thickslice_deconv_list(ims, psfs, pad, rparams, resd, ldim=1,do_testparam=True)
+            resd = recon_thickslice_unmix_list(ims, psfs, pad, rparams, resd, ldim=1, t=t,do_testparam=True)
+            resd = recon_thickslice_deconv_list(ims, psfs, pad, rparams, resd, ldim=1,t=t,do_testparam=True)
 
         # deconv --> multiview, all-views for each raw (and calculated) image
         resd = deconv_test_param_on_list(ims=im_conf, psfs=psf_conf, pad=pad,
                                          resd=resd, rparams=rparams, ddh=pad['dd'], sname=['dec2D', 'conf'], ldim=0, do_tiling=False)
+        t.add('Parameter Search -> Deconvolution -> Confocal')
         resd = deconv_test_param_on_list(ims=im_shepp, psfs=psf_shepp, pad=pad,
                                          resd=resd, rparams=rparams, ddh=pad['dd'], sname=['dec2D', 'shepp'], ldim=0, do_tiling=False)
+        t.add('Parameter Search -> Deconvolution -> SheppSUM')
         resd = deconv_test_param_on_list(ims=ims[rparams['pinmask_mdec'][1]], psfs=psfs[[rparams['pinmask_mdec'][1]]], pad=pad,
                                          resd=resd, rparams=rparams, ddh=pad['dd'], sname=['dec2D', 'av_indivim'], ldim=1, do_tiling=rparams['do_tiling'])
-            
+        t.add('Parameter Search -> Deconvolution -> all views, individual images')
 
         # find best reconstructions
         compare_list, obj, method_names,index_list = create_deconv_complist(pad=pad,resd=resd, rparams=rparams,method=rparams['ism_method'])
         resd, best_regs=deconv_test_param_find_best_combination(compare_list=compare_list, obj=obj, resd=resd, rparams=rparams)
         resd= translate_best_regs(rparams=rparams,resd=resd)
+        t.add('Parameter Search -> Find Best Reconstructions')
 
         # store some stats about the data
         ax_stats = (0, -3, -2, -1)
@@ -1708,6 +1723,8 @@ def complete_recon(pad, ims, psfs, rparams={}):
             ims, faxes=ax_stats, cols=index_list, printout=True)
         resd['psf_stats'], _ = stf_basic(
             psfs, faxes=ax_stats, cols=index_list, printout=True)
+        t.add('Parameter Search -> Store im & psf stats')
+        resd['timer']=t
 
     return resd
 
@@ -2058,7 +2075,7 @@ def recon_wavg_list(ims_ft, otfs, pad, rparams, resd, ldim=0,):
     # done?
     return resd
 
-def recon_thickslice_deconv_list(ims, psfs, pad, rparams, resd, ldim=0,do_testparam=False):
+def recon_thickslice_deconv_list(ims, psfs, pad, rparams, resd, ldim=0,t=None,do_testparam=False,verbose=True):
     '''
     TODO:
         1) add docstring!
@@ -2068,12 +2085,21 @@ def recon_thickslice_deconv_list(ims, psfs, pad, rparams, resd, ldim=0,do_testpa
         ims = np.swapaxes(ims, 0, ldim)
         psfs = np.swapaxes(psfs, 0, ldim)
 
+    # verbose
+    if verbose:
+        print("~~~~~~~~~~~~~~~~~~~~~~~~~~~~~\nStart Thickslice Deconvolution on List.\n~~~~~~~~~~~~~~~~~~~~~~~~~~~~~")
+
     # basic parameter 
     do_tiling=rparams['do_tiling']
 
     # loop over all available techniques
     for lname in ['dec_oof','dec_2d3d','dec_zleap']:
         if rparams['do_tu'][lname[4:]]:
+            printme={'dec_oof':'> Ouf of Focus Rejection (oof)','dec_2d3d': '>2D to 3D unmixing (2d3d)','dec_zleap':'> Zleap'}[lname]
+            if not t is None:
+                t.add(f"{['','Parameter Search -> '][do_testparam]}Deconvolution -> {printme}")
+            if verbose:
+                print(f"Start {printme}.")
             spatial_shape = list(psfs.shape[-2:]) if lname == 'dec_oof' else list(psfs.shape[-3:])
             if do_testparam:
                 resd[lname+'_rtest'] = nip.image(np.zeros([len(rparams[lname+'_params'][0]['param_range']),ims.shape[0]]+spatial_shape)) 
@@ -2125,7 +2151,7 @@ def recon_thickslice_deconv_list(ims, psfs, pad, rparams, resd, ldim=0,do_testpa
     # done?
     return resd
 
-def recon_thickslice_unmix_list(ims, psfs, pad, rparams, resd, ldim=0, do_testparam=False):
+def recon_thickslice_unmix_list(ims, psfs, pad, rparams, resd, ldim=0, t=None,do_testparam=False,verbose=True):
     '''
     oof: out-of-focus rejection
     2d3d: 2D-ISM to 3D-stack thickslice unmixing
@@ -2139,9 +2165,18 @@ def recon_thickslice_unmix_list(ims, psfs, pad, rparams, resd, ldim=0, do_testpa
         ims = np.swapaxes(ims, 0, ldim)
         psfs = np.swapaxes(psfs, 0, ldim)
 
+    # verbose
+    if verbose:
+        print("~~~~~~~~~~~~~~~~~~~~~~~~~~~~~\nStart Thickslice Unmixing on List.\n~~~~~~~~~~~~~~~~~~~~~~~~~~~~~")
+
     # loop over all available techniques
     for lname in ['tu_oof','tu_2d3d','tu_zleap']:
         if rparams['do_tu'][lname[3:]]:
+            printme={'tu_oof':'> Ouf of Focus Rejection (oof)','tu_2d3d': '>2D to 3D unmixing (2d3d)','tu_zleap':'> Zleap'}[lname]
+            if not t is None:
+                t.add(f"{['','Parameter Search -> '][do_testparam]}Thickslice Unmixing -> {printme}")
+            if verbose:
+                print(f"Start {printme}.")
             spatial_shape = list(psfs.shape[-2:]) if lname == 'tu_oof' else list(psfs.shape[-3:])
             if do_testparam:
                 resd[lname+'_rtest'] = nip.image(np.zeros([len(rparams[lname+'_params'][0]['reg_eps_range']),ims.shape[0]]+spatial_shape)) 
@@ -2194,7 +2229,7 @@ def recon_thickslice_unmix_list(ims, psfs, pad, rparams, resd, ldim=0, do_testpa
                     padh = deepcopy(pad)
                     for nr, reps in enumerate(rparams[lname+'_params'][m]['reg_eps_range']):
                         padh['eps_reg']=reps
-                        resd[lname+'_rtest'][nr,m], stats = thickslice_switcher(im=ims_use, psf=psfs_use, pad=pad, tu_params=rparams[lname+'_params'][m], do_tiling=rparams[lname+'_params'][m]['do_tiling'],otfs_dict={})#thickslice_unmix(ims_ft, otfs, pad,  zslices=pad[lname+'_recon_slices'], pixelsize=pad['pixelsize'])    
+                        resd[lname+'_rtest'][nr,m], stats = thickslice_switcher(im=ims_use, psf=psfs_use, pad=padh, tu_params=rparams[lname+'_params'][m], do_tiling=rparams[lname+'_params'][m]['do_tiling'],otfs_dict={})#thickslice_unmix(ims_ft, otfs, pad,  zslices=pad[lname+'_recon_slices'], pixelsize=pad['pixelsize'])    
                         resd[lname+'_rtest_stats'][nr][m]= stats if pad['thickslice_store_stats'] else {}
                 else:
                     resd[lname][m], resd[lname+'_dict'][m] = thickslice_switcher(im=ims_use, psf=psfs_use, pad=pad, tu_params=rparams[lname+'_params'][m], do_tiling=rparams[lname+'_params'][m]['do_tiling'],otfs_dict={})#thickslice_unmix(ims_ft, otfs, pad,  zslices=pad[lname+'_recon_slices'], pixelsize=pad['pixelsize'])
@@ -2216,15 +2251,16 @@ def create_deconv_complist(pad, resd, rparams,method='dsax'):
         resd['index_list'] = ['Iex1', 'Iex2', 'Iex3', 'NL1', 'NL2']        
     else:
         compare_list = np.array(compare_list+[resd['tu_2d3d_rtest'],resd['tu_zleap_rtest'],resd['dec_2d3d_rtest'],resd['dec_zleap_rtest'],resd['dec2D_av_indivim_rtest']])
-        resd['method_names'] = ['WA', 'WAN', 'Wiener', 'CmDEC', 'PRmDEC', 'TU2d3d', 'TUzleap','DEC2d3d', 'DECzleap','mDEC']
+        resd['method_names'] = ['WA', 'WAN', 'Wiener', 'CmDEC', 'PRmDEC', '2d3dTU', 'zleapTU','2d3dDEC', 'zleapDEC','mDEC']
         resd['index_list'] = np.arange(resd['ismWA_rtest'].shape[1])
         # add 2D comparison
         compare_list_2D=compare_list[:,:,:,pad['tu_oof_recon_slices']]
         compare_list_2D=np.concatenate([compare_list_2D[:5],np.reshape(resd['tu_oof_rtest'],compare_list_2D.shape[-5:])[np.newaxis],compare_list_2D[5:7],np.reshape(resd['dec_oof_rtest'],compare_list_2D.shape[-5:])[np.newaxis],compare_list_2D[7:]],axis=0)
-        resd['method_names_2D'] = resd['method_names'][:5]+['TUoof',]+resd['method_names'][5:7]+['DECoof',]+resd['method_names'][7:]
+        resd['method_names_2D'] = resd['method_names'][:5]+['oofTU',]+resd['method_names'][5:7]+['oofDEC',]+resd['method_names'][7:]
 
     obj = resd['dec2D_av_indivim_rtest'][resd['dec2D_av_indivim_rtest'].shape[0] //
-                                         2, 2] if rparams['obj'] is None else rparams['obj']
+                                         2, 0] if rparams['obj'] is None else rparams['obj']
+    obj.pixelsize=resd['dec2D_av_indivim_rtest'].pixelsize
 
     if rparams['im_shepp_use_slices']:
         slic = pad['shift_slices_2use']
@@ -2254,6 +2290,8 @@ def deconv_test_param_find_best_combination(compare_list, obj, resd, rparams):
     if rparams['ism_method']=='thickslice':
         compare_list_2D=compare_list[1]
         compare_list=compare_list[0]
+    else:
+        compare_list_2D=np.array([])
 
     resd['ncc_find_reps'] = []
     resd['ncc_find_reps_latex'] = []
@@ -2263,9 +2301,10 @@ def deconv_test_param_find_best_combination(compare_list, obj, resd, rparams):
             [np.squeeze(obj), ]*cval.shape[0], cval, rows=resd['method_names'], cols=ncc_full_cols)
         resd['ncc_find_reps'].append(ncc_full)
         resd['ncc_find_reps_latex'].append(ncc_full_latex)
-        
+
+    resd['ncc_find_reps']=np.array(resd['ncc_find_reps'])        
     best_regs = DataFrame(
-        np.argmax(np.array(resd['ncc_find_reps']), axis=-1), columns=resd['method_names'], index=resd['index_list'])
+        np.argmax(resd['ncc_find_reps'], axis=-1), columns=resd['method_names'], index=resd['index_list'])
     resd['best_regs'] = DataFrame(best_regs)
 
     if rparams['ism_method']=='thickslice':
@@ -2274,15 +2313,11 @@ def deconv_test_param_find_best_combination(compare_list, obj, resd, rparams):
         ncc_full_cols = np.arange(compare_list_2D.shape[2])
         for m, cval in enumerate(compare_list_2D):
             ncc_full, ncc_full_latex = get_cross_correlations(
-                [np.squeeze(obj), ]*cval.shape[0], cval, rows=resd['method_names_2D'], cols=ncc_full_cols)
+                [np.squeeze(obj[rparams['tu_oof_params'][0]['zslices']]), ]*cval.shape[0], cval, rows=resd['method_names_2D'], cols=ncc_full_cols)
             resd['ncc_find_reps_2D'].append(ncc_full)
             resd['ncc_find_reps_2D_latex'].append(ncc_full_latex)
-        resd['best_regs_2D'] = DataFrame(np.argmax(np.array(resd['ncc_find_reps_2D']), axis=-1), columns=resd['method_names_2D'], index=resd['index_list'])
-        
-    best_regs = DataFrame(
-        np.argmax(np.array(resd['ncc_find_reps']), axis=-1), columns=resd['method_names'], index=resd['index_list'])
-    resd['best_regs'] = DataFrame(best_regs)     
-
+        resd['ncc_find_reps_2D']=np.array(resd['ncc_find_reps_2D']) 
+        resd['best_regs_2D'] = DataFrame(np.argmax(resd['ncc_find_reps_2D'], axis=-1), columns=resd['method_names_2D'], index=resd['index_list'])   
 
     return resd, best_regs
 

@@ -9,10 +9,11 @@ import matplotlib.pyplot as plt
 import matplotlib as mpl
 import mpl_toolkits as mptk
 from mpl_toolkits.axes_grid1 import make_axes_locatable, AxesGrid
-from matplotlib.patches import Arrow
+from matplotlib.patches import Arrow, Rectangle
 from matplotlib.ticker import FormatStrFormatter
 from tifffile import imread as tifimread
 from typing import Optional, Tuple, List, Union, Generator, Callable
+from colorsys import rgb_to_hls, hls_to_rgb
 
 import subprocess
 from io import StringIO
@@ -117,7 +118,16 @@ def store_data(param_dict, proc_dict, data_dict=None):
         store_dict['data_dict'] = data_dict
     np.savez(param_dict['save_path']+param_dict['save_name']+'_data.npz', store_dict)
 
-def fix_dict_pixelsize(dictin, pixelsize, fixlist):
+def fix_dict_pixelsize(dictin, pixelsize, fixlist=[]):
+    # get fixlist
+    if fixlist==[]:
+        if 'pixel_fixlist' in dictin:
+            fixlist=dictin['pixel_fixlist'] 
+        else:
+            fixlist=dictin['pixel_fixlist'] = list(
+                filter(None, [(key if type(dictin[key]) == nip.image else '') for key in dictin]))
+    
+    # fix pixelsizes
     for val in fixlist:
         if val in dictin:
             if not type(dictin[val]) == nip.image:
@@ -126,6 +136,7 @@ def fix_dict_pixelsize(dictin, pixelsize, fixlist):
         else:
             print(f"WARNING: key={val} not in prd on load.")
 
+    # done?
     return dictin
 
 def get_filelist(load_path='.', fn_proto='jpg'):
@@ -869,7 +880,7 @@ def print_stack2subplot(imstack, im_minmax=[None, None], imdir='row', inplace=Fa
 
     xy_norm = xy_norm_h if xy_norm is None else xy_norm
 
-    # rescaling paramateres
+    # rescaling parameteres
     xy_extent=None
     if ax_extent:
         xy_extent = None if yx_ticks is None else [

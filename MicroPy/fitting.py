@@ -2,11 +2,7 @@
 All functions relating to fitting come in here. 
 '''
 # %% imports
-# extern
-import numpy as np
-import NanoImagingPack as nip
-
-# intern
+from .general_imports import *
 from .utility import get_coords_from_markers, center_of_mass, findshift, normNoff,get_slices_from_shiftmap
 from .transformations import lp_norm, dampEdge
 from .filters import savgol_filter_nd

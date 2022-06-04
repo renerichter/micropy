@@ -1,9 +1,8 @@
 '''
 Relevant functions are implemented here. 
 '''
-import NanoImagingPack as nip
-import numpy as np
 from typing import Optional, Tuple, List, Union, Generator, Callable
+from .general_imports import *
 from .numbers import harmonic_mean
 
 

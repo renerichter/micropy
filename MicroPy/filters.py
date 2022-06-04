@@ -4,7 +4,7 @@
 	@author René Lachmann
 	@email herr.rene.richter@gmail.com
 	@create date 2019-11-25 10:26:14
-	@modify date 2022-05-27 16:46:20
+	@modify date 2022-06-04 10:29:05
 	@desc The Filters are build such that they assume to receive an nD-stack, but they only operate in a 2D-manner (meaning: interpreting the stack as a (n-2)D series of 2D-images). Further, they assume that the last two dimensions (-2,-1) are the image-dimensions. The others are just for stacking.
 
 ---------------------------------------------------------------------------------------------------
@@ -27,12 +27,11 @@ __maintainer__ = "René Lachmann"
 # Imports
 # -------------------------------------------------------------------------
 #
-import numpy as np
-import NanoImagingPack as nip
 from scipy.ndimage import binary_closing
 from scipy.signal import savgol_filter
 from pandas import DataFrame
 
+from .general_imports import *
 from .utility import add_multi_newaxis, transpose_arbitrary, split_nd, avoid_division_by_zero, match_dim
 from .transformations import dct2, lp_norm
 from .simulation import generate_spokes_target

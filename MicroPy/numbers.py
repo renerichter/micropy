@@ -1,7 +1,7 @@
 '''
 Here number crunching and particular number operations will be included
 '''
-import numpy as np
+from .general_imports import *
 
 # %% --------------------------------------------------------------
 #           HEX and INTs

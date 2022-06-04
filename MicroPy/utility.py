@@ -4,7 +4,7 @@
 	@author René Lachmann
 	@email herr.rene.richter@gmail.com
 	@create date 2019 11:53:25
-	@modify date 2022-05-30 08:58:43
+	@modify date 2022-06-04 10:31:38
 	@desc Utility package
 
 ---------------------------------------------------------------------------------------------------
@@ -12,16 +12,16 @@
 
 
 # %% imports
-import numpy as np
-import NanoImagingPack as nip
 from deprecated import deprecated
-# mipy imports
-from .functions import gaussian1D
-from .numbers import generate_combinations
 import timeit
 from time import time
 from skimage.feature import register_translation
 from skimage.registration import phase_cross_correlation
+
+# mipy imports
+from .functions import gaussian1D
+from .numbers import generate_combinations
+from .general_imports import *
 
 # %%
 # -------------------------------------------------------------------------

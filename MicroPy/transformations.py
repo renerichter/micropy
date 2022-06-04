@@ -1,12 +1,11 @@
 '''
 Transformations that were helpful will be collected here. No matter whether Hough, Radon, Fourier, Affine, ...
 '''
-import numpy as np
 from scipy.fftpack import dct
 from pandas import DataFrame
-import NanoImagingPack as nip
 
 from .utility import midVallist
+from .general_imports import *
 
 # %%
 # ------------------------------------------------------------------

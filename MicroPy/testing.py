@@ -2,7 +2,7 @@
     Holds different test functions. 
 '''
 from .functions import gaussian1D, gaussian2D
-import NanoImagingPack as nip
+from .general_imports import *
 # %% -------------------------------------------------------
 # speedtesting and comparison
 # ----------------------------------------------------------

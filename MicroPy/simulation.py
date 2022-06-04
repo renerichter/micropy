@@ -1,16 +1,15 @@
 '''
 All data generating functions will be found in here.
 '''
+# external imports
+from copy import deepcopy
+
 # mipy imports
+from .general_imports import *
 from .basicTools import sanityCheck_structure
 from .transformations import irft3dz, rft3dz, rftnd, polar2cartesian, lp_norm
 from .utility import shiftby_list, add_multi_newaxis, set_val_atpos, get_center
 from .microscopyCalculations import convert_phot2int, convert_int2phot
-
-# external imports
-from copy import deepcopy
-import NanoImagingPack as nip
-import numpy as np
 
 # %%
 # ------------------------------------------------------------------
