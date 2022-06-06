@@ -4,7 +4,7 @@
 	@author René Lachmann
 	@email herr.rene.richter@gmail.com
 	@create date 2019 11:53:25
-	@modify date 2022-06-04 10:31:38
+	@modify date 2022-06-06 16:06:10
 	@desc Utility package
 
 ---------------------------------------------------------------------------------------------------
@@ -1609,17 +1609,17 @@ def pad_secure_shift(im: nip.image, shifts: np.array, secfac: float = 2.0):
     return im, pads
 
 
-def pad_boundaries(im, pad_width):
+def pad_boundaries(im, pad_width, maxdim=2):
     '''
     Example:
     ========
     >>> a=nip.readim('orka')
     >>> pads=np.array([[12,23],[40,17]])
-    >>> apad=mipy.pad_boundaries(a,pads)
+    >>> apad=mipy.pad_boundaries(a,pads,2)
     '''
     # take global pads
-    if pad_width.ndim > 2:
-        pad_width = np.reshape(pad_width,[np.prod(pad_width.shape[:-2]),]+list(pad_width.shape[-2:]))
+    if pad_width.ndim > maxdim:
+        pad_width = np.reshape(pad_width,[np.prod(pad_width.shape[:-maxdim]),]+list(pad_width.shape[-2:]))
         pad_width = np.max(pad_width,axis=0)
     
     return np.pad(im, pad_width=pad_width, mode='constant', constant_values=0)
@@ -1652,12 +1652,31 @@ def unpad(im,pads,axis=[-2,-1],direct=True):
     
     return im
 
+def convert_slices_2_pads(im_slices:list,im_shape:tuple,axis:list):
+    pads=np.zeros([len(im_shape),2],dtype='int')
+    for m,maxis in enumerate(axis):
+        pads[maxis]=[im_slices[m].start,im_shape[maxis]-im_slices[m].stop]
+    return pads
+
+def extent_slicing(im_slices:list,im_shape:tuple,axis:list):
+    full_slicing=[slice(mshape) for mshape in im_shape]
+    for m,maxis in enumerate(axis):
+        full_slicing[maxis]=im_slices[m]
+    return full_slicing
+
 def get_slices_from_shiftmap(im,shift_map, shift_axes):
     maxmin_shift=np.array([np.ceil(np.max(np.array([[0,]*len(shift_map[0]),np.max(shift_map,axis=0)]),axis=0)),np.floor(np.min(np.array([[0,]*len(shift_map[0]),np.min(shift_map,axis=0)]),axis=0))]).astype('int')
     shift_slices=[slice(m) for m in im.shape]
     for m,msax in enumerate(shift_axes):
         shift_slices[msax]=slice(maxmin_shift[0,m],im.shape[msax]+maxmin_shift[1,m])
     return shift_slices
+
+def len_slice(mslice:slice) -> int:
+    '''Calculate length of a slice'''
+    sstart = 0 if mslice.start is None else mslice.start
+    sstep = 1 if mslice.step is None else mslice.step
+    return 1+(mslice.stop-sstart-1)//sstep
+
 
 # %% -----------------------------------------------------
 # ----              VIEWER INTERACTION

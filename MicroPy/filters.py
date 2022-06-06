@@ -4,7 +4,7 @@
 	@author René Lachmann
 	@email herr.rene.richter@gmail.com
 	@create date 2019-11-25 10:26:14
-	@modify date 2022-06-04 10:29:05
+	@modify date 2022-06-04 17:21:23
 	@desc The Filters are build such that they assume to receive an nD-stack, but they only operate in a 2D-manner (meaning: interpreting the stack as a (n-2)D series of 2D-images). Further, they assume that the last two dimensions (-2,-1) are the image-dimensions. The others are just for stacking.
 
 ---------------------------------------------------------------------------------------------------
