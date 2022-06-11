@@ -1315,10 +1315,10 @@ def default_tu_params(strict=False,**kwargs):
                 'pixelsize': None, 
                 't1': None, 
                 'tiling_dict': {},
-                'tiling_dict_pre': {'basic_shape_2D': [34,34],#[67, 67], 
+                'tiling_dict_pre': {'basic_shape_2D': [77,77],#[34,34]
                                 'basic_roverlap': [0.0, 0.2, 0.2], 
                                 'diffdim_im_psf': False, 
-                                'basic_add_overlap2shape': True, 
+                                'basic_add_overlap2shape': False, 
                                 'tiling_low_thresh': (32*20*400*400)*4}#shape * dtype-bytes
                 }
     # overwrite defaults with existing 
@@ -1342,7 +1342,7 @@ def tiled_processing_thickslice(tile, otf, tile_id, merger, tu_params, pad, otfs
     # done?
     return retStats
 
-def create_tiling_structure_thickslice(im,psf,td,verbose):
+def create_tiling_structure_thickslice(im,psf,td,zslices=[],verbose=True):
 
     #basic shapes
     imshape_in=list(im.shape)
@@ -1361,8 +1361,11 @@ def create_tiling_structure_thickslice(im,psf,td,verbose):
         print(tiler)
 
     # create tiler that is used as basis (w.r.t. unmixed/processed tiles) for merging
-    tiler_final = Tiler(data_shape=psf.shape[-3:], tile_shape=psf_tile.shape[-3:], overlap=tuple(
-        td['overlap'])[-3:],mode=td['tiling_mode'])
+    # take zslice choices into account
+    dshape=psf.shape[-3:] if zslices==[] else [len(zslices),]+list(psf.shape[-2:])
+    tshape=psf_tile.shape[-3:] if zslices==[] else [len(zslices),]+list(psf_tile.shape[-2:])
+    toverlap=tuple(td['overlap'])[-3:] if zslices==[] else tuple([0,]+list(td['overlap'][-2:]))
+    tiler_final = Tiler(data_shape=dshape, tile_shape=tshape, overlap=toverlap,mode=td['tiling_mode'])
     if verbose:
         print(">>>\t Tileset used recombination.\t<<<")
         print(tiler_final)
@@ -1392,13 +1395,15 @@ def tiled_thickslice_unmix(im: nip.image, psf: nip.image, pad: dict,tu_params:di
     retStats = []
 
     # create tiling structure 
-    tiler, tiler_final, merger, psf_tile = create_tiling_structure_thickslice(im=im,psf=psf,td=td,verbose=tu_params['verbose'])
+    zsl = tu_params['zslices'] if 'zslices' in tu_params else []
+    vb = tu_params['verbose'] if 'verbose' in tu_params else True
+    tiler, tiler_final, merger, psf_tile = create_tiling_structure_thickslice(im=im,psf=psf,td=td,zslices=zsl,verbose=vb)
     
 
     # calculate unmixing OTF once
     store_full_otf_dict=tu_params['full_ret']
     im_test_tile=nip.extract(im,td['tile_shape'])
-    imu,otf_dict=thickslice_unmix(ims_ft=im_test_tile, otfs=psf_tile, pad=pad, otfs_dict=otfs_dict,full_ret=tu_params['full_ret'], ret_real=tu_params['ret_real'], zslices=tu_params['zslices'], verbose=tu_params['verbose'], pixelsize=tu_params['pixelsize'], t1=tu_params['t1'])
+    imu,otf_dict=thickslice_unmix(ims_ft=im_test_tile, otfs=psf_tile, pad=pad, otfs_dict=otfs_dict,full_ret=tu_params['full_ret'], ret_real=tu_params['ret_real'], zslices=zsl, verbose=vb, pixelsize=tu_params['pixelsize'], t1=tu_params['t1'])
     del imu, im_test_tile
 
     # run for each created tile
@@ -1453,7 +1458,8 @@ def thickslice_unmix(ims_ft: nip.image, otfs: nip.image, pad: dict, otfs_dict:di
                           mode=pad['fmodel'], dir='fwd', dtype=pad['dtype_complex'])
     if ims_ft.ndim > 3:
         ims_ft = np.reshape(ims_ft, [np.prod(ims_ft.shape[:-2]), ]+list(ims_ft.shape[-2:]))
-        otfs=nip.repmat(otfs,[int(ims_ft.shape[0]/otfs.shape[0]),1,1,1])
+    if otfs.ndim > 4:
+        otfs = np.reshape(otfs, [np.prod(otfs.shape[:-3]), ]+list(otfs.shape[-3:]))
     ims_ft.pixelsize = pixelsize if ims_ft.pixelsize is None else ims_ft.pixelsize
     otfs.pixelsize = pixelsize if otfs.pixelsize is None else otfs.pixelsize
 
@@ -2108,7 +2114,7 @@ def recon_thickslice_deconv_list(ims, psfs, pad, rparams, resd, ldim=0,t=None,do
     # loop over all available techniques
     for lname in ['dec_oof','dec_2d3d','dec_zleap']:
         if rparams['do_tu_dec'][lname[4:]]:
-            printme={'dec_oof':'> Ouf of Focus Rejection (oof)','dec_2d3d': '>2D to 3D unmixing (2d3d)','dec_zleap':'> Zleap'}[lname]
+            printme={'dec_oof':'Ouf of Focus Rejection (oof)','dec_2d3d': '2D to 3D unmixing (2d3d)','dec_zleap':'Zleap'}[lname]
             if not t is None:
                 t.add(f"{['','Parameter Search -> '][do_testparam]}Deconvolution -> {printme}")
             if verbose:
@@ -2132,8 +2138,9 @@ def recon_thickslice_deconv_list(ims, psfs, pad, rparams, resd, ldim=0,t=None,do
 
                 # prepare data
                 if lname=='dec_oof':
-                    im_dec = mIm[:, pad['tu_oof_recon_slices']]
-                    psfs_dec = psfs[m,:, pad['tu_oof_recon_slices']]
+                    im_dec = mIm[:, slice(rparams['tu_oof_params'][m]['zslices'][0],rparams['tu_oof_params'][m]['zslices'][0]+1)]
+                    psfs_dec = psfs[m,:, slice(psfs.shape[-3]//2,psfs.shape[-3]//2+1)]
+                    ddh['BorderRegion'][-3]=0
                     do_tiling=False
                     td=None
                 elif lname=='dec_2d3d':
@@ -2213,8 +2220,8 @@ def recon_thickslice_unmix_list(ims, psfs, pad, rparams, resd, ldim=0, t=None,do
 
                 # prepare data
                 if lname=='tu_oof':
-                    pad[lname+'_recon_slices'] = np.zeros(psfs.shape[-3], dtype=bool)
-                    pad[lname+'_recon_slices'][psfs.shape[1]//2] = True
+                    pad['tu_oof_recon_slices']=np.zeros(psfs.shape[-3],dtype='bool')
+                    pad['tu_oof_recon_slices'][rparams[lname+'_params'][m]['zslices'][0]]=True
                     #ims_ft = ft_correct(mIm[:, rparams[lname+'_params'][m]['zslices'][0]], faxes=(-2, -1), dtype=pad['dtype_complex'])
                     #otfs = ft_correct(psfs[m], faxes=pad['faxes'], dtype=pad['dtype_complex'])
                     ims_use=mIm[:, rparams[lname+'_params'][m]['zslices'][0]]
@@ -2224,6 +2231,7 @@ def recon_thickslice_unmix_list(ims, psfs, pad, rparams, resd, ldim=0, t=None,do
                     pinuse=slice(np.min((psfs.shape[1],psfs.shape[2]))) if rparams[lname+'_params'][m]['zchoices']['psf'] is None else (pinholes if len(pinholes)==len_slice(rparams[lname+'_params'][m]['zchoices']['psf']) else slice(len_slice(rparams[lname+'_params'][m]['zchoices']['psf'])))
                     ims_use=mIm[pinuse,rparams[lname+'_params'][m]['zchoices']['im']]
                     psfs_use=psfs[m,pinuse] if rparams[lname+'_params'][m]['zchoices']['psf'] is None else psfs[m,pinuse,rparams[lname+'_params'][m]['zchoices']['psf']]
+                    psfs_use=normNoff(psfs_use,dims=tuple(np.arange(psfs_use.ndim)),atol=0,method='sum')
                     #otfs = ft_correct(psfs[m,pinuse], faxes=pad['faxes'], dtype=pad['dtype_complex'])
                 else:
                     pinuse=slice(np.min((psfs.shape[1],psfs.shape[2])))
@@ -2232,16 +2240,30 @@ def recon_thickslice_unmix_list(ims, psfs, pad, rparams, resd, ldim=0, t=None,do
                     pin_len=len(pinholes) if type(pinholes)==list else len_slice(pinholes)
                     pinuse=pinholes if pin_len==len_slice(rparams[lname+'_params'][m]['zchoices']['psf']) else slice(len_slice(rparams[lname+'_params'][m]['zchoices']['psf']))
                     #ims_ft=ims_ft[pinuse]
-                    ims_use=mIm[pinuse,rparams[lname+'_params'][m]['zchoices']['im']]
+                    ims_use=np.swapaxes(mIm[pinuse,rparams[lname+'_params'][m]['zchoices']['im']],0,1)
+                    ims_use=np.reshape(ims_use,[np.prod(ims_use.shape[:2]),]+list(ims_use.shape[2:]))
                     #otfs = ft_correct((psfs[m,pinuse])[:,rparams[lname+'_params'][m]['zchoices']['psf']], faxes=pad['faxes'], dtype=pad['dtype_complex'])
                     #otfs=otfs[:otfs.shape[1]]
                     psfs_use=(psfs[m,pinuse])[:,rparams[lname+'_params'][m]['zchoices']['psf']]
+                    psfs_use=normNoff(psfs_use,dims=tuple(np.arange(psfs_use.ndim)),atol=0,method='sum')
+                    zshifts=np.array([[0,-m,0,0] for m in rparams[lname+'_params'][m]['zchoices']['im']-psfs_use.shape[-3]//2])
+
+                    #shift iteratively to use few ressources in exchange for time
+                    #psfs_use=normNoff(psfs_use,dims=tuple(np.arange(-psfs_use.ndim+1,0)),atol=0,method='sum')
+                    psfs_use=shiftby_list(psfs_use, shifts=zshifts, shift_axes=-3, parallel=False,pixelwise=True)
+                    psfs_use=psfs_use[0] if type(psfs_use) in [tuple,list] else psfs_use
+                    psfs_use=np.reshape(psfs_use, [np.prod(psfs_use.shape[:-3]), ]+list(psfs_use.shape[-3:]))
+                    
+                    #psfs_use=psfs_use if rparams[lname+'_params'][m]['do_tiling'] else ft_correct(psfs_use,faxes=pad['faxes'],dtype=pad['dtype_complex']) 
                     #else:
                         #ims_ft = ft_correct(mIm[pinuse], faxes=(-2, -1), dtype=pad['dtype_complex'])
                         #ims_use=mIm[pinuse]
                         #psfs_use=psfs[m,pinuse]
                         #otfs = ft_correct(psfs[m,pinholes], faxes=pad['faxes'], dtype=pad['dtype_complex'])
                 
+                # renorm 
+                
+
                 # unmix
                 if do_testparam:
                     # test all paramaters
@@ -2263,7 +2285,7 @@ def create_deconv_complist(pad, resd, rparams,method='dsax'):
         1) add docstring!
     '''
     compare_list=[resd['ismWA_rtest'], resd['ismWAN_rtest'], resd['wiener_rtest'], resd['dec2D_conf_rtest'], pad_boundaries(resd['dec2D_shepp_rtest'], convert_slices_2_pads(pad['shift_slices_2use'],resd['ismWA_rtest'].shape,axis=np.arange(-3,0)),maxdim=5),]
-    compare_list_2D=[]
+    compare_list_2D,obj2D=np.array([]),np.array([])
     if rparams['ism_method']=='dsax':
         compare_list = np.array(compare_list+[resd['dec2D_av_indivim_rtest'], nip.repmat(
             resd['dec2D_av_aim_rtest'][:, np.newaxis], [1, resd['wiener_rtest'].shape[1], 1, 1, 1])])
@@ -2292,13 +2314,13 @@ def create_deconv_complist(pad, resd, rparams,method='dsax'):
         if rparams['ism_method']=='thickslice':
             slic2D = extent_slicing(pad['shift_slices_2use'][-2:],compare_list_2D.shape,axis=np.arange(-2,0))
             compare_list_2D=compare_list_2D[slic2D]
-            obj2D = deepcopy(obj[pad['tu_oof_recon_slices'],slic2D[-2],slic2D[-1]])
+            obj2D = normNoff(deepcopy(obj[pad['tu_oof_recon_slices'],slic2D[-2],slic2D[-1]]), dims=(-2, -1))
             compare_list_2D = np.transpose(compare_list_2D, [2, 0, 1, 3, 4, 5])
             compare_list_2D = normNoff(compare_list_2D, dims=(-2, -1))#normNoff(np.squeeze(compare_list), dims=(-2, -1))
-        obj = obj[slic[-3:]]
+        obj = normNoff(obj[slic[-3:]], dims=tuple(pad['faxes']))
     # swap axes such that order is: [Iex,ReconMETHOD,param_range,Z,Y,X]
     compare_list = np.transpose(compare_list, [2, 0, 1, 3, 4, 5])
-    compare_list = normNoff(compare_list, dims=(-2, -1))#normNoff(np.squeeze(compare_list), dims=(-2, -1))
+    compare_list = normNoff(compare_list, dims=tuple(pad['faxes']))#normNoff(np.squeeze(compare_list), dims=(-2, -1))
 
     if rparams['ism_method']=='thickslice':
         compare_list=[compare_list,compare_list_2D]

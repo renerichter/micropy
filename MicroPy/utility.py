@@ -4,7 +4,7 @@
 	@author René Lachmann
 	@email herr.rene.richter@gmail.com
 	@create date 2019 11:53:25
-	@modify date 2022-06-06 16:06:10
+	@modify date 2022-06-08 16:13:54
 	@desc Utility package
 
 ---------------------------------------------------------------------------------------------------
@@ -298,7 +298,7 @@ def findshift(im1, im2, prec=100, use_pcc=True, printout=False):
     return shift, error, diffphase, tend
 
 
-def shiftby_list(im, shifts=None, shift_offset=[1, 1], shift_method='uvec', shift_axes=[-2, -1], nbr_det=[3, 3], center=None, retreal=True, listaxis=None,pad_shifts=True):
+def shiftby_list(im, shifts=None, shift_offset=[1, 1], shift_method='uvec', shift_axes=[-2, -1], nbr_det=[3, 3], center=None, retreal=True, listaxis=None,pad_shifts=True,parallel=True,pixelwise=False):
     """Shifts an image by a list of shift-vectors.
     If shifts not given, calculates an equally spaced rect-2D-array for nbr_det (array) of  with shift_offset spacing in pixels between them.
     If shifts given, uses the shape (nbr_det) to calculate the distances between detectors.
@@ -378,42 +378,46 @@ def shiftby_list(im, shifts=None, shift_offset=[1, 1], shift_method='uvec', shif
     shift_axes[shift_axes < 0] += im.ndim
     dimdiff = im.ndim - len(shifts[0])
 
-    # add padding
-    if pad_shifts:
-        im, pads = pad_secure_shift(im,shifts=shifts,secfac=2)
+    if parallel:
+        # add padding
+        if pad_shifts:
+            im, pads = pad_secure_shift(im,shifts=shifts,secfac=2)
 
-    # pre-allocate for speed-up
-    prl_shape = (len(shifts),)+im.shape if listaxis is None else im.shape
-    phase_ramp_dtype = np.complex64 if im.dtype=='float32' else np.complex128
-    phase_ramp_list = np.ones(prl_shape,dtype=phase_ramp_dtype) 
-    
-    # calculate shifts
-    for m in shift_axes:
-        eshifts = add_multi_newaxis(
-            shifts[:, m-dimdiff], [-1, ] * (im.ndim-1+asta))
-        phase_ramp_list *= np.exp(-1j*2*np.pi * eshifts *
-                                  r1d(im.shape, m, im.pixelsize, add_stackaxis=asta).astype(im.dtype))
-
-    # apply shifts in FT-space and transform back
-    im_res = nip.ift(nip.ft(im, axes=shift_axes).astype(phase_ramp_list.dtype) *
-                      phase_ramp_list, axes=shift_axes+asta).astype(phase_ramp_list.dtype)
-
-    if retreal:
-        im_res = np.abs(im_res) #.real
-
-    # undo padding and extract core
-    if pad_shifts:
-        padsm=np.max(pads,axis=0)
-        im_res=unpad(im_res,padsm,axis=np.arange(-len(padsm),0),direct=True)
-        #im_res = nip.extract(im_res,im_origshape,im_origshape//2) if retreal else nip.extractFt(im,im_origshape)
+        # pre-allocate for speed-up
+        prl_shape = (len(shifts),)+im.shape if listaxis is None else im.shape
+        phase_ramp_dtype = np.complex64 if im.dtype=='float32' else np.complex128
+        phase_ramp_list = np.ones(prl_shape,dtype=phase_ramp_dtype) 
         
+        # calculate shifts
+        for m in shift_axes:
+            eshifts = add_multi_newaxis(
+                shifts[:, m-dimdiff], [-1, ] * (im.ndim-1+asta))
+            phase_ramp_list *= np.exp(-1j*2*np.pi * eshifts *
+                                    r1d(im.shape, m, im.pixelsize, add_stackaxis=asta).astype(im.dtype))
 
+        # apply shifts in FT-space and transform back
+        im_res = nip.ft(im, axes=shift_axes).astype(phase_ramp_list.dtype) * phase_ramp_list
+
+        if retreal:
+            im_res = np.abs(nip.ift(im_res, axes=shift_axes+asta).astype(phase_ramp_list.dtype)) #.real
+
+        # undo padding and extract core
+        if pad_shifts:
+            padsm=np.max(pads,axis=0)
+            im_res=unpad(im_res,padsm,axis=np.arange(-len(padsm),0),direct=True)
+            #im_res = nip.extract(im_res,im_origshape,im_origshape//2) if retreal else nip.extractFt(im,im_origshape)
+    else:
+        im_res = nip.image(np.zeros([len(shifts),]+list(im.shape),dtype=im.dtype))
+        shifts=shifts.astype('int') if pixelwise else shifts
+        for m,mshift in enumerate(shifts):
+            im_res[m]=nip.shift(im=im,delta=mshift,axes=-3,pixelwise=pixelwise)
+    
     # correct pixelsizes
     if hasattr(im_res, 'pixelsize'):
         if im_res.pixelsize is not None:
             im_res.pixelsize[1:] = im.pixelsize if not im_res.pixelsize[1:
-                                                                           ] == im.pixelsize else im_res.pixelsize[1:]
-
+                                                                        ] == im.pixelsize else im_res.pixelsize[1:]
+    # done?
     return im_res, shifts
 
 

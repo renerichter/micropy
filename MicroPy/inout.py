@@ -118,7 +118,7 @@ def store_data(param_dict, proc_dict, data_dict=None):
         store_dict['data_dict'] = data_dict
     np.savez(param_dict['save_path']+param_dict['save_name']+'_data.npz', store_dict)
 
-def fix_dict_pixelsize(dictin, pixelsize, fixlist=[]):
+def fix_dict_pixelsize(dictin, pixelsize, fixlist=[], verbose=True):
     # get fixlist
     if fixlist==[]:
         if 'pixel_fixlist' in dictin:
@@ -135,6 +135,9 @@ def fix_dict_pixelsize(dictin, pixelsize, fixlist=[]):
             dictin[val].pixelsize = pixelsize
         else:
             print(f"WARNING: key={val} not in prd on load.")
+
+    if verbose:
+        print("Fixed pixelsize property for keys: "+', '.join(fixlist)+'.')
 
     # done?
     return dictin
