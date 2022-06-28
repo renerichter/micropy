@@ -21,7 +21,7 @@ import untangle
 
 
 # mipy imports
-from .utility import normNoff, add_multi_newaxis, transpose_arbitrary, fill_dict_with_default
+from .utility import normNoff, add_multi_newaxis, transpose_arbitrary, fill_dict1_with_dict2
 from .transformations import radial_sum
 from .microscopyCalculations import calculate_resolution, convert_x_to_k
 from .filters import moving_average_2d
@@ -851,7 +851,7 @@ def print_stack2subplot(imstack, im_minmax=[None, None], imdir='row', inplace=Fa
     if colorbar == 'global':
         # sanity
         grid_param_default = default_grid_param(plt_raster)
-        gp = grid_param = grid_param_default if grid_param is None else fill_dict_with_default(
+        gp = grid_param = grid_param_default if grid_param is None else fill_dict1_with_dict2(
             grid_param, grid_param_default)
 
         # generate grid
@@ -1047,7 +1047,7 @@ def print_stack2subplot(imstack, im_minmax=[None, None], imdir='row', inplace=Fa
         plt.tight_layout()
 
     if plt_show:
-        plt.show()
+        fig.show()
     
     if ax_ret:
         return fig,ax

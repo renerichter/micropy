@@ -9,7 +9,6 @@ import InverseModelling as invmod
 from tiler import Tiler, Merger
 from typing import Union
 
-from .inout import store_data
 from .general_imports import *
 
 
@@ -307,7 +306,7 @@ def deconv_test_param_on_list(ims, psfs, pad, resd, rparams, ddh, sname=['dec2D'
     # blueprint for saving in case something breaks on the fly
     if 0:
         pad['save_name'] = pad['save_name_base'] + snamef+'_resd'
-        store_data(param_dict=pad, proc_dict=resd, data_dict=None)
+        #store_data(param_dict=pad, proc_dict=resd, data_dict=None)
 
     # done?
     return resd

@@ -10,6 +10,7 @@ from .basicTools import sanityCheck_structure
 from .transformations import irft3dz, rft3dz, rftnd, polar2cartesian, lp_norm
 from .utility import shiftby_list, add_multi_newaxis, set_val_atpos, get_center
 from .microscopyCalculations import convert_phot2int, convert_int2phot
+from .deconvolution import default_dict_tiling,default_dict_deconv
 
 # %%
 # ------------------------------------------------------------------
@@ -1044,6 +1045,139 @@ def dsax_fwd_model(pad, prd={}, psd={}):
     '''Alias for fwd_model'''
     pad['ism_method'] == 'dsax'
     return fwd_model(pad=pad, prd=prd, psd=psd)
+
+def fwd_model_default_param(dolist=[1,0,1,1]):
+    '''dolist = [ism,dsax,thickslice,processing]=[1,0,1,1] to activate all but dsax'''
+    pad_general = {
+        # general image parameters
+        'imsize': (32, 128, 128), 
+        'overscan': (1, 1, 1.25),
+        'obj_centerpos': None,  # [32, 32, 38],  # None
+        'noise': ['Poisson',10],
+        'noise_realizations': None,
+        'pixelsize': (100, 37.1, 37.1),
+        'nbr_spokes': 14,
+        'do_testobject': 0,
+        'obj_shifts': False,  # [[-4, 0, 0], [3, 0, 0]],
+        'dtype_real': np.float32,
+        'dtype_complex': np.complex64,
+        'normalize_fwd_im': False,
+
+        # general PSF-parameters
+        'NA': 1.3,
+        'n_immersion': 1.4,  # assume for silicon oil
+        'lex': 488,
+        'lem': 515,
+        'asymmt_ex':  None,  # ['spheric', ],
+        'asymms_ex':  None,  # np.arange(0, 1.05, 0.05),
+        'asymmt_em': None,  # ['spheric', ],
+        'asymms_em': None,  # [0.1, ],
+        'bead_roi': [16, 16],
+        
+        # general plotting parameters
+        'dpi': 300,
+        'show_phases': False,
+        'format_vid': 'libx264',
+        'format_im': 'pdf',
+
+        # general IO parameters
+        'del_extra': False,
+        'save_name_base': None,
+        'save_path': None,
+    }
+    pad_ism={
+        # ism-parameters
+        'fmodel': 'fft',
+        'faxes': [-2, -1],
+        'raxis': -2,  # None
+        'imaging_method': 'ism',
+        # as camera-pixel-size=13μm, system-magnification=144 and hence camera-pixel-spacing-in-sample-coordinates=90/144*1000/pixelsize[-1]; assume perpendicular orientation with sample -> need to check via correlation
+        'shift_offset': np.array([[2.4, 0], [0, 2.4]]),
+        'shift_axes': [-2, -1],
+        'shift_method': 'uvec',
+        'nbr_det':   np.array([16, 16]),  # np.array([2, 2]),  # np.array([5, 5]),  # [3, 5],
+        'det_shifts': None,
+        'pinhole': None,
+        'do_norm': True,
+        'psf_shifts': None,  # for multi-psfs
+        'psf_shifts_axes': None,
+        'sheppSUM_shift_method': 'nearest',
+    }
+    pad_dsax={
+        # dsax parameters
+        'dsax_Iex_max': 850,
+        'dsax_Iex': [90, 250, 850],
+        'dsax_ψmax': 3/6,
+        'dsax_NPhot_factor': 1,
+        'dsax_normax': (-3, -2, -1),
+        'dsax_tau': None,
+        'dsax_sigma': None,
+        # Iex1,Iex2,Iex3,NL1,NL2
+        'dsax_plot_colors': ['lime', 'turquoise', 'magenta', 'green', 'blue'],
+        'dsax_exp_det_pixpitch': 13000,
+        'dsax_exp_magnification': 144,
+        'drift_subpix_thresh': 0.2,
+    }
+    pad_thickslice={
+        # thickslice parameters
+        'eps_mask': 10**(-5.0),  # -3.5
+        'eps_reg': 10**(-7.5),  # -8.5
+        'eps_reg_rel': 0,
+        'svdlim': None,
+        'svdnum': 10,
+        'use_own': True,
+        'closing': -2,
+        'svd_stat': True,
+        'verbose': True,
+        'full_ret': True,
+        'ret_real': True,
+    }
+    pad_processing={
+        # wavg parameters
+        'noise_norm': True,
+        'use_mask': True,
+        'reg_aeps': 0,
+        'reg_reps': 0,
+
+        # wiener parameters
+        'wiener_use_generalized': True,
+        'multiview_dim': 0,
+        'wiener_reg_aeps': 0,
+        'wiener_reg_reps': 10**(-1.5),
+    }
+    dlist=[pad_ism,pad_dsax,pad_thickslice,pad_processing]
+    pad = {**pad_general, **dlist[dolist[0]],**dlist[dolist[1]],**dlist[dolist[2]],**dlist[dolist[3]]}
+    psd = {
+        'do_load_data': True,
+        'do_save_plots':True,
+        'do_store_data':True,
+        'do_free_space':True,
+        'do_calculate': True,
+        'do_deconvolve': True,
+        'do_3D': True,
+        'do_aberrated': False,
+        'do_noisy': True,
+        'do_ncc': True,
+    }
+
+    # standard tiling dict
+    pad['td'] = default_dict_tiling([np.prod(pad['nbr_det']), ]+list(pad['imsize']),
+                                            basic_shape=list(pad['imsize']),
+                                            basic_roverlap=[0, 0.2, 0.2],
+                                            atol=1e-8,
+                                            diffdim_im_psf=None)
+
+    # standard deconv-dict
+    pad['dd'] = default_dict_deconv(
+        NIter=200, lambdal=[10**(-5.0), ], regl=['GS', ], BorderRegion=[0, 0.1, 0.1, 0.1])
+
+    # detector-plane properties
+    pad['det_center'] = pad['nbr_det']//2
+
+    prd={}
+
+    #done?
+    return pad, psd, prd
 
 def fwd_model(pad, prd={}, psd={}):
 

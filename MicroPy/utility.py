@@ -4,7 +4,7 @@
 	@author René Lachmann
 	@email herr.rene.richter@gmail.com
 	@create date 2019 11:53:25
-	@modify date 2022-06-08 16:13:54
+	@modify date 2022-06-28 15:52:17
 	@desc Utility package
 
 ---------------------------------------------------------------------------------------------------
@@ -1102,7 +1102,7 @@ def norm_back(imstack, normstack, normtype):
     return imstack_changed
 
 
-def normNoff(im, dims=None, method='max', offset=None, direct=False, atol=1e-10):
+def normNoff(im, dims=(-2,-1), method='max', offset=None, direct=False, atol=1e-10):
     """Subtracts offset and normalizes by calling normto. Read description of normto for further parameter info.
 
     Parameters
@@ -1512,12 +1512,14 @@ def split_nd(im, tile_sizes=[8, 8], split_axes=[-1, -2]):
     return im, sal
 
 
-def fill_dict_with_default(din, ddefault):
-    for m in ddefault:
-        if not m in din:
-            din[m] = ddefault[m]
+def fill_dict1_with_dict2(dict1, dict2, overwrite=True):
+    for m in dict2:
+        if overwrite:
+            dict1[m] = dict2[m]
+        else:
+            dict1[m] = dict2[m] if not m in dict1 else dict1[m]
 
-    return din
+    return dict1
 
 # %% -----------------------------------------------------
 # ----              NOISE AND STATISTIC-ANALYSIS
