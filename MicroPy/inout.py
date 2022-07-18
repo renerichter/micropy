@@ -18,6 +18,7 @@ from colorsys import rgb_to_hls, hls_to_rgb
 import subprocess
 from io import StringIO
 import untangle
+from copy import deepcopy
 
 
 # mipy imports
@@ -798,10 +799,31 @@ def add_coordinate_axis(ax, apos=[[120, 10], [120, 10]], alen=[[-40, 0], [0, 40]
         ax.text(x=pos[1]+1.1*alenA[1], y=pos[0]+1.1*alenA[0],
                 s=text[p], color=tcolor, fontsize=tsize)
 
+def plot_value_in_box(ax, ys, box_text, box_prop={}, text_prop={}):
+    # default
+    box_xy = [ys[-1]//3, ys[-2]//8]
+    box_prop_default = {'xy': [ys[-1]-box_xy[0], ys[-2]-box_xy[1]], 'width': box_xy[0] -
+                        3, 'height': box_xy[1]-3, 'color': 'white', 'facecolor': 'none', 'fill': False}
+    text_prop_default = {'x': box_prop_default['xy'][0]+1, 'y': ys[-2] -
+                         6, 'color': 'white', 'fontsize': 40}
+
+    bp = box_prop_default if box_prop == {} else fill_dict1_with_dict2(
+        box_prop_default, box_prop)
+    tp = text_prop_default if box_prop == {
+    } else fill_dict1_with_dict2(text_prop_default, text_prop)
+    tpp = deepcopy(tp)
+    del tpp['x'], tpp['y']
+
+    for m, bname in enumerate(box_text):
+        ax[m].add_patch(Rectangle(**bp))  # 'none
+        ax[m].text(tp['x'], tp['y'], bname, **tpp)
+
+    return ax
+
 
 def default_grid_param(plt_raster):
     return {'pos': 111, 'nrows_ncols': (
-        plt_raster[0], plt_raster[1]), 'axes_pad': 0.4, 'cbar_mode': 'single', 'cbar_location': 'right', 'cbar_pad': 0.1,'cbar_font_size':0.5,'cbar_va':'bottom','cbar_rotation':90,'cbar_label':''}
+        plt_raster[0], plt_raster[1]), 'axes_pad': 0.1, 'cbar_mode': 'single', 'cbar_location': 'right', 'cbar_pad': 0.1,'cbar_font_size':0.5,'cbar_va':'top','cbar_rotation':90,'cbar_label':''}
 
 
 def default_coord_axis(imshape):
@@ -852,7 +874,7 @@ def print_stack2subplot(imstack, im_minmax=[None, None], imdir='row', inplace=Fa
         # sanity
         grid_param_default = default_grid_param(plt_raster)
         gp = grid_param = grid_param_default if grid_param is None else fill_dict1_with_dict2(
-            grid_param, grid_param_default)
+            grid_param_default,grid_param)
 
         # generate grid
         fig = plt.figure(figsize=plt_format)
@@ -935,7 +957,7 @@ def print_stack2subplot(imstack, im_minmax=[None, None], imdir='row', inplace=Fa
         elif titlestack == False:
             pass
         else:
-            axm.set_title(titlestack[m], fontsize=nbrs_psize/2)
+            axm.set_title(titlestack[m], fontsize=nbrs_psize*4/5)
 
         # add numbers to panels
         if nbrs:
@@ -954,12 +976,12 @@ def print_stack2subplot(imstack, im_minmax=[None, None], imdir='row', inplace=Fa
             #axm.set_xticks(yx_ticks[1])
             #axm.set_xticklabels(yx_labels[1],fontsize=nbrs_psize/2)
             axm.xaxis.set_ticks(yx_ticks[1])
-            axm.xaxis.set_ticklabels(yx_labels[1],fontsize=nbrs_psize/2)
+            axm.xaxis.set_ticklabels(yx_labels[1],fontsize=nbrs_psize*4/5)
             #axm.yaxis.set_tick_params(labelsize=nbrs_psize)
             #axm.set_yticks(yx_ticks[0])
             #axm.set_yticklabels(yx_labels[0],fontsize=nbrs_psize/2)
             axm.yaxis.set_ticks(yx_ticks[0])
-            axm.yaxis.set_ticklabels(yx_labels[0],fontsize=nbrs_psize/2)
+            axm.yaxis.set_ticklabels(yx_labels[0],fontsize=nbrs_psize*4/5)
 
         # plot axis according to selection -> in case of 'bottom','left' axis-names are only plotted at bottom-left panel
         if use_axis == None:
@@ -1172,7 +1194,7 @@ def print_stack2subplot(imstack, im_minmax=[None, None], imdir='row', inplace=Fa
 #
 
 
-def stack2plot(x:np.ndarray, ystack:Union[list,np.ndarray], refs:list=None, title:str=None, xl:list=None, xlabel:str=None, ylabel:str=None, colors:list=None, mmarker:str='', mlinestyle:str='-', mlinewidth:list=None, legend:Union[str,list]=[1, 1.05], legend_col:int=1,xlims:Union[list,np.ndarray]=None, ylims:Union[list,np.ndarray]=None, ax_inside:dict=None, figsize:tuple=(8, 8), show_plot:bool=True, ptight:bool=True, ax=None, nbrs:bool=True, nbrs_color:list=[1, 1, 1], nbrs_size:float=None, nbrs_text:str=None, err_bar:Union[list,np.ndarray]=None, err_capsize:int=3, fonts_labels:list=[None,],fonts_sizes:list=[None,],set_clipon:bool=False) -> tuple:
+def stack2plot(x:np.ndarray, ystack:Union[list,np.ndarray], refs:list=None, title:str=None, xl:list=None, xlabel:str=None, ylabel:str=None, colors:list=None, mmarker:str='', mlinestyle:str='-', mlinewidth:list=None, legend:Union[str,list]=[1, 1.05], legend_col:int=1,xlims:Union[list,np.ndarray]=None, ylims:Union[list,np.ndarray]=None, ax_inside:dict=None, figsize:tuple=(8, 8), show_plot:bool=True, ptight:bool=True, ax=None, nbrs:bool=True, nbrs_color:list=[1, 1, 1], nbrs_size:float=None, nbrs_text:str=None, nbrs_offset:list=[],err_bar:Union[list,np.ndarray]=None, err_capsize:int=3, fonts_labels:list=[None,],fonts_sizes:list=[None,],set_clipon:bool=False) -> tuple:
     '''
     Prints a 1d-"ystack" into 1 plot and assigns legends + titles.
 
@@ -1281,12 +1303,9 @@ def stack2plot(x:np.ndarray, ystack:Union[list,np.ndarray], refs:list=None, titl
     if nbrs:
         text_size_factor = ax.figure.bbox_inches.bounds[-1]*ax.figure.dpi
         nbrs_psize = text_size_factor * 0.05 if nbrs_size is None else text_size_factor*nbrs_size
-        x_offset = np.mean(ax.get_xticks()[:2])
-        # ax.get_yticks()[-1] - 4*nbrs_psize/text_size_factor*(ylims[1]-ylims[0])
-        # y_offset = ax.get_yticks()[-2]
-        y_offset = ylims[1]-ylims_dist/5.0
+        nbrs_offset = [np.mean(ax.get_xticks()[:2]),ylims[1]-ylims_dist/5.0] if nbrs_offset == [] else nbrs_offset
         nbrs_text = chr(97+np.random.randint(26))+')' if nbrs_text is None else nbrs_text
-        ax.text(x_offset, y_offset, nbrs_text, fontsize=nbrs_psize,
+        ax.text(nbrs_offset[0], nbrs_offset[1], nbrs_text, fontsize=nbrs_psize,
                 color=nbrs_color, fontname='Helvetica', weight='normal')
  
     # legend

@@ -93,7 +93,7 @@ def default_dict_deconv(**kwargs) -> dict:
 
     deconv_dict = {
         # deconv defaults
-        'NIter': 40,
+        'NIter': 200,
         'regl': ['TV', ],  # ['TV', 'GR', 'GS']
         'lambdal': [10**(-2.5), ],  # [2e-4, 1e-3, 2e-4]
         'regEps': 1e-5,

@@ -1043,7 +1043,7 @@ def fwd_add_noise(pad, prd):
 
 def dsax_fwd_model(pad, prd={}, psd={}):
     '''Alias for fwd_model'''
-    pad['ism_method'] == 'dsax'
+    pad['ism_method'] = 'dsax'
     return fwd_model(pad=pad, prd=prd, psd=psd)
 
 def fwd_model_default_param(dolist=[1,0,1,1]):
@@ -1238,6 +1238,13 @@ def saturation_curve(Iex, ψmax: float = 0, Imax: float = 1000, tau: float = 1, 
         return Ifluo, {'kf': kf, 'sigma': sigma, 'Isat': stinv, 'ψmax': ψmax, 'Imax': Imax}
     else:
         return Ifluo
+
+def dsax_isolateOrder_prefactors(Iex, Isat, tau, order=3,):
+    Gamma = tau/(1+Isat*tau)
+    Iex = np.array(Iex)
+    orderl = np.arange(order)+1
+    Iexn = ((Gamma*(np.e/orderl)*(Iex-Isat))**orderl)/(tau*np.sqrt(2*np.pi*orderl))
+    return Iexn
 
 # %%
 # ------------------------------------------------------------------

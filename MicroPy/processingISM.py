@@ -9,11 +9,12 @@ from scipy.ndimage.morphology import binary_fill_holes
 from scipy.ndimage import binary_closing
 from typing import Union
 from tiler import Tiler,Merger
+from itertools import product as iterprod
 
 # mipy imports
 from .general_imports import *
 from .transformations import irft3dz, ft_correct, get_cross_correlations, lp_norm
-from .utility import avoid_division_by_zero, convert_slices_2_pads, findshift, midVallist, pinhole_getcenter, add_multi_newaxis, shiftby_list, subslice_arbitrary, get_slices_from_shiftmap, normNoff, len_slice, pad_boundaries, convert_slices_2_pads, extent_slicing
+from .utility import avoid_division_by_zero, convert_slices_2_pads, findshift, midVallist, pinhole_getcenter, add_multi_newaxis, shiftby_list, subslice_arbitrary, get_slices_from_shiftmap, normNoff, len_slice, pad_boundaries, convert_slices_2_pads, extent_slicing,center_of_mass
 from .inout import stack2tiles, format_list, load_data, fix_dict_pixelsize
 from .filters import savgol_filter_nd, stf_basic
 from .fitting import extract_multiPSF
@@ -79,7 +80,7 @@ def get_pincenter(im, nbr_det, imfunc=np.max, rfunc=np.round, im_axes=(-2, -1), 
     pincenter_CoM = rfunc(pincenter_CoM_raw).astype('int')
     return pincenter_CoM[0]*nbr_det[1]+pincenter_CoM[1]
 
-def recon_genShiftmap(im, pincenter, im_ref=None, nbr_det=None, pinmask=None, shift_method='nearest', shiftval_theory=None, roi=None, shift_axes=None, cross_mask_len=[4,4], period=[],factors=[], sg_para=[13,2,0,1,'wrap'],subpix_lim=2,printmap=False):
+def recon_genShiftmap(im, pincenter, im_ref=None, nbr_det=None, pinmask=None, shift_method='nearest', shift_det=False,det_pos=[], shiftval_theory=None, roi=None, shift_axes=None, cross_mask_len=[4,4], period=[],factors=[], sg_para=[13,2,0,1,'wrap'],subpix_lim=2,printmap=False):
     """Generates Shiftmap for ISM SheppardSUM-reconstruction.
     Assumes shape: [Pinhole-Dimension , M] where M stands for arbitrary mD-image.
     Fills shift_map from right-most dimension to left, hence errors could be evoked in case of only shifts along dim=[1,2] applied, but array has spatial dim=[1,2,3]. Hence shifts will be applied along [2,3] with their respective period factors.
@@ -100,6 +101,9 @@ def recon_genShiftmap(im, pincenter, im_ref=None, nbr_det=None, pinmask=None, sh
             'mask': all pinholes that reside within mask ; needs pinmask
             'complete': calculate shifts for all detectors
             'theory': generates shifts from shiftval_theory provided
+    shift_det : bool, optional
+        TRUE: Shift the detector position $h^{det}$ (in scan coordinates) to the most likely emission position h^{ism}
+        FALSE: Shift the most likely emission position $h^{ISM}$ towards the central pixel $h^{ex}$
     shiftval_theory: list, optional
         if shift_method 'theory' is active, generates shiftmap from these factors. In pixel-dimensions und unit-vector notation,  hence eg [[-0.5,0],[0,-0.5]] generates "back-shift" for pixel-reassignments by half the distance to the pincenter, by default None
     roi : list, optional
@@ -152,6 +156,7 @@ def recon_genShiftmap(im, pincenter, im_ref=None, nbr_det=None, pinmask=None, sh
             if shift_method == 'nearest':
                 shifth, _, _, _ = findshift(im_ref,
                                             im[np.mod(pincenter+perioda, im.shape[0])],  10**subpix_lim)
+                shifth=np.sign(shifth)*(np.abs(det_pos[np.mod(pincenter+perioda, im.shape[0])])-np.abs(shifth)) if shift_det else shifth
             elif shift_method == 'cross':
                 cmask=np.zeros(im.shape[0],dtype='bool')
                 direct_pixel_dist=np.arange(-cross_mask_len[m],cross_mask_len[m]+1)#+cmask.shape[m]
@@ -187,7 +192,7 @@ def recon_genShiftmap(im, pincenter, im_ref=None, nbr_det=None, pinmask=None, sh
             #if not pinmask is None:
             #    shift_map = shift_map[pinmask]
         else:
-            shift_map=np.array([m[0]*shiftvec[0]+m[1]*shiftvec[1] for m in factors])
+            shift_map=np.array([fac[0]*shiftvec[0]+fac[1]*shiftvec[1] for fac in factors])
     elif shift_method == 'mask':
         imh = im[pinmask]
         # shift_map = np.array([[0, ]*im.ndim]*im.shape[0])
@@ -500,7 +505,7 @@ def ism_recon(im, method='wf', **kwargs):
     return pinsize
 
 
-def recon_sheppardSUM(im, nbr_det, pincenter, im_ref=None, shift_method='nearest', shift_map=[], shift_roi=None, shiftval_theory=None, shift_axes=(-2,-1), shift_extract=False, pinmask=None, pinfo=False, sum_method='normal', shift_style='parallel', shift_use_copy=True, ret_nonSUM=False,cross_mask_len=[4,4], period=[],factors=[],subpix_lim=2):
+def recon_sheppardSUM(im, nbr_det, pincenter, im_ref=None, shift_method='nearest', shift_map=[], shift_roi=None, shift_det=False,det_pos=[],shiftval_theory=None, shift_axes=(-2,-1), shift_extract=False, pinmask=None, pinfo=False, sum_method='normal', shift_style='parallel', shift_use_copy=True, ret_nonSUM=False,cross_mask_len=[4,4], period=[],factors=[],subpix_lim=2):
     """Calculates sheppardSUM on image (for arbitrary detector arrangement). The 0th-Dimension is assumed as detector-dimension and hence allows for arbitrary, but flattened detector geometries.
 
     The algorithm does:
@@ -552,7 +557,7 @@ def recon_sheppardSUM(im, nbr_det, pincenter, im_ref=None, shift_method='nearest
     # find shift-list -> Note: 'nearest' is standard
     if shift_map == []:
         shift_map, rdict = recon_genShiftmap(
-            im=im, im_ref=im_ref, pincenter=pincenter, nbr_det=nbr_det, pinmask=pinmask, shift_method=shift_method, shiftval_theory=shiftval_theory, roi=shift_roi, shift_axes=shift_axes,cross_mask_len=cross_mask_len,period=period,factors=factors,subpix_lim=subpix_lim)
+            im=im, im_ref=im_ref, pincenter=pincenter, nbr_det=nbr_det, pinmask=pinmask, shift_method=shift_method, shift_det=shift_det,det_pos=det_pos,shiftval_theory=shiftval_theory, roi=shift_roi, shift_axes=shift_axes,cross_mask_len=cross_mask_len,period=period,factors=factors,subpix_lim=subpix_lim)
     else:
         rdict={'im_ref':[]}
 
@@ -1521,14 +1526,6 @@ def thickslice_unmix(ims_ft: nip.image, otfs: nip.image, pad: dict, otfs_dict:di
 # ---------------------------------------------------------------
 #                   DSAX-ISM
 # ---------------------------------------------------------------
-def dsax_isolateOrder_prefactors(Iex, Isat, tau, order=3,):
-    Gamma = tau/(1+Isat*tau)
-    Iex = np.array(Iex)
-    orderl = np.arange(order)+1
-    Iexn = ((Gamma*(np.e/orderl)*(Iex-Isat))**orderl)/(tau*np.sqrt(2*np.pi*orderl))
-    return Iexn
-
-
 def dsax_isolateOrder(ims: Union[nip.image, np.ndarray], Iex: list, order: int = 2, shield: bool = False, ret_summands: bool = False):
     '''
     Calculate dsax non-linear order reconstruction.
